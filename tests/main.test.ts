@@ -4589,7 +4589,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.settings.reasoningDefaulted).toBe(true);
         });
 
-        it("loads a settings file holding the retired local keys and patches nothing from them", async () => {
+        it("loads a settings file holding the retired local keys without error", async () => {
             // Search strictness and the adaptive threshold live on the server now. A data.json
             // written by an older plugin still carries the local copies: nothing reads them and
             // nothing sends them, so the server keeps the values it already has.

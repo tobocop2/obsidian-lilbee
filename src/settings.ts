@@ -125,7 +125,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
     // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
-    private suppressToggleChanges = false;
+    private suppressChangeEvents = false;
     private chatModeSettingEl: HTMLElement | null = null;
     private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;
     private chatModeSelectEl: HTMLSelectElement | null = null;
@@ -1006,7 +1006,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_SHOW_REASONING)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_SHOW_REASONING));
@@ -1024,7 +1024,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_CHAT_COMPACTION)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_COMPACTION]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CHAT_COMPACTION));
@@ -1088,25 +1088,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
                 for (const [key, toggle] of this.serverConfigToggles) {
                     const v = cfg[key];
-                    if (typeof v === "boolean") {
-                        this.suppressToggleChanges = true;
-                        try {
-                            toggle.setValue(v);
-                        } finally {
-                            this.suppressToggleChanges = false;
-                        }
-                    }
+                    if (typeof v === "boolean") this.setValueSilently(() => toggle.setValue(v));
                 }
                 for (const [key, slider] of this.serverConfigSliders) {
                     const v = cfg[key];
-                    if (typeof v === "number") {
-                        this.suppressToggleChanges = true;
-                        try {
-                            slider.setValue(v);
-                        } finally {
-                            this.suppressToggleChanges = false;
-                        }
-                    }
+                    if (typeof v === "number") this.setValueSilently(() => slider.setValue(v));
                 }
                 for (const [key, textArea] of this.serverConfigTextAreas) {
                     const v = cfg[key];
@@ -1138,6 +1124,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .catch(() => {
                 // Connection status is shown via the Test button — no duplicate warning needed
             });
+    }
+
+    /** Runs a programmatic setValue with the control's onChange muted, so nothing echoes to the server. */
+    private setValueSilently(apply: () => unknown): void {
+        this.suppressChangeEvents = true;
+        try {
+            apply();
+        } finally {
+            this.suppressChangeEvents = false;
+        }
     }
 
     private applyHideableConfigFields(cfg: ConfigResponse): void {
@@ -1411,7 +1407,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_WORKER_POOL_EAGER_START)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ worker_pool_eager_start: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WORKER_POOL_EAGER_START));
@@ -1476,7 +1472,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_FLASH_ATTENTION)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ flash_attention: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FLASH_ATTENTION));
@@ -1847,14 +1843,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.appendResetAffordance(mmrSetting, "mmr_lambda", MESSAGES.LABEL_MMR_LAMBDA);
     }
 
-    /** A server-config boolean, registered so loadServerDefaults can fill it. */
+    /** A server-config boolean on a toggle, hidden until loadServerDefaults sees the key. */
     private renderConfigToggle(container: HTMLElement, key: string, name: string, desc: string): void {
         const setting = new Setting(container)
             .setName(name)
             .setDesc(desc)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [key]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
@@ -1864,6 +1860,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
                 this.serverConfigToggles.set(key, toggle);
             });
+        setting.settingEl.hide();
+        this.serverConfigHideableEls.set(key, setting.settingEl);
         this.appendResetAffordance(setting, key, name);
     }
 
@@ -1880,7 +1878,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(desc)
             .addSlider((slider) => {
                 slider.setLimits(opts.min, opts.max, opts.step).onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [key]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
@@ -2481,7 +2479,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .setDesc(field.desc)
                     .addToggle((toggle) => {
                         toggle.onChange(async (value) => {
-                            if (this.suppressToggleChanges) return;
+                            if (this.suppressChangeEvents) return;
                             try {
                                 await this.plugin.api.updateConfig({ [field.key]: value });
                                 new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));

@@ -2,7 +2,7 @@
 
 Everything the lilbee plugin can do inside Obsidian: the setup wizard, the chat and search surfaces, models, the wiki, crawling, and every setting. For installation see the [README quick start](../README.md#quick-start); for the engine itself (how it indexes and retrieves) see [lilbee](https://lilbee.sh/).
 
-The plugin talks to a local **lilbee** server over HTTP. In the default *managed* mode it downloads and runs that server for you — there's nothing else to install, and no Ollama. Everything stays on your computer unless you choose a cloud model.
+The plugin talks to a local **lilbee** server over HTTP. In the default _managed_ mode it downloads and runs that server for you — there's nothing else to install, and no Ollama. Everything stays on your computer unless you choose a cloud model.
 
 - [First launch: the setup wizard](#first-launch-the-setup-wizard)
 - [The status bar and ribbon](#the-status-bar-and-ribbon)
@@ -29,7 +29,7 @@ The plugin talks to a local **lilbee** server over HTTP. In the default *managed
 The first time you enable the plugin, a setup wizard opens and walks you through getting running. You can re-run it any time from the command palette (**Run setup wizard**) or Settings → **Run setup wizard**.
 
 1. **Welcome.** A short intro. Choose **Get Started** or **Skip Setup**.
-2. **Server.** Pick **Managed (Recommended)** to let the plugin download and run the server, or **External** to point at a lilbee server you run yourself (enter its URL and, for a remote machine, a session token). On managed, the wizard downloads the right binary for your platform, starts it, and shows progress as *Downloading → Starting → Ready*. It will not advance until the server is ready.
+2. **Server.** Pick **Managed (Recommended)** to let the plugin download and run the server, or **External** to point at a lilbee server you run yourself (enter its URL and, for a remote machine, a session token). On managed, the wizard downloads the right binary for your platform, starts it, and shows progress as _Downloading → Starting → Ready_. It will not advance until the server is ready.
 3. **Chat model.** Pick a chat model from a featured grid. If your system RAM is known, the wizard shows it and pre-selects a model that fits. The download streams in; you can open the Task Center to watch it, or browse the full catalog.
 4. **Embedding model.** Pick the model that turns your documents into something searchable. Indexing needs this.
 5. **Sync.** Optionally index your vault now. Progress shows file by file.
@@ -44,16 +44,16 @@ Finishing setup opens the chat sidebar once, so you don't land on an empty edito
 
 **Status bar** (bottom of the window) shows the server and task state with a colored dot:
 
-| Shows | Means |
-|-------|-------|
-| `lilbee: ready` | Managed server up and serving this vault |
-| `lilbee: ready [external]` | Connected to a server you run yourself |
-| `lilbee: downloading...` / `starting...` | Bringing the managed server up |
-| `lilbee: stopped` | Server not running |
-| `lilbee: error` | Server failed to start or isn't reachable |
-| `lilbee: auth error` | Missing or invalid session token (usually external mode) |
-| `lilbee: serving "Other Vault"` | Another open vault currently holds the shared server (see [multiple vaults](#server-modes-and-multiple-vaults)) |
-| `lilbee: 2 tasks running · …` | Background jobs in progress, with the active job and percentage |
+| Shows                                    | Means                                                                                                           |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `lilbee: ready`                          | Managed server up and serving this vault                                                                        |
+| `lilbee: ready [external]`               | Connected to a server you run yourself                                                                          |
+| `lilbee: downloading...` / `starting...` | Bringing the managed server up                                                                                  |
+| `lilbee: stopped`                        | Server not running                                                                                              |
+| `lilbee: error`                          | Server failed to start or isn't reachable                                                                       |
+| `lilbee: auth error`                     | Missing or invalid session token (usually external mode)                                                        |
+| `lilbee: serving "Other Vault"`          | Another open vault currently holds the shared server (see [multiple vaults](#server-modes-and-multiple-vaults)) |
+| `lilbee: 2 tasks running · …`            | Background jobs in progress, with the active job and percentage                                                 |
 
 Click the status bar to jump to settings. A separate pill with a refresh icon and a count appears when files have changed and a sync is pending.
 
@@ -69,29 +69,29 @@ To lay everything out at once, run **Arrange views** — it tiles chat, the Task
 
 Open the command palette (`Cmd/Ctrl + P`) and type `lilbee`. Commands that need the server are unavailable until it's ready.
 
-| Command | What it does |
-|---------|-------------|
-| **Open chat** | Open the chat sidebar |
-| **Search knowledge base** | Open the search modal for semantic search with live results |
-| **Sync vault** | Index new and changed files, drop deleted ones |
-| **Retry skipped documents** | Re-attempt files that produced no content on an earlier sync |
-| **Rebuild index** | Drop the whole index and re-embed everything (asks first) |
-| **Add current file to lilbee** | Index just the active file |
-| **Add current folder to lilbee** | Index every file in the active folder |
-| **Browse documents** | Open the documents browser |
-| **Browse model catalog** | Open the model catalog |
-| **Pick chat model** / **Pick embedding model** | Quick picker to switch the active model for a role |
-| **Show info for active chat model** / **…embedding model** | Show the active model's details |
-| **Crawl web page** | Fetch a web page (or a site) into your vault |
-| **Show task center** | Open the Task Center |
-| **Arrange views** | Tile the plugin's views (chat, Task Center, and any open wiki or memories panes) into even splits |
-| **Show status** | Document and chunk counts, model and wiki status |
-| **Run setup wizard** | Re-run the first-launch wizard |
-| **Browse wiki** | Open the wiki view *(when wiki is enabled)* |
-| **Generate wiki for current file** | Write a wiki page from the active file *(wiki enabled)* |
-| **Review wiki drafts** | Open the drafts review queue *(wiki enabled)* |
-| **Run wiki lint** | Check wiki pages for stale or broken citations *(wiki enabled)* |
-| **Take over the managed lilbee server** | Reclaim the shared server for this vault *(managed mode, when another vault holds it)* |
+| Command                                                    | What it does                                                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Open chat**                                              | Open the chat sidebar                                                                             |
+| **Search knowledge base**                                  | Open the search modal for semantic search with live results                                       |
+| **Sync vault**                                             | Index new and changed files, drop deleted ones                                                    |
+| **Retry skipped documents**                                | Re-attempt files that produced no content on an earlier sync                                      |
+| **Rebuild index**                                          | Drop the whole index and re-embed everything (asks first)                                         |
+| **Add current file to lilbee**                             | Index just the active file                                                                        |
+| **Add current folder to lilbee**                           | Index every file in the active folder                                                             |
+| **Browse documents**                                       | Open the documents browser                                                                        |
+| **Browse model catalog**                                   | Open the model catalog                                                                            |
+| **Pick chat model** / **Pick embedding model**             | Quick picker to switch the active model for a role                                                |
+| **Show info for active chat model** / **…embedding model** | Show the active model's details                                                                   |
+| **Crawl web page**                                         | Fetch a web page (or a site) into your vault                                                      |
+| **Show task center**                                       | Open the Task Center                                                                              |
+| **Arrange views**                                          | Tile the plugin's views (chat, Task Center, and any open wiki or memories panes) into even splits |
+| **Show status**                                            | Document and chunk counts, model and wiki status                                                  |
+| **Run setup wizard**                                       | Re-run the first-launch wizard                                                                    |
+| **Browse wiki**                                            | Open the wiki view _(when wiki is enabled)_                                                       |
+| **Generate wiki for current file**                         | Write a wiki page from the active file _(wiki enabled)_                                           |
+| **Review wiki drafts**                                     | Open the drafts review queue _(wiki enabled)_                                                     |
+| **Run wiki lint**                                          | Check wiki pages for stale or broken citations _(wiki enabled)_                                   |
+| **Take over the managed lilbee server**                    | Reclaim the shared server for this vault _(managed mode, when another vault holds it)_            |
 
 You can also right-click any file or folder in the file explorer and choose **Add to lilbee**.
 
@@ -101,7 +101,7 @@ You can also right-click any file or folder in the file explorer and choose **Ad
 
 The chat sidebar (**Open chat**, or the ribbon icon) is the main way to use lilbee.
 
-- **Two modes.** Toggle between **Search** and **Chat**. *Search* runs your question through your documents and answers with citations. *Chat* is a plain assistant with no retrieval. Search needs an embedding model; the toggle is disabled until one is set.
+- **Two modes.** Toggle between **Search** and **Chat**. _Search_ runs your question through your documents and answers with citations. _Chat_ is a plain assistant with no retrieval. Search needs an embedding model; the toggle is disabled until one is set.
 - **Search scope.** When the wiki is on, scope buttons let you search **All**, just the **Wiki** summaries, or just the **Raw** document chunks.
 - **Streaming answers** render token by token, with full markdown. Capable models show a collapsible **Reasoning** section.
 - **Citations.** Each answer has a **Sources** block of clickable chips. Click one to open the [Source Preview](#source-preview-and-citations) at the exact spot.
@@ -109,7 +109,7 @@ The chat sidebar (**Open chat**, or the ribbon icon) is the main way to use lilb
 - **Switch models from the toolbar.** Change the chat model inline; if it isn't installed yet, you'll get a confirmation showing its size and RAM, then a progress bar. Changing the embedding model warns you that a re-index is needed.
 - **Stop** a streaming answer mid-flight (the send button becomes a stop button).
 - **Save** the conversation to your vault as a dated markdown file under `lilbee/`, or **Clear Chat** to start over.
-- **Inline progress.** Sync and indexing progress shows right in the chat, with a cancel option. If the server isn't reachable the input shows *Connecting…* and then *Offline*.
+- **Inline progress.** Sync and indexing progress shows right in the chat, with a cancel option. If the server isn't reachable the input shows _Connecting…_ and then _Offline_.
 
 ---
 
@@ -161,12 +161,12 @@ All of this runs as background jobs in the [Task Center](#the-task-center), so y
 
 lilbee uses four model **roles**, each independently chosen:
 
-| Role | What it's for | Default |
-|------|---------------|---------|
-| **Chat** | Writes the answers | Picked in the wizard |
+| Role          | What it's for                                                                    | Default              |
+| ------------- | -------------------------------------------------------------------------------- | -------------------- |
+| **Chat**      | Writes the answers                                                               | Picked in the wizard |
 | **Embedding** | Turns documents into something searchable; required for indexing and Search mode | Picked in the wizard |
-| **Vision** | Reads scanned PDFs and image-only pages when OCR isn't enough | Disabled |
-| **Reranker** | Reorders results for better relevance | Disabled |
+| **Vision**    | Reads scanned PDFs and image-only pages when OCR isn't enough                    | Disabled             |
+| **Reranker**  | Reorders results for better relevance                                            | Disabled             |
 
 Pick or switch any role from Settings → **Models** (each has a dropdown plus a **Browse more…** button), from the chat toolbar, or with the **Pick chat model** / **Pick embedding model** commands.
 
@@ -237,18 +237,18 @@ You can mix and match — for example a cloud vision model for OCR while chat an
 
 Settings → Community plugins → **lilbee**. A filter box at the top searches setting names. Settings are grouped top to bottom:
 
-| Section | Covers |
-|---------|--------|
-| **Connection** | Server mode (managed/external), re-run setup wizard. Managed: status, start/stop/restart, shared directory, adopt an existing data dir, disk usage, version & updates. External: server URL + test, session token, reset to managed. |
-| **Models** | Active chat, embedding, vision, and reranker models; refresh; open the catalog. |
-| **Search & Retrieval** | **Results count** (1–20, default 12), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). Strictness and the adaptive threshold are server settings: they apply to every client that talks to this server, and they carry a per-row reset. |
-| **Generation** *(advanced)* | System prompts for answering with and without documents, **Chat mode**, **Creativity** (temperature), **Top P**, **Top K**, **Repetition penalty**, **Seed**, and caps like max tokens, reasoning length, keep-alive, and GPU memory fraction. Blank means "use the model's default." |
-| **Retrieval (advanced)** | Candidate-pool multiplier, minimum relevance score, max sources per answer, max chunks per source, and the MMR relevance/diversity balance. |
-| **Ingest** | Chunk size and overlap (changing these invalidates the index), and OCR timeouts. |
-| **Worker pool** | Timeouts and idle behavior for the background model workers; whether to start them eagerly. |
-| **Crawling** | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, and URL exclude patterns. |
-| **Wiki (beta)** | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons. |
-| **Advanced** | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, and **Reset all** server-backed settings. |
+| Section                     | Covers                                                                                                                                                                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connection**              | Server mode (managed/external), re-run setup wizard. Managed: status, start/stop/restart, shared directory, adopt an existing data dir, disk usage, version & updates. External: server URL + test, session token, reset to managed.                                                    |
+| **Models**                  | Active chat, embedding, vision, and reranker models; refresh; open the catalog.                                                                                                                                                                                                         |
+| **Search & Retrieval**      | **Results count** (1–20, default 12), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). Search strictness and Adaptive threshold are server settings. They apply to every client of this server, and each row has a reset. |
+| **Generation** _(advanced)_ | System prompts for answering with and without documents, **Chat mode**, **Creativity** (temperature), **Top P**, **Top K**, **Repetition penalty**, **Seed**, and caps like max tokens, reasoning length, keep-alive, and GPU memory fraction. Blank means "use the model's default."   |
+| **Retrieval (advanced)**    | Candidate-pool multiplier, minimum relevance score, max sources per answer, max chunks per source, and the MMR relevance/diversity balance.                                                                                                                                             |
+| **Ingest**                  | Chunk size and overlap (changing these invalidates the index), and OCR timeouts.                                                                                                                                                                                                        |
+| **Worker pool**             | Timeouts and idle behavior for the background model workers; whether to start them eagerly.                                                                                                                                                                                             |
+| **Crawling**                | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, and URL exclude patterns.                                                                                                                                                                                        |
+| **Wiki (beta)**             | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons.                                                                                                                                                           |
+| **Advanced**                | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, and **Reset all** server-backed settings.                                                                          |
 
 Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, and Wiki are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
 
@@ -258,15 +258,15 @@ Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, an
 
 Text extraction is handled by [Kreuzberg](https://github.com/kreuzberg-dev/kreuzberg), code chunking by [tree-sitter](https://tree-sitter.github.io/tree-sitter/). The list below isn't exhaustive.
 
-| Format | Extensions |
-|--------|-----------|
-| PDF | `.pdf` (embedded text, with OCR fallback for scanned pages) |
-| Office | `.docx`, `.xlsx`, `.pptx` |
-| eBook | `.epub` |
-| Images | `.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.webp` (read with OCR or a vision model) |
-| Data | `.csv`, `.tsv`, `.xml`, `.json`, `.jsonl`, `.yaml`, `.yml` |
-| Text | `.md`, `.txt`, `.html`, `.rst` |
-| Code | `.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, and [150+ more](https://github.com/Goldziher/tree-sitter-language-pack) |
+| Format | Extensions                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------- |
+| PDF    | `.pdf` (embedded text, with OCR fallback for scanned pages)                                                         |
+| Office | `.docx`, `.xlsx`, `.pptx`                                                                                           |
+| eBook  | `.epub`                                                                                                             |
+| Images | `.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.webp` (read with OCR or a vision model)                                 |
+| Data   | `.csv`, `.tsv`, `.xml`, `.json`, `.jsonl`, `.yaml`, `.yml`                                                          |
+| Text   | `.md`, `.txt`, `.html`, `.rst`                                                                                      |
+| Code   | `.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, and [150+ more](https://github.com/Goldziher/tree-sitter-language-pack) |
 
 Scanned PDFs and image-only pages are read with OCR (Tesseract), or with a local or cloud **vision model** for higher quality on tables and layout. Set one under Settings → Models, or toggle OCR from the chat toolbar.
 

@@ -449,7 +449,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     (Setting.prototype as any).addToggle = function (cb: (toggle: any) => void) {
         // Mirrors real Obsidian ToggleComponent: setValue(v) programmatically flips the underlying
         // checkbox which triggers onChange. Required so tests exercise the echo-patch path the
-        // suppressToggleChanges flag guards against (bb-t6yg).
+        // suppressChangeEvents flag guards against (bb-t6yg).
         let ownOnChange: ToggleOnChange | null = null;
         const fakeToggle = {
             setValue: (v: boolean) => {
@@ -698,9 +698,9 @@ describe("LilbeeSettingTab", () => {
             const { sliderByName } = captureSettingCallbacks(() => tab.display());
 
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = true;
+            (tab as any).suppressChangeEvents = true;
             await sliderByName.get(MESSAGES.LABEL_MAX_DISTANCE)!(0.75);
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -765,6 +765,31 @@ describe("LilbeeSettingTab", () => {
 
             await toggleByName.get(MESSAGES.LABEL_ADAPTIVE_THRESHOLD)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ adaptive_threshold: true });
+        });
+
+        it("stays hidden while the server does not report adaptive_threshold", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const tab = makeTab(plugin);
+            captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            const row = (tab as any).serverConfigHideableEls.get("adaptive_threshold");
+            expect(row.style.display).toBe("none");
+        });
+
+        it("reveals the row showing the server's value once it reports adaptive_threshold", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ adaptive_threshold: true });
+            const tab = makeTab(plugin);
+            captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            const row = (tab as any).serverConfigHideableEls.get("adaptive_threshold");
+            expect(row.style.display).toBe("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
     });
 
@@ -3594,23 +3619,23 @@ describe("managed mode settings", () => {
             // Invoke the crawl_retry_on_rate_limit onChange without the flag — proves the guard is
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             // toggleOnChanges[6] is crawl_retry_on_rate_limit; [0]=auto-update, [1]=includeDevBuilds,
             // [2]=show_reasoning, [3]=chat_compaction, [4]=adaptive_threshold, [5]=worker_pool_eager_start.
             await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
-        it("suppressToggleChanges === true short-circuits the crawl-retry toggle onChange", async () => {
+        it("suppressChangeEvents === true short-circuits the crawl-retry toggle onChange", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = true;
+            (tab as any).suppressChangeEvents = true;
             await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(true);
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -4772,9 +4797,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = true;
+            (tab as any).suppressChangeEvents = true;
             await toggleByName.get(MESSAGES.LABEL_FLASH_ATTENTION)!(true);
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -6888,9 +6913,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = true;
+            (tab as any).suppressChangeEvents = true;
             await toggleByName.get(MESSAGES.LABEL_WORKER_POOL_EAGER_START)!(true);
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
     });
@@ -6926,9 +6951,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = true;
+            (tab as any).suppressChangeEvents = true;
             await toggleByName.get(MESSAGES.LABEL_SHOW_REASONING)!(true);
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
     });
@@ -6964,9 +6989,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            (tab as any).suppressToggleChanges = true;
+            (tab as any).suppressChangeEvents = true;
             await toggleByName.get(MESSAGES.LABEL_CHAT_COMPACTION)!(true);
-            (tab as any).suppressToggleChanges = false;
+            (tab as any).suppressChangeEvents = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
     });
@@ -7849,7 +7874,7 @@ describe("new server config fields", () => {
         const tab = makeTab(plugin);
         const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-        (tab as any).suppressToggleChanges = true;
+        (tab as any).suppressChangeEvents = true;
         await toggleByName.get(MESSAGES.LABEL_TITLE_SEARCH)!(true);
         expect(plugin.api.updateConfig).not.toHaveBeenCalled();
     });
