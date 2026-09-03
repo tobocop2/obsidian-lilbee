@@ -160,6 +160,11 @@ function summarizeSyncResult(done: SyncDone): string {
     return parts.join(", ");
 }
 
+/** Forward-slash form of a path with no trailing separator. */
+function posixPath(p: string): string {
+    return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
 /** Task-center label for a sync, distinguishing the recovery variants. */
 function syncTaskLabel(options?: SyncOptions): string {
     if (options?.forceRebuild) return MESSAGES.COMMAND_SYNC_REBUILD;
@@ -2117,10 +2122,9 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Read every file under each path (recursing directories) off disk as
-     *  upload payloads — for external mode, where the server can't read paths.
-     *  Name is the path under the picked entry so nested same-named files keep distinct source keys. */
+    /** Upload payloads for every file under each path, keyed by vault-relative path like collectVaultUploads. */
     private readUploadsFromDisk(paths: string[]): UploadPayload[] {
+        const vaultBase = this.getVaultBasePath();
         const out: UploadPayload[] = [];
         const walk = (p: string, relative: string): void => {
             if (node.statSync(p).isDirectory()) {
@@ -2133,26 +2137,17 @@ export default class LilbeePlugin extends Plugin {
                 });
             }
         };
-        for (const p of paths) walk(p, node.basename(p));
+        for (const p of paths) walk(p, this.uploadRootName(p, vaultBase));
         return out;
     }
 
-    /**
-     * Copy each external path into ``<vault>/lilbee/imports/`` and return the
-     * new absolute paths for indexing. Paths already under the vault root
-     * are returned unchanged. On copy failure the offending file is dropped
-     * with a user-visible Notice so the rest of the batch still proceeds.
-     *
-     * Directory sources are copied recursively with ``node.cpSync`` — the
-     * native file picker's "openDirectory" mode returns folder paths, and
-     * ``copyFileSync`` on a directory throws EISDIR. Without the stat-first
-     * branch every picked folder would fall into the catch and get silently
-     * dropped, regressing folder ingestion.
-     *
-     * All path joins go through ``node.path`` so Windows ``\\`` separators
-     * round-trip correctly — a naïve string ``startsWith(vaultBase + "/")``
-     * check would miss every file on Windows and mis-copy them into imports.
-     */
+    /** Vault-relative path of a picked entry; its own name when the entry sits outside the vault. */
+    private uploadRootName(p: string, vaultBase: string): string {
+        if (!this.isUnderVault(p, vaultBase)) return node.basename(p);
+        return posixPath(p).slice(posixPath(vaultBase).length + 1);
+    }
+
+    /** Absolute vault paths for each entry: copied into ``<vault>/lilbee/imports/`` unless already under the vault. */
     private copyExternalFilesToVault(paths: string[]): string[] {
         const vaultBase = this.getVaultBasePath();
         const importsDir = node.join(vaultBase, "lilbee", "imports");
@@ -2187,15 +2182,9 @@ export default class LilbeePlugin extends Plugin {
         return results;
     }
 
-    /**
-     * True if ``source`` sits under ``vaultBase``. Normalises separators so
-     * ``C:\\vault\\foo.pdf`` correctly matches a vault base of ``C:\\vault``
-     * regardless of which slash flavour either side uses.
-     */
+    /** True if ``source`` sits under ``vaultBase``, whichever separator either side uses. */
     private isUnderVault(source: string, vaultBase: string): boolean {
-        const norm = (p: string) => p.replace(/\\/g, "/");
-        const prefix = norm(vaultBase).replace(/\/+$/, "");
-        return norm(source).startsWith(`${prefix}/`);
+        return posixPath(source).startsWith(`${posixPath(vaultBase)}/`);
     }
 
     /** Append a ``-N`` suffix until ``<dir>/<name>`` doesn't exist on disk. */
@@ -2221,14 +2210,16 @@ export default class LilbeePlugin extends Plugin {
         const name = file.name || file.path || MESSAGES.LABEL_VAULT_ROOT;
 
         const isRetry = this.failedAddPaths.has(absolutePath);
-        if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
+        // A note is keyed by its vault path, so the check searches for that, not the basename.
+        const indexKey = file instanceof TFile && file.path ? file.path : name;
+        if (!isRetry && !(await this.confirmReindexIfNeeded(indexKey))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
         if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
             // A remote server can't read this machine's paths, so send the file
             // bytes straight from the vault instead of a server-side path. The
             // read runs before runAdd's guard, so surface a failure here too.
-            let uploads: { name: string; data: ArrayBuffer }[];
+            let uploads: UploadPayload[];
             try {
                 uploads = await this.collectVaultUploads(file);
             } catch (err) {
@@ -2242,8 +2233,7 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Read every file under *file* (recursing folders) as upload payloads.
-     *  Name is the vault-relative path so nested same-named notes keep distinct source keys. */
+    /** Upload payloads for every file under *file*, keyed by vault-relative path. */
     private async collectVaultUploads(file: TAbstractFile): Promise<UploadPayload[]> {
         const tfiles = file instanceof TFolder ? this.filesInFolder(file) : file instanceof TFile ? [file] : [];
         return Promise.all(tfiles.map(async (f) => ({ name: f.path, data: await this.app.vault.readBinary(f) })));
@@ -2260,7 +2250,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Ingest by uploading file content (external mode); reuses runAdd's stream loop. */
     private async runUpload(
-        files: { name: string; data: ArrayBuffer }[],
+        files: UploadPayload[],
         retryKeys: string[],
         retry?: () => void | Promise<void>,
     ): Promise<void> {
@@ -2675,10 +2665,7 @@ export default class LilbeePlugin extends Plugin {
             .filter((f) => f.path.startsWith(MANAGED_DOCS_PREFIX) && !this.wikiSync?.isWikiPath(f.path));
         const known = new Set<string>();
         try {
-            // Page through the documents endpoint so we count every known
-            // source, not just the first page. Match on basename: crawled
-            // sources keep a relative path (_web/.../index.md) while added
-            // files use a basename, so the basename is the common key.
+            // Sources are relative paths; the basename is the key shared with vault files.
             let offset = 0;
             const limit = 100;
             while (true) {
@@ -2899,11 +2886,7 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
-        // Re-entry guard: if a sync is already active or queued, this trigger
-        // only reports it. Without it, repeated clicks (sync hint, command
-        // palette, crawler-finished auto-trigger) stack up — and cancelling the
-        // active task just promotes the next queued sync, making cancel feel broken.
-        // An automatic trigger stays silent: the notice answers a click the user didn't make.
+        // One sync at a time; only a user trigger reports a pending one.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
             if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
             return;

@@ -2700,7 +2700,8 @@ describe("LilbeePlugin", () => {
 
             expect(runUploadSpy).toHaveBeenCalled();
             const uploads = runUploadSpy.mock.calls[0][0] as { name: string; data: ArrayBuffer }[];
-            expect(uploads[0].name).toBe("foo.py");
+            // The copy lands in the vault, so its upload key is the vault path.
+            expect(uploads[0].name).toBe("lilbee/imports/foo.py");
             expect(uploads[0].data.byteLength).toBeGreaterThan(0);
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
         });
@@ -2757,6 +2758,47 @@ describe("LilbeePlugin", () => {
             } finally {
                 statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
                 (node.readdirSync as ReturnType<typeof vi.fn>).mockReset();
+                readFileSync.mockReset();
+            }
+        });
+
+        it("readUploadsFromDisk keys a picked vault folder the same way collectVaultUploads does", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const { node } = await import("../src/binary-manager");
+            const statSync = node.statSync as ReturnType<typeof vi.fn>;
+            const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
+            const tree: Record<string, string[]> = { "/test/vault/notes/sub": ["a.md"] };
+            statSync.mockImplementation((p: string) => ({ isDirectory: () => p in tree, dev: 1, size: 1 }));
+            (node.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: string) => tree[p]);
+            readFileSync.mockReturnValue(Buffer.from("x"));
+            try {
+                const uploads = (plugin as any).readUploadsFromDisk(["/test/vault/notes/sub"]) as { name: string }[];
+                expect(uploads.map((u) => u.name)).toEqual(["notes/sub/a.md"]);
+            } finally {
+                statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
+                (node.readdirSync as ReturnType<typeof vi.fn>).mockReset();
+                readFileSync.mockReset();
+            }
+        });
+
+        it("readUploadsFromDisk keys a Windows vault path with forward slashes and no drive prefix", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            (plugin.app.vault.adapter.getBasePath as ReturnType<typeof vi.fn>).mockReturnValue(
+                "C:\\Users\\me\\vault\\",
+            );
+            const { node } = await import("../src/binary-manager");
+            const statSync = node.statSync as ReturnType<typeof vi.fn>;
+            const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
+            statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 1 }));
+            readFileSync.mockReturnValue(Buffer.from("x"));
+            try {
+                const uploads = (plugin as any).readUploadsFromDisk([
+                    "C:\\Users\\me\\vault\\notes\\a.md",
+                    "C:/Users/me/vault2/b.md",
+                ]) as { name: string }[];
+                expect(uploads.map((u) => u.name)).toEqual(["notes/a.md", "b.md"]);
+            } finally {
+                statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
                 readFileSync.mockReset();
             }
         });
