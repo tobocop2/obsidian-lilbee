@@ -20,7 +20,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_BROWSE_FULL_CATALOG).toBe("Browse full catalog");
             expect(MESSAGES.BUTTON_BROWSE_MORE).toBe("Browse more…");
             expect(MESSAGES.BUTTON_DOWNLOAD_CONTINUE).toBe("Download & continue");
-            expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Delete selected");
+            expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Remove selected");
             expect(MESSAGES.BUTTON_CRAWL).toBe("Crawl");
             expect(MESSAGES.BUTTON_START).toBe("Start");
             expect(MESSAGES.BUTTON_STOP).toBe("Stop");
@@ -233,8 +233,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_DELETED produces correct output", () => {
-            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: deleted 5 documents");
-            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: deleted 1 documents");
+            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: removed 5 documents");
+            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 documents");
         });
 
         it("NOTICE_SAVED produces correct output", () => {
@@ -268,8 +268,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_DELETED produces correct output", () => {
-            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: deleted 5 documents");
-            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: deleted 1 documents");
+            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: removed 5 documents");
+            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 documents");
         });
 
         it("NOTICE_SAVED produces correct output", () => {

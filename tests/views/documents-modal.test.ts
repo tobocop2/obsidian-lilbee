@@ -233,7 +233,7 @@ describe("DocumentsModal", () => {
         await tick();
 
         expect(plugin.api.removeDocuments).toHaveBeenCalledWith(["a.md"]);
-        expect(Notice.instances.some((n) => n.message.includes("deleted 1"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("removed 1"))).toBe(true);
     });
 
     it("confirms removal from the index and promises the files on disk survive", async () => {
