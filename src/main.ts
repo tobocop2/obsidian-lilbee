@@ -1493,7 +1493,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "toggle-task-center",
+            id: "tasks-toggle",
             name: MESSAGES.COMMAND_TOGGLE_TASKS,
             callback: () => this.toggleTaskView(),
         });
@@ -2458,13 +2458,19 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Opens the Task Center, reveals it when its sidebar is collapsed, and closes it otherwise. */
     async toggleTaskView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
-        if (existing.length > 0) {
-            for (const leaf of existing) leaf.detach();
+        if (existing.length === 0) {
+            await this.activateTaskView();
             return;
         }
-        await this.activateTaskView();
+        const sidebar = this.app.workspace.rightSplit;
+        if (existing[0].getRoot() === sidebar && sidebar.collapsed) {
+            void this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        for (const leaf of existing) leaf.detach();
     }
 
     refreshOpenWikiViews(): void {
