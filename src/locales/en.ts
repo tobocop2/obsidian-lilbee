@@ -1,5 +1,6 @@
 import {
     AGENT_CLIENT,
+    CUDA_MIN_CEILING,
     MODEL_TASK,
     NVIDIA_PROBE_STATUS,
     SERVER_VARIANT,
@@ -409,7 +410,7 @@ export const MESSAGES = {
         return `CUDA ${variant.slice(2, 4)}.${variant.slice(4)}`;
     },
     DESC_SERVER_BUILD: (build: string) => ` Running the ${build} build.`,
-    /** Why that build was chosen, so a machine on the wrong build shows its own reason. */
+    /** Why the GPU probe chose the build it did. */
     DESC_GPU_DETECTION: (detection: GpuDetection): string => {
         const { nvidia, amdGfxTargets } = detection;
         if (nvidia.status === NVIDIA_PROBE_STATUS.SKIPPED) return "lilbee ships one macOS build, so nothing is probed.";
@@ -417,7 +418,11 @@ export const MESSAGES = {
         if (nvidia.status === NVIDIA_PROBE_STATUS.MISSING) return `nvidia-smi did not run: ${nvidia.error}. ${amd}`;
         if (nvidia.status === NVIDIA_PROBE_STATUS.UNREADABLE)
             return `nvidia-smi ran but reported no CUDA version. ${amd}`;
-        return `The NVIDIA driver reports CUDA ${cudaVersionLabel(nvidia.cudaCeiling)}. ${amd}`;
+        const floor =
+            nvidia.cudaCeiling < CUDA_MIN_CEILING
+                ? ` lilbee ships CUDA builds for ${cudaVersionLabel(CUDA_MIN_CEILING)} and newer, so the default build runs.`
+                : "";
+        return `The NVIDIA driver reports CUDA ${cudaVersionLabel(nvidia.cudaCeiling)}.${floor} ${amd}`;
     },
     DESC_GPU_DETECTION_NONE: "(none recorded)",
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>

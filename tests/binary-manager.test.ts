@@ -10,7 +10,6 @@ import {
     listReleases,
     isDevBuild,
     checkForUpdate,
-    detectCudaTag,
     detectAmdGfxTargets,
     detectHostGpu,
     BinaryManager,
@@ -174,30 +173,30 @@ describe("getPlatformAssetName", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  detectCudaTag                                                     */
+/*  detectHostGpu: the CUDA build                                     */
 /* ------------------------------------------------------------------ */
 
-describe("detectCudaTag", () => {
+describe("detectHostGpu cuda", () => {
     let restore: () => void;
     afterEach(() => restore?.());
 
     it("returns null on macOS without probing for a GPU", async () => {
         restore = stubPlatform("darwin", "arm64");
         const exec = vi.spyOn(node, "execFile");
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
         expect(exec).not.toHaveBeenCalled();
     });
 
     it("returns null when nvidia-smi is absent", async () => {
         restore = stubPlatform("linux", "x64");
         stubNoNvidia();
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
     });
 
     it("returns null when the CUDA version can't be parsed", async () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "no version line here", stderr: "" });
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
     });
 
     it.each([
@@ -208,13 +207,13 @@ describe("detectCudaTag", () => {
     ])("maps driver line %s to %s", async (line, tag) => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: `header | ${line} | rest`, stderr: "" });
-        expect(await detectCudaTag()).toBe(tag);
+        expect((await detectHostGpu()).cuda).toBe(tag);
     });
 
     it("returns null when the driver is too old for any shipped CUDA build", async () => {
         restore = stubPlatform("win32", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 11.8", stderr: "" });
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
     });
 });
 
@@ -232,6 +231,7 @@ describe("nvidia-smi lookup on Windows", () => {
     // Built with node.join so the expectation matches the separator of whichever OS runs the suite.
     const SYSTEM32 = node.join("C:\\Windows", "System32", "nvidia-smi.exe");
     const NVSMI = node.join("C:\\Program Files", "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe");
+    const EXEC_OPTS = expect.objectContaining({ timeout: expect.any(Number) });
 
     /** Fail every command but *found*, which answers with a driver line. */
     function stubOnly(found: string) {
@@ -246,9 +246,9 @@ describe("nvidia-smi lookup on Windows", () => {
         vi.stubEnv("SystemRoot", "C:\\Windows");
         const exec = stubOnly(SYSTEM32);
 
-        expect(await detectCudaTag()).toBe("cu124");
-        expect(exec).toHaveBeenCalledWith("nvidia-smi", []);
-        expect(exec).toHaveBeenCalledWith(SYSTEM32, []);
+        expect((await detectHostGpu()).cuda).toBe("cu124");
+        expect(exec).toHaveBeenCalledWith("nvidia-smi", [], EXEC_OPTS);
+        expect(exec).toHaveBeenCalledWith(SYSTEM32, [], EXEC_OPTS);
     });
 
     it("falls back to the older NVSMI directory", async () => {
@@ -257,7 +257,7 @@ describe("nvidia-smi lookup on Windows", () => {
         vi.stubEnv("ProgramFiles", "C:\\Program Files");
         stubOnly(NVSMI);
 
-        expect(await detectCudaTag()).toBe("cu124");
+        expect((await detectHostGpu()).cuda).toBe("cu124");
     });
 
     it("uses the default Windows locations when the environment names none", async () => {
@@ -266,8 +266,8 @@ describe("nvidia-smi lookup on Windows", () => {
         vi.stubEnv("ProgramFiles", undefined);
         const exec = stubOnly(SYSTEM32);
 
-        expect(await detectCudaTag()).toBe("cu124");
-        expect(exec).toHaveBeenCalledWith(SYSTEM32, []);
+        expect((await detectHostGpu()).cuda).toBe("cu124");
+        expect(exec).toHaveBeenCalledWith(SYSTEM32, [], EXEC_OPTS);
     });
 
     it("reports the PATH error once every location has failed", async () => {
@@ -283,7 +283,7 @@ describe("nvidia-smi lookup on Windows", () => {
         restore = stubPlatform("linux", "x64");
         const exec = stubOnly("never-matches");
 
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
         expect(exec).toHaveBeenCalledTimes(1);
     });
 });
@@ -317,6 +317,29 @@ describe("detectHostGpu", () => {
         vi.spyOn(node, "execFile").mockRejectedValue("EACCES");
         const { detection } = await detectHostGpu();
         expect(detection.nvidia).toEqual({ status: "missing", error: "EACCES" });
+    });
+
+    it("folds a multi-line driver error onto one line", async () => {
+        restore = stubPlatform("linux", "x64");
+        const mismatch = new Error(
+            "Command failed: nvidia-smi\nFailed to initialize NVML: Driver/library version mismatch\n",
+        );
+        vi.spyOn(node, "execFile").mockRejectedValue(mismatch);
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({
+            status: "missing",
+            error: "Command failed: nvidia-smi Failed to initialize NVML: Driver/library version mismatch",
+        });
+    });
+
+    it("records a timeout when nvidia-smi hangs past the deadline", async () => {
+        restore = stubPlatform("linux", "x64");
+        const timedOut = Object.assign(new Error("Command failed: nvidia-smi"), { killed: true, signal: "SIGTERM" });
+        const exec = vi.spyOn(node, "execFile").mockRejectedValue(timedOut);
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "nvidia-smi did not answer within 10 s" });
+        expect(exec).toHaveBeenCalledWith("nvidia-smi", [], expect.objectContaining({ timeout: 10_000 }));
     });
 
     it("records that nvidia-smi ran but named no CUDA version", async () => {

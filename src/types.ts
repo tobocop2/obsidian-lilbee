@@ -1330,6 +1330,9 @@ export const SERVER_VARIANT = {
     ROCM: "rocm",
 } as const satisfies Record<string, ServerVariant>;
 
+/** Lowest CUDA driver ceiling (major*100 + minor) that any lilbee CUDA build supports. */
+export const CUDA_MIN_CEILING = 1201;
+
 /** How the `nvidia-smi` probe ended. */
 export type NvidiaProbeStatus = "skipped" | "missing" | "unreadable" | "detected";
 export const NVIDIA_PROBE_STATUS = {

@@ -1,5 +1,5 @@
 import { requestUrl } from "obsidian";
-import { execFile, spawn } from "child_process";
+import { execFile, spawn, type ExecFileException } from "child_process";
 import { get as httpsGet } from "https";
 import type { ClientRequest, IncomingMessage } from "http";
 import {
@@ -26,6 +26,7 @@ import {
     ARCH,
     NVIDIA_PROBE_STATUS,
     PLATFORM,
+    CUDA_MIN_CEILING,
     SERVER_VARIANT,
     type CudaTag,
     type GpuDetection,
@@ -89,6 +90,10 @@ const RATE_LIMIT_STATUSES = new Set([403, 429]);
 
 const GITHUB_RATE_LIMITED = "GitHub's rate limit was reached; release checks reset within the hour.";
 
+/** `nvidia-smi` hangs on a wedged GPU; past this the probe records a timeout instead of waiting. */
+const NVIDIA_SMI_TIMEOUT_MS = 10_000;
+const NVIDIA_SMI_TIMED_OUT = `nvidia-smi did not answer within ${NVIDIA_SMI_TIMEOUT_MS / 1000} s`;
+
 /** Windows installers put `nvidia-smi` here but leave it off PATH: DCH drivers use System32,
  *  older layouts use the NVSMI directory. */
 function windowsNvidiaSmiPaths(): string[] {
@@ -107,15 +112,22 @@ function nvidiaSmiCandidates(): string[] {
     return candidates;
 }
 
+/** One line for the journal: execFile's message carries the command's stderr on later lines. */
+function probeFailureText(e: unknown): string {
+    if (e instanceof Error && (e as ExecFileException).killed) return NVIDIA_SMI_TIMED_OUT;
+    const text = e instanceof Error ? e.message : String(e);
+    return text.replace(/\s+/g, " ").trim();
+}
+
 /** Run `nvidia-smi` and return its stdout, or the error the PATH lookup failed with. */
 async function runNvidiaSmi(): Promise<{ stdout: string; error: null } | { stdout: null; error: string }> {
     let firstError = "";
     for (const command of nvidiaSmiCandidates()) {
         try {
-            const { stdout } = await node.execFile(command, []);
+            const { stdout } = await node.execFile(command, [], { timeout: NVIDIA_SMI_TIMEOUT_MS });
             return { stdout, error: null };
         } catch (e) {
-            if (!firstError) firstError = e instanceof Error ? e.message : String(e);
+            if (!firstError) firstError = probeFailureText(e);
         }
     }
     return { stdout: null, error: firstError };
@@ -132,7 +144,7 @@ function parseCudaCeiling(stdout: string): number | null {
 function pickCudaTag(ceiling: number): CudaTag | null {
     if (ceiling >= 1205) return SERVER_VARIANT.CU125;
     if (ceiling >= 1204) return SERVER_VARIANT.CU124;
-    if (ceiling >= 1201) return SERVER_VARIANT.CU121;
+    if (ceiling >= CUDA_MIN_CEILING) return SERVER_VARIANT.CU121;
     return null;
 }
 
@@ -149,14 +161,6 @@ async function probeNvidia(): Promise<NvidiaProbe> {
 /** The CUDA build a probe result calls for, or null when it calls for none. */
 function cudaTagFor(probe: NvidiaProbe): CudaTag | null {
     return probe.status === NVIDIA_PROBE_STATUS.DETECTED ? pickCudaTag(probe.cudaCeiling) : null;
-}
-
-/**
- * Detect the best CUDA build for this machine, or null to use the default build.
- * Returns null on macOS, when no NVIDIA driver is present, or on any detection failure.
- */
-export async function detectCudaTag(): Promise<CudaTag | null> {
-    return cudaTagFor(await probeNvidia());
 }
 
 /** The amdgpu compute device. Without it ROCm cannot run, whatever else sysfs says. */
@@ -221,7 +225,7 @@ interface HostGpu {
     detection: GpuDetection;
 }
 
-/** Probe both vendors and keep the reasoning, so a build choice can be explained after the fact. */
+/** Probe both vendors and keep the reasoning. */
 export async function detectHostGpu(): Promise<HostGpu> {
     const nvidia = await probeNvidia();
     return {

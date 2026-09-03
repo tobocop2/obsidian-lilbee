@@ -984,7 +984,7 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass(null);
     }
 
-    /** Journal which build the GPU probe chose and why, so a wrong choice can be explained later. */
+    /** Journal which build the GPU probe chose and why. */
     private journalGpuDetection(context: string, release: ReleaseInfo): void {
         this.journal.lifecycle(
             `${context}: ${MESSAGES.LABEL_SERVER_BUILD(release.variant)} build. ` +

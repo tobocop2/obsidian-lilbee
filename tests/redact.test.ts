@@ -71,4 +71,23 @@ describe("redactConfigKeys", () => {
         expect(out.hfToken).toBe("[redacted]");
         expect(out.lilbeeVariant).toBe("cu124");
     });
+
+    it("blanks any key that names a credential, so a new one cannot ship unredacted", () => {
+        const out = redactConfigKeys({
+            openaiApiKey: "sk-1",
+            proxy_password: "pw",
+            clientSecret: "cs",
+            manualToken: "tok",
+            topK: 12,
+            tokenizer: "bert",
+        });
+        expect(out).toEqual({
+            openaiApiKey: "[redacted]",
+            proxy_password: "[redacted]",
+            clientSecret: "[redacted]",
+            manualToken: "[redacted]",
+            topK: 12,
+            tokenizer: "bert",
+        });
+    });
 });

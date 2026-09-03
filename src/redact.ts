@@ -17,17 +17,14 @@ export function redactSecrets(text: string): string {
     return out;
 }
 
-const SECRET_SETTING_KEYS = ["manualToken", "hfToken"] as const;
+/** A top-level key that names a credential (manualToken, hfToken, and any later apiKey or secret). */
+const SECRET_KEY_PATTERN = /(token|api[_-]?key|apikey|secret|password)$/i;
 
-/**
- * Returns a copy of a settings or config object with credential fields blanked.
- * These keys carry no word boundary before "token", so redactSecrets does not
- * reach them; JSON files holding them must go through this instead.
- */
+/** Returns a copy of a settings or config object with credential fields blanked by key name. */
 export function redactConfigKeys(config: Record<string, unknown>): Record<string, unknown> {
     const copy: Record<string, unknown> = { ...config };
-    for (const key of SECRET_SETTING_KEYS) {
-        if (typeof copy[key] === "string" && copy[key].length > 0) {
+    for (const [key, value] of Object.entries(copy)) {
+        if (SECRET_KEY_PATTERN.test(key) && typeof value === "string" && value.length > 0) {
             copy[key] = REDACTED;
         }
     }

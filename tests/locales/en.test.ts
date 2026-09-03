@@ -469,6 +469,13 @@ describe("types", () => {
             );
         });
 
+        it("names the floor when the driver is too old for any CUDA build", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1108 } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "The NVIDIA driver reports CUDA 11.8. lilbee ships CUDA builds for 12.1 and newer, so the default build runs. No AMD compute device.",
+            );
+        });
+
         it("names every AMD target the host reports", () => {
             const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "ENOENT" } as const;
             expect(MESSAGES.DESC_GPU_DETECTION(detection(probe, ["gfx1100", "gfx906"]))).toBe(
