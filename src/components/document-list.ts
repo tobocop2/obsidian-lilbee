@@ -22,6 +22,8 @@ export class DocumentList {
     private totalCount = 0;
     private more = true;
     private fetching = false;
+    /** Bumped by reset() so a page that lands for an earlier query is dropped. */
+    private generation = 0;
     private selectedNames = new Set<string>();
 
     constructor(containerEl: HTMLElement, fetchPage: DocumentPageFetcher, options: DocumentListOptions = {}) {
@@ -54,9 +56,11 @@ export class DocumentList {
 
     /** Drops the rendered rows and starts again from the first page. */
     reset(): void {
+        this.generation += 1;
         this.offset = 0;
         this.totalCount = 0;
         this.more = true;
+        this.fetching = false;
         this.selectedNames.clear();
         this.containerEl.empty();
     }
@@ -65,8 +69,10 @@ export class DocumentList {
     async loadMore(): Promise<boolean> {
         if (this.fetching || !this.more) return true;
         this.fetching = true;
+        const generation = this.generation;
         try {
             const response = await this.fetchPage(DOCUMENT_PAGE_SIZE, this.offset);
+            if (generation !== this.generation) return true;
             this.totalCount = response.total;
             this.offset += response.documents.length;
             this.more = response.has_more;
@@ -75,10 +81,11 @@ export class DocumentList {
             }
             return true;
         } catch {
+            if (generation !== this.generation) return true;
             new Notice(MESSAGES.ERROR_LOAD_DOCUMENTS);
             return false;
         } finally {
-            this.fetching = false;
+            if (generation === this.generation) this.fetching = false;
         }
     }
 

@@ -148,6 +148,47 @@ describe("DocumentList", () => {
         await first;
     });
 
+    it("drops a page that lands after a reset and fetches the new query", async () => {
+        const container = new MockElement();
+        let release: (value: DocumentsResponse) => void = () => {};
+        const pending = new Promise<DocumentsResponse>((resolve) => {
+            release = resolve;
+        });
+        const fetchPage = vi
+            .fn()
+            .mockReturnValueOnce(pending)
+            .mockResolvedValue(makeResponse([makeDoc({ filename: "new.md" })]));
+        const list = new DocumentList(container as unknown as HTMLElement, fetchPage);
+
+        const stale = list.loadMore();
+        list.reset();
+        await list.loadMore();
+        release(makeResponse([makeDoc({ filename: "old.md" })], 5, true));
+        await stale;
+
+        expect(fetchPage).toHaveBeenCalledTimes(2);
+        expect(container.findAll("lilbee-documents-row-name").map((el) => el.textContent)).toEqual(["new.md"]);
+        expect(list.loaded).toBe(1);
+        expect(list.total).toBe(1);
+    });
+
+    it("stays silent when a fetch that a reset abandoned rejects", async () => {
+        const container = new MockElement();
+        let fail: (reason: Error) => void = () => {};
+        const pending = new Promise<DocumentsResponse>((_resolve, reject) => {
+            fail = reject;
+        });
+        const fetchPage = vi.fn().mockReturnValueOnce(pending);
+        const list = new DocumentList(container as unknown as HTMLElement, fetchPage);
+
+        const stale = list.loadMore();
+        list.reset();
+        fail(new Error("boom"));
+
+        expect(await stale).toBe(true);
+        expect(Notice.instances).toHaveLength(0);
+    });
+
     it("shows a notice and reports failure when the fetch rejects", async () => {
         const container = new MockElement();
         const fetchPage = vi.fn().mockRejectedValue(new Error("network"));

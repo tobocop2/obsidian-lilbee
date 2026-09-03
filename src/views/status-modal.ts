@@ -31,7 +31,7 @@ export class StatusModal extends Modal {
                 return;
             }
             const status = statusResult.value;
-            await this.renderDocuments(contentEl, status);
+            this.renderDocuments(contentEl, status);
             await this.renderModels(contentEl, status);
             this.renderWiki(contentEl, status);
         } catch {
@@ -40,7 +40,8 @@ export class StatusModal extends Modal {
         }
     }
 
-    private async renderDocuments(container: HTMLElement, status: StatusResponse): Promise<void> {
+    /** The first document page loads in the background: a slow documents call must not delay the sections below. */
+    private renderDocuments(container: HTMLElement, status: StatusResponse): void {
         const section = container.createEl("details", { attr: { open: "" } });
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_DOCUMENTS });
 
@@ -59,9 +60,10 @@ export class StatusModal extends Modal {
             text: MESSAGES.BUTTON_LOAD_MORE,
             cls: "lilbee-status-load-more",
         });
+        button.hide();
         button.addEventListener("click", () => void loadDocumentPage(list, button, summary));
 
-        await loadDocumentPage(list, button, summary);
+        void loadDocumentPage(list, button, summary);
     }
 
     private async renderModels(container: HTMLElement, status: StatusResponse): Promise<void> {
@@ -152,9 +154,7 @@ export class StatusModal extends Modal {
 }
 
 async function loadDocumentPage(list: DocumentList, button: HTMLButtonElement, summary: HTMLElement): Promise<void> {
-    button.disabled = true;
     const loaded = await list.loadMore();
-    button.disabled = false;
     summary.setText(documentSummaryText(list, loaded));
     if (list.hasMore) button.show();
     else button.hide();
@@ -162,7 +162,7 @@ async function loadDocumentPage(list: DocumentList, button: HTMLButtonElement, s
 
 function documentSummaryText(list: DocumentList, loaded: boolean): string {
     if (!loaded) return MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED;
-    if (list.total === 0) return MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY;
+    if (list.loaded === 0) return MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY;
     if (list.hasMore) return MESSAGES.LABEL_STATUS_DOCUMENTS_SHOWING(list.loaded, list.total);
     return MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(list.total);
 }

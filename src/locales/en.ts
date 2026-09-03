@@ -787,7 +787,7 @@ export const MESSAGES = {
     LABEL_STATUS_DOCUMENTS_EMPTY: "The index has no documents.",
     LABEL_STATUS_DOCUMENTS_SHOWING: (shown: number, total: number): string => `Showing ${shown} of ${total}.`,
     LABEL_STATUS_DOCUMENTS_COMPLETE: (total: number): string => `Showing all ${total}.`,
-    LABEL_STATUS_DOCUMENTS_FAILED: "Could not load the document list. Select load more to try again.",
+    LABEL_STATUS_DOCUMENTS_FAILED: 'Could not load the document list. Select "Load more" to try again.',
     LABEL_STATUS_CHAT_MODEL: "Chat model",
     LABEL_STATUS_OCR: "OCR",
     STATUS_VALUE_OCR_AUTO: "Auto",

@@ -332,7 +332,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(45)).toBe("Showing all 45.");
             expect(MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY).toBe("The index has no documents.");
             expect(MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED).toBe(
-                "Could not load the document list. Select load more to try again.",
+                'Could not load the document list. Select "Load more" to try again.',
             );
         });
 

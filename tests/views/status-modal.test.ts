@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { ok, err } from "../../src/result";
 import { StatusModal } from "../../src/views/status-modal";
+import { MESSAGES } from "../../src/locales/en";
 import { MockElement } from "../__mocks__/obsidian";
 import type LilbeePlugin from "../../src/main";
 import type { DocumentEntry, DocumentsResponse, StatusResponse } from "../../src/types";
@@ -376,7 +377,7 @@ describe("StatusModal document list", () => {
         modal.open();
         const content = (modal as any).contentEl as MockElement;
         await vi.waitFor(() => {
-            expect(content.find("lilbee-status-documents-summary")).toBeTruthy();
+            expect(content.find("lilbee-status-documents-summary")?.textContent).toBeTruthy();
         });
         return content;
     }
@@ -445,7 +446,7 @@ describe("StatusModal document list", () => {
         const content = await openWithDocuments(plugin);
 
         expect(content.find("lilbee-status-documents-summary")!.textContent).toBe(
-            "Could not load the document list. Select load more to try again.",
+            MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED,
         );
         expect(content.find("lilbee-status-load-more")!.style.display).not.toBe("none");
         expect(Notice.instances.some((n: any) => n.message.includes("failed to load documents"))).toBe(true);
