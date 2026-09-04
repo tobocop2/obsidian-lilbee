@@ -4291,6 +4291,9 @@ button.lilbee-model-chip-select:focus-visible {
     margin: 0;
     font-size: 1.25em;
 }
+.lilbee-placement-header .lilbee-panel-close {
+    margin-left: auto;
+}
 .lilbee-placement-state {
     font-size: 0.72em;
     text-transform: uppercase;

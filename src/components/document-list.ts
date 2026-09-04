@@ -114,9 +114,15 @@ export class DocumentList {
 
         const nameEl = row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
         nameEl.setAttribute("title", doc.filename);
-        if (this.options.onOpen) {
+        const { onOpen } = this.options;
+        if (onOpen) {
             nameEl.addClass("lilbee-documents-row-link");
-            nameEl.addEventListener("click", () => this.options.onOpen?.(doc));
+            nameEl.setAttribute("role", "link");
+            nameEl.setAttribute("tabindex", "0");
+            nameEl.addEventListener("click", () => onOpen(doc));
+            nameEl.addEventListener("keydown", (event: KeyboardEvent) => {
+                if (event.key === "Enter") onOpen(doc);
+            });
         }
         row.createDiv({
             cls: "lilbee-documents-row-chunks",

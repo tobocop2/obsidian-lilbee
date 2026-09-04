@@ -39,9 +39,10 @@ export class MemoriesView extends ItemView {
 
         const header = contentEl.createDiv({ cls: "lilbee-memories-header" });
         header.createEl("h2", { text: MESSAGES.LABEL_MEMORIES_TITLE });
-        const addBtn = header.createEl("button", { text: MESSAGES.BUTTON_ADD_MEMORY, cls: "lilbee-memories-add" });
+        const actions = header.createDiv({ cls: "lilbee-toolbar-group" });
+        const addBtn = actions.createEl("button", { text: MESSAGES.BUTTON_ADD_MEMORY, cls: "lilbee-memories-add" });
         addBtn.addEventListener("click", () => new RememberModal(this.app, this.plugin).open());
-        addCloseButton(header, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_MEMORIES_VIEW));
+        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_MEMORIES_VIEW));
 
         const searchEl = contentEl.createEl("input", { cls: "lilbee-memories-search" });
         searchEl.type = "text";

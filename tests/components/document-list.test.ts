@@ -255,8 +255,13 @@ describe("DocumentList", () => {
             { onOpen: (doc) => opened.push(doc.filename), onPage: (loaded) => pages.push(loaded) },
         );
         await list.loadMore();
-        container.find("lilbee-documents-row-link")!.trigger("click");
-        expect(opened).toEqual(["a.md"]);
+        const link = container.find("lilbee-documents-row-link")!;
+        link.trigger("click");
+        link.trigger("keydown", { key: "Enter" });
+        link.trigger("keydown", { key: "Space" });
+        expect(opened).toEqual(["a.md", "a.md"]);
+        expect(link.attributes["role"]).toBe("link");
+        expect(link.attributes["tabindex"]).toBe("0");
         expect(pages).toEqual([true]);
     });
 });

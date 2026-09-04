@@ -68,10 +68,10 @@ export class WikiView extends ItemView {
         const lintBtn = actions.createEl("button", { cls: "lilbee-tasks-clear" });
         setIcon(lintBtn, "check-circle");
         lintBtn.setAttribute("aria-label", MESSAGES.LABEL_WIKI_RUN_LINT);
-        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_WIKI_VIEW));
         lintBtn.addEventListener("click", () => {
             void this.plugin.runWikiLint();
         });
+        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_WIKI_VIEW));
 
         // Filter
         this.filterInput = contentEl.createEl("input", {

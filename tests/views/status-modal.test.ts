@@ -471,6 +471,7 @@ describe("StatusModal document list", () => {
         asMock(app.workspace.getLeaf).mockReturnValue({ openFile });
 
         const modal = new StatusModal(app, plugin);
+        const closeSpy = vi.spyOn(modal, "close");
         modal.open();
         const content = (modal as any).contentEl as MockElement;
         await vi.waitFor(() => {
@@ -479,6 +480,7 @@ describe("StatusModal document list", () => {
         content.find("lilbee-documents-row-link")!.trigger("click");
 
         expect(openFile).toHaveBeenCalledWith(file);
+        expect(closeSpy).toHaveBeenCalledTimes(1);
     });
 
     it("says when a document is not in this vault", async () => {

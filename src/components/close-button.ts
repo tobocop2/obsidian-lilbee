@@ -1,6 +1,6 @@
 import { setIcon, type WorkspaceLeaf } from "obsidian";
 
-/** Icon button that closes a sidebar view. Sidebar leaves hide the view header, so the control sits in the panel's own toolbar. */
+/** Close control for a sidebar view; sidebar leaves hide the view header that would otherwise carry it. */
 export function addCloseButton(container: HTMLElement, leaf: WorkspaceLeaf, label: string): HTMLElement {
     const button = container.createEl("button", { cls: "lilbee-panel-close", attr: { "aria-label": label } });
     setIcon(button, "x");

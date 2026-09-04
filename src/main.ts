@@ -138,9 +138,6 @@ const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 const UPLOAD_BATCH_MAX_FILES = 90;
 const UPLOAD_BATCH_MAX_BYTES = 8 * BYTES_PER_MB;
 
-// Vault-relative folder where managed mode stores lilbee's documents
-// (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
-
 const basename = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
 
 function formatSetupDetail(downloaded: number, total: number | null): string {
@@ -2652,7 +2649,7 @@ export default class LilbeePlugin extends Plugin {
             if (this.wikiSync?.isWikiPath(file.path)) return;
             // Skip paths the server itself writes into the vault — they're
             // already known sources, not work to sync.
-            if (file.path.startsWith("lilbee/")) return;
+            if (file.path.startsWith(MANAGED_DOCS_PREFIX)) return;
             this.schedulePendingSyncHint();
         };
         const vault = this.app.vault;
