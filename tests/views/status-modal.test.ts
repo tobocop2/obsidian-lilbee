@@ -20,6 +20,7 @@ function makePlugin(overrides: Partial<{ activeModel: string }> = {}): LilbeePlu
 function makeStatus(overrides: Partial<StatusResponse> = {}): StatusResponse {
     return {
         config: { chat_model: "mistral:7b", embedding_model: "nomic-embed-text" },
+        document_count: 2,
         sources: [
             { filename: "a.md", chunk_count: 3 },
             { filename: "b.md", chunk_count: 2 },
@@ -54,6 +55,26 @@ describe("StatusModal", () => {
         const docTable = tables[0];
         const rows = docTable.findAll("lilbee-status-label");
         expect(rows.length).toBe(2);
+    });
+
+    it("shows document_count in the Documents row even when sources is empty", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
+            ok(makeStatus({ document_count: 7, sources: [] })),
+        );
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const docTable = content.findAll("lilbee-status-table")[0];
+        const values = docTable.findAll("lilbee-status-value").map((v: MockElement) => v.textContent);
+        expect(values[0]).toBe("7");
     });
 
     it("renders model architecture details when available", async () => {

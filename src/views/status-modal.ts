@@ -44,7 +44,7 @@ export class StatusModal extends Modal {
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_DOCUMENTS });
 
         const table = section.createEl("table", { cls: "lilbee-status-table" });
-        this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.sources.length));
+        this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.document_count));
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
     }
 

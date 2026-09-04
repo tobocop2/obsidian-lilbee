@@ -670,11 +670,11 @@ export class LilbeeClient {
         return (await res.json()) as DocumentsResponse;
     }
 
-    async removeDocuments(names: string[], deleteFiles = false): Promise<{ removed: number; not_found: string[] }> {
+    async removeDocuments(names: string[]): Promise<{ removed: number; not_found: string[] }> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents/remove`, {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ names, delete_files: deleteFiles }),
+            body: JSON.stringify({ names }),
         });
         return (await res.json()) as { removed: number; not_found: string[] };
     }

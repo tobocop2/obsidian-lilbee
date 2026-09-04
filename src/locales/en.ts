@@ -46,7 +46,7 @@ export const MESSAGES = {
     BUTTON_BROWSE_FULL_CATALOG: "Browse full catalog",
     BUTTON_BROWSE_MORE: "Browse more…",
     BUTTON_DOWNLOAD_CONTINUE: "Download & continue",
-    BUTTON_DELETE_SELECTED: "Delete selected",
+    BUTTON_DELETE_SELECTED: "Remove selected",
     BUTTON_CRAWL: "Crawl",
     BUTTON_START: "Start",
     BUTTON_STOP: "Stop",
@@ -744,7 +744,7 @@ export const MESSAGES = {
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
-    NOTICE_DELETED: (count: number) => `lilbee: deleted ${count} documents`,
+    NOTICE_DELETED: (count: number) => `lilbee: removed ${count} documents`,
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
@@ -759,7 +759,7 @@ export const MESSAGES = {
         "This operation is already in progress on the server. Canceling will hide it from the task center, but it may still complete. Continue?",
     NOTICE_CONFIRM_REMOVE: (model: string) => `Remove ${model}? This deletes the model file from disk.`,
     NOTICE_CONFIRM_DELETE_DOCS: (count: number) =>
-        `Delete ${count} document(s) from index and disk? This cannot be undone.`,
+        `Remove ${count} document(s) from the index? The files on disk stay where they are.`,
 
     COMMAND_SEARCH: "Search knowledge base",
     COMMAND_CHAT: "Open chat",

@@ -320,7 +320,8 @@ export class ChatView extends ItemView {
 
         // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+        // With the toggle hidden, any narrowed scope is a scope the user cannot see or undo.
+        if (!wikiEnabled && this.plugin.settings.searchChunkType !== SEARCH_CHUNK_TYPE.ALL) {
             this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (wikiEnabled) {
