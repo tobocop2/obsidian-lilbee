@@ -118,6 +118,7 @@ import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
+import { UpdateAvailableModal } from "./views/update-available-modal";
 import { StatusModal } from "./views/status-modal";
 import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
@@ -290,6 +291,8 @@ function downloadStatusBar(progress: DownloadProgress): string {
 
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
+    private settingTab: LilbeeSettingTab | null = null;
+    private updateRibbonIconEl: HTMLElement | null = null;
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
@@ -391,7 +394,8 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
         safeRegisterView(VIEW_TYPE_PLACEMENT, (leaf) => new PlacementView(leaf, this));
-        this.addSettingTab(new LilbeeSettingTab(this.app, this));
+        this.settingTab = new LilbeeSettingTab(this.app, this);
+        this.addSettingTab(this.settingTab);
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
         // Add/sync/crawl tasks completing is when the server's set of known
@@ -1021,6 +1025,7 @@ export default class LilbeePlugin extends Plugin {
         const config = registry.loadConfig();
         if (!config.serverAutoUpdate) {
             this.journal.lifecycle("automatic server update skipped: turned off in settings");
+            await this.remindServerUpdate(config.serverUpdateReminder);
             return;
         }
         if (config.lastUpdateCheckPluginVersion === this.manifest.version) return;
@@ -1118,6 +1123,7 @@ export default class LilbeePlugin extends Plugin {
         this.setSharedLilbeeVariant(release.variant, release.detection);
         this.journalGpuDetection("gpu detection at install", release);
         this.journal.lifecycle(`server binary updated to ${release.tag}`);
+        this.clearUpdateIndicator();
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -1697,6 +1703,62 @@ export default class LilbeePlugin extends Plugin {
         if (config.serverAutoUpdate === enabled) return;
         reg.saveConfig({ ...config, serverAutoUpdate: enabled });
         this.journal.lifecycle(enabled ? "automatic server updates turned on" : "automatic server updates turned off");
+    }
+
+    isServerUpdateReminderEnabled(): boolean {
+        return this.vaultRegistry?.loadConfig().serverUpdateReminder ?? true;
+    }
+
+    setServerUpdateReminder(enabled: boolean): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        const config = reg.loadConfig();
+        if (config.serverUpdateReminder === enabled) return;
+        reg.saveConfig({ ...config, serverUpdateReminder: enabled });
+        this.journal.lifecycle(enabled ? "server update reminder turned on" : "server update reminder turned off");
+    }
+
+    /** With automatic updates off, point at a newer release instead of installing it. */
+    private async remindServerUpdate(showModal: boolean): Promise<void> {
+        let result: { available: boolean; release?: ReleaseInfo };
+        try {
+            result = await this.checkForUpdate();
+        } catch {
+            return;
+        }
+        if (!result.available || !result.release) return;
+        const release = result.release;
+        this.showUpdateIndicator(release);
+        if (!showModal) return;
+        const installedVariant = this.getSharedLilbeeVariant();
+        const build =
+            installedVariant !== "" && installedVariant !== release.variant
+                ? MESSAGES.LABEL_SERVER_BUILD(release.variant)
+                : null;
+        new UpdateAvailableModal(this.app, release, build, {
+            openSettings: () => this.openServerUpdateSettings(),
+            stopReminding: () => this.setServerUpdateReminder(false),
+        }).open();
+    }
+
+    private showUpdateIndicator(release: ReleaseInfo): void {
+        const label = MESSAGES.LABEL_RIBBON_UPDATE_AVAILABLE(release.tag);
+        if (this.updateRibbonIconEl) {
+            this.updateRibbonIconEl.setAttribute("aria-label", label);
+            return;
+        }
+        this.updateRibbonIconEl = this.addRibbonIcon("arrow-up-circle", label, () => this.openServerUpdateSettings());
+        this.updateRibbonIconEl.addClass("lilbee-ribbon-icon", "lilbee-ribbon-update");
+    }
+
+    private clearUpdateIndicator(): void {
+        this.updateRibbonIconEl?.remove();
+        this.updateRibbonIconEl = null;
+    }
+
+    openServerUpdateSettings(): void {
+        this.openPluginSettings();
+        this.settingTab?.scrollToServerUpdate();
     }
 
     getSharedHfToken(): string {

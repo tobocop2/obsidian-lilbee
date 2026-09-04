@@ -669,6 +669,8 @@ export interface SharedConfig {
     serverAutoUpdate: boolean;
     /** The user removed the managed server; never download it again until they ask. */
     serverUninstalled: boolean;
+    /** Show a reminder on launch while a newer server release exists and automatic updates are off. */
+    serverUpdateReminder: boolean;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
@@ -679,6 +681,7 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lastUpdateCheckPluginVersion: "",
     serverAutoUpdate: true,
     serverUninstalled: false,
+    serverUpdateReminder: true,
 };
 
 /** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
