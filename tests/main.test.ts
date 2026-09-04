@@ -187,6 +187,14 @@ vi.mock("../src/views/confirm-modal", () => ({
 }));
 
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
+const mockUpdateModalOpen = vi.fn();
+const mockUpdateModal = vi.fn();
+vi.mock("../src/views/update-available-modal", () => ({
+    UpdateAvailableModal: function (this: { open: () => void }, ...args: unknown[]) {
+        mockUpdateModal(...args);
+        this.open = mockUpdateModalOpen;
+    },
+}));
 const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
 const mockGatekeeperOpen = vi.fn();
@@ -388,6 +396,7 @@ describe("LilbeePlugin", () => {
             const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
                 ...DEFAULT_SHARED_CONFIG,
                 serverUninstalled: true,
+                serverUpdateReminder: true,
             });
             const consent = vi.spyOn(plugin, "ensureManagedConsentThenStart");
 
@@ -6361,6 +6370,10 @@ describe("LilbeePlugin", () => {
     });
 
     describe("automatic server update on plugin update", () => {
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
         const RELEASE = { tag: "v0.2.0", assetUrl: "u", variant: "default", sizeBytes: 1, digest: null };
 
         const seedSharedConfig = (lastChecked: string) => {
@@ -6491,25 +6504,165 @@ describe("LilbeePlugin", () => {
             expect(check).not.toHaveBeenCalled();
         });
 
-        it("skips the check when automatic server updates are turned off", async () => {
-            const plugin = await createPlugin({ serverMode: "managed" });
-            const check = vi.spyOn(plugin, "checkForUpdate");
-            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
-                lilbeeVersion: "v0.1.0",
-                lilbeeVariant: "",
-                hfToken: "",
-                lastUpdateCheckPluginVersion: "",
-                serverAutoUpdate: false,
-                serverUninstalled: false,
-            });
-            await plugin.onload();
-            await flush();
+        const offConfig = (reminder: boolean) => ({
+            lilbeeVersion: "v0.1.0",
+            lilbeeVariant: "" as const,
+            hfToken: "",
+            lastUpdateCheckPluginVersion: "",
+            serverAutoUpdate: false,
+            serverUninstalled: false,
+            serverUpdateReminder: reminder,
+        });
+        const newer = {
+            tag: "v9.9.9",
+            variant: "default" as const,
+            assetUrl: "https://example.test/lilbee",
+            sizeBytes: 1,
+            digest: "",
+            detection: { nvidia: { status: "skipped" }, amd: { status: "skipped" }, detectedAt: "" },
+        };
+        const updateLabels = (plugin: { addRibbonIcon: unknown }) =>
+            (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls
+                .map((c) => c[1] as string)
+                .filter((label) => label.startsWith("lilbee server v"));
 
-            expect(check).not.toHaveBeenCalled();
+        it("with automatic updates off, a newer release shows the ribbon icon and the reminder", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: newer as any });
+            const update = vi.spyOn(plugin, "updateServer").mockResolvedValue();
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue(offConfig(true));
+            mockUpdateModal.mockClear();
+            mockUpdateModalOpen.mockClear();
+
+            await (plugin as any).autoUpdateServerBinary();
+
+            expect(update).not.toHaveBeenCalled();
+            const ribbon = (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c) => c[1] === MESSAGES.LABEL_RIBBON_UPDATE_AVAILABLE("v9.9.9"),
+            );
+            expect(ribbon?.[0]).toBe("arrow-up-circle");
+            expect(mockUpdateModal).toHaveBeenCalledWith(plugin.app, newer, null, expect.any(Object));
+            expect(mockUpdateModalOpen).toHaveBeenCalledTimes(1);
             expect(plugin.journal.entries.map((e) => e.message)).toContain(
                 "automatic server update skipped: turned off in settings",
             );
+        });
+
+        it("names the build in the reminder when the detected build differs from the installed one", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({
+                available: true,
+                release: { ...newer, variant: "cu125" } as any,
+            });
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...offConfig(true),
+                lilbeeVariant: "default",
+            });
+            mockUpdateModal.mockClear();
+
+            await (plugin as any).autoUpdateServerBinary();
+
+            expect(mockUpdateModal.mock.calls[0][2]).toBe(MESSAGES.LABEL_SERVER_BUILD("cu125"));
+        });
+
+        it("keeps the ribbon icon but skips the modal when the reminder is turned off", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: newer as any });
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue(offConfig(false));
+            mockUpdateModalOpen.mockClear();
+
+            await (plugin as any).autoUpdateServerBinary();
+
+            expect(updateLabels(plugin)).toEqual([MESSAGES.LABEL_RIBBON_UPDATE_AVAILABLE("v9.9.9")]);
+            expect(mockUpdateModalOpen).not.toHaveBeenCalled();
+        });
+
+        it("shows nothing when the server is current or the check fails", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue(offConfig(true));
+            mockUpdateModalOpen.mockClear();
+
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValueOnce({ available: false });
+            await (plugin as any).autoUpdateServerBinary();
+            vi.spyOn(plugin, "checkForUpdate").mockRejectedValueOnce(new Error("offline"));
+            await (plugin as any).autoUpdateServerBinary();
+
+            expect(updateLabels(plugin)).toEqual([]);
+            expect(mockUpdateModalOpen).not.toHaveBeenCalled();
+        });
+
+        it("a second newer release updates the icon label; an install removes the icon", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue(offConfig(false));
+            vi.spyOn(plugin, "checkForUpdate")
+                .mockResolvedValueOnce({ available: true, release: newer as any })
+                .mockResolvedValueOnce({ available: true, release: { ...newer, tag: "v9.9.10" } as any });
+
+            await (plugin as any).autoUpdateServerBinary();
+            await (plugin as any).autoUpdateServerBinary();
+
+            expect(updateLabels(plugin)).toEqual([MESSAGES.LABEL_RIBBON_UPDATE_AVAILABLE("v9.9.9")]);
+            const icon = (plugin as any).updateRibbonIconEl as MockElement;
+            expect(icon.getAttribute("aria-label")).toBe(MESSAGES.LABEL_RIBBON_UPDATE_AVAILABLE("v9.9.10"));
+            const remove = vi.spyOn(icon, "remove");
+            (plugin as any).clearUpdateIndicator();
+            expect(remove).toHaveBeenCalledTimes(1);
+            expect((plugin as any).updateRibbonIconEl).toBeNull();
+        });
+
+        it("the ribbon icon and the modal open the update settings", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue(offConfig(true));
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: newer as any });
+            const open = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
+            const scroll = vi.fn();
+            (plugin as any).settingTab = { scrollToServerUpdate: scroll };
+            const setReminder = vi.spyOn(plugin, "setServerUpdateReminder").mockImplementation(() => {});
+            mockUpdateModal.mockClear();
+
+            await (plugin as any).autoUpdateServerBinary();
+            ((plugin as any).updateRibbonIconEl as MockElement).trigger("click");
+            const actions = mockUpdateModal.mock.calls[0][3] as { openSettings: () => void; stopReminding: () => void };
+            actions.openSettings();
+            actions.stopReminding();
+
+            expect(open).toHaveBeenCalledTimes(2);
+            expect(scroll).toHaveBeenCalledTimes(2);
+            expect(setReminder).toHaveBeenCalledWith(false);
+        });
+    });
+
+    describe("server update reminder setting", () => {
+        it("defaults to on, persists a change, and journals it once", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            expect(plugin.isServerUpdateReminderEnabled()).toBe(true);
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            plugin.setServerUpdateReminder(false);
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ serverUpdateReminder: false }));
+            const messages = () => plugin.journal.entries.map((e) => e.message);
+            expect(messages()).toContain("server update reminder turned off");
+            const loadConfig = vi
+                .spyOn(VaultRegistry.prototype, "loadConfig")
+                .mockReturnValue({ ...DEFAULT_SHARED_CONFIG, serverUpdateReminder: false });
+            plugin.setServerUpdateReminder(true);
+            expect(messages()).toContain("server update reminder turned on");
             loadConfig.mockRestore();
+            plugin.setServerUpdateReminder(true);
+            expect(save).toHaveBeenCalledTimes(2);
+            (plugin as any).vaultRegistry = null;
+            expect(plugin.isServerUpdateReminderEnabled()).toBe(true);
+            plugin.setServerUpdateReminder(false);
+            expect(save).toHaveBeenCalledTimes(2);
+            plugin.setServerUpdateReminder(true);
+            expect(save).toHaveBeenCalledTimes(2);
+            save.mockRestore();
         });
     });
 
@@ -6542,6 +6695,7 @@ describe("LilbeePlugin", () => {
                 lastUpdateCheckPluginVersion: "",
                 serverAutoUpdate: false,
                 serverUninstalled: false,
+                serverUpdateReminder: true,
             });
             const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
             plugin.setServerAutoUpdate(true);

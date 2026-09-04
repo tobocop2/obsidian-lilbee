@@ -2756,6 +2756,28 @@
     transition: color 180ms ease;
 }
 
+/* Update-available ribbon icon: an accent dot the theme colours, on top of the icon. */
+.side-dock-ribbon-action.lilbee-ribbon-update {
+    position: relative;
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-update::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--background-secondary);
+}
+
+.lilbee-update-modal-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
 .lilbee-task-cancel {
     background: none;
     border: 1px solid transparent;

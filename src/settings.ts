@@ -109,6 +109,7 @@ interface UpdateProgressEls {
 }
 
 export class LilbeeSettingTab extends PluginSettingTab {
+    private versionSettingEl: HTMLElement | null = null;
     plugin: LilbeePlugin;
     /** Total bytes of the shared install, set by the storage report each render. */
     private storageTotalBytes = 0;
@@ -504,6 +505,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderStorageReport(containerEl);
         this.renderVersionSetting(containerEl);
         this.renderAutoUpdateToggle(containerEl);
+        this.renderUpdateReminderToggle(containerEl);
         this.renderDevBuildsToggle(containerEl);
     }
 
@@ -518,6 +520,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
+    private renderUpdateReminderToggle(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_SERVER_UPDATE_REMINDER)
+            .setDesc(MESSAGES.DESC_SERVER_UPDATE_REMINDER)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.isServerUpdateReminderEnabled()).onChange((value) => {
+                    this.plugin.setServerUpdateReminder(value);
+                }),
+            );
+    }
+
+    /** Bring the server version row into view; the update ribbon icon and reminder land here. */
+    scrollToServerUpdate(): void {
+        this.versionSettingEl?.scrollIntoView({ block: "start" });
+    }
+
     /**
      * One control for upgrade, downgrade, and reinstall. The dropdown lists
      * recent releases newest-first; the button names what the selection does.
@@ -530,6 +548,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        this.versionSettingEl = setting.settingEl;
         const progress = this.renderUpdateProgress(containerEl);
 
         let releases: ReleaseInfo[] = [];

@@ -183,6 +183,8 @@ function makePlugin(
         },
         isServerAutoUpdateEnabled: () => true,
         setServerAutoUpdate: vi.fn(),
+        isServerUpdateReminderEnabled: () => true,
+        setServerUpdateReminder: vi.fn(),
         isServerInstalled: () => true,
         isServerUninstalled: () => false,
         isDownloadingServer: () => false,
@@ -2423,17 +2425,44 @@ describe("managed mode settings", () => {
         expect(Object.keys(dropdownOptions[1])).toEqual(["v0.4.0.dev9", "v0.3.0", "v0.2.0", "v0.1.0"]);
     });
 
+    it("the update reminder toggle writes the shared setting", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { toggleByName } = captureSettingCallbacks(() => tab.display());
+        await toggleByName.get(MESSAGES.LABEL_SERVER_UPDATE_REMINDER)!(false);
+
+        expect(plugin.setServerUpdateReminder).toHaveBeenCalledWith(false);
+    });
+
+    it("scrollToServerUpdate brings the version row into view", () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const scroll = vi.spyOn(MockElement.prototype, "scrollIntoView");
+
+        tab.scrollToServerUpdate();
+        expect(scroll).not.toHaveBeenCalled();
+        tab.display();
+        tab.scrollToServerUpdate();
+
+        expect(scroll).toHaveBeenCalledWith({ block: "start" });
+        scroll.mockRestore();
+    });
+
     it("the dev-builds toggle persists the setting and re-renders", async () => {
         mockListReleases.mockResolvedValue(RELEASES);
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
-        const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+        const { toggleByName } = captureSettingCallbacks(() => tab.display());
         // Spy after the first render so the toggle's own re-render is what we assert.
         const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
-        // [0] auto-update, [1] includeDevBuilds (managed server section, before Chat).
-        await toggleOnChanges[1](true);
+        await toggleByName.get(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)!(true);
 
         expect(plugin.settings.includeDevBuilds).toBe(true);
         expect(plugin.saveSettings).toHaveBeenCalled();

@@ -115,6 +115,7 @@ export const MESSAGES = {
     LABEL_SERVER_VERSION: "Server version",
     LABEL_INCLUDE_DEV_BUILDS: "Include dev builds",
     LABEL_SERVER_AUTO_UPDATE: "Automatically update the server",
+    LABEL_SERVER_UPDATE_REMINDER: "Remind me about server updates",
     LABEL_UNINSTALL: "Uninstall",
     LABEL_UNINSTALL_SERVER: "Uninstall server",
     LABEL_INSTALL_SERVER: "Install server",
@@ -331,6 +332,8 @@ export const MESSAGES = {
     LABEL_CHAT_VIEW: "lilbee Chat",
     LABEL_TASKS_VIEW: "lilbee Tasks",
     LABEL_RIBBON_OPEN_CHAT: "Open lilbee chat",
+    LABEL_RIBBON_UPDATE_AVAILABLE: (version: string) =>
+        `lilbee server ${version} is available. Open the update settings.`,
     LABEL_STATUSBAR_OPEN_SETTINGS: "Open lilbee settings",
     ERROR_STREAM_IDLE: "server stopped sending events — check that lilbee is running",
     LABEL_OUR_PICKS: "Our picks",
@@ -405,6 +408,8 @@ export const MESSAGES = {
         `A newer dev build (${tag}) is out. Turn on "Include dev builds" to try it.`,
     DESC_SERVER_AUTO_UPDATE:
         "Install the latest server release when the plugin updates. Turned off automatically when you install an older version, so an explicit downgrade sticks.",
+    DESC_SERVER_UPDATE_REMINDER:
+        "When automatic updates are off, show a reminder on launch while a newer server release is available. The ribbon shows an update icon either way.",
     DESC_INCLUDE_DEV_BUILDS:
         "Offer in-development builds in the version list and track them for updates. They ship the newest features " +
         "but get less testing than a stable release.",
@@ -658,6 +663,16 @@ export const MESSAGES = {
     NOTICE_SERVER_SWITCHING_BUILD: (build: string) => `lilbee: switching to the ${build} build for your GPU...`,
     NOTICE_SERVER_SWITCHED_BUILD: (build: string) => `lilbee server now runs the ${build} build`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
+    UPDATE_MODAL_TITLE: "A newer lilbee server is available",
+    UPDATE_MODAL_BODY: (version: string, build: string | null) =>
+        build
+            ? `${version} is available, and the ${build} build matches this machine better than the installed one. Automatic updates are off, so the server stays on its current version until you update it.`
+            : `${version} is available. Automatic updates are off, so the server stays on its current version until you update it.`,
+    UPDATE_MODAL_HOW_TO_DISABLE:
+        'To stop this reminder, turn off "Remind me about server updates" in the lilbee settings. To install updates without asking, turn on "Automatically update the server".',
+    BUTTON_OPEN_UPDATE_SETTINGS: "Open update settings",
+    BUTTON_NOT_NOW: "Not now",
+    BUTTON_STOP_REMINDING: "Stop reminding me",
     NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
         `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",

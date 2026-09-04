@@ -150,6 +150,7 @@ describe("VaultRegistry.loadConfig", () => {
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 
@@ -164,6 +165,7 @@ describe("VaultRegistry.loadConfig", () => {
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 
@@ -178,6 +180,7 @@ describe("VaultRegistry.loadConfig", () => {
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 });
@@ -194,6 +197,7 @@ describe("VaultRegistry.saveConfig", () => {
             hfToken: "tok",
             lastUpdateCheckPluginVersion: "",
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
         expect(fs.exists("/r/config.json")).toBe(true);
         expect(fs.exists("/r/config.json.tmp")).toBe(false);
@@ -203,6 +207,7 @@ describe("VaultRegistry.saveConfig", () => {
             hfToken: "tok",
             lastUpdateCheckPluginVersion: "",
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 
@@ -216,6 +221,7 @@ describe("VaultRegistry.saveConfig", () => {
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
         expect(fs.dirs.has("/r")).toBe(true);
     });
