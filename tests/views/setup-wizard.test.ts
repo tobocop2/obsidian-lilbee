@@ -544,13 +544,11 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ serverManager: null });
             plugin.startManagedServer = vi
                 .fn()
-                .mockImplementation(
-                    async (onProgress?: (e: { phase: string; message: string; url?: string }) => void) => {
-                        onProgress?.({ phase: "downloading", message: "Downloading…", url: "https://example.com" });
-                        onProgress?.({ phase: "starting", message: "Starting…" });
-                        onProgress?.({ phase: "ready", message: "" });
-                    },
-                );
+                .mockImplementation(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+                    onProgress?.({ phase: "downloading", message: "Downloading…" });
+                    onProgress?.({ phase: "starting", message: "Starting…" });
+                    onProgress?.({ phase: "ready", message: "" });
+                });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();

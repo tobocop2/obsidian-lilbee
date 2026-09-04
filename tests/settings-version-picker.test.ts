@@ -2,10 +2,23 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
-import { node } from "../src/node";
 import { DEFAULT_SETTINGS, SERVER_MODE, SERVER_VARIANT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import type LilbeePlugin from "../src/main";
+
+/** The transport the launcher lists releases over; each test serves GitHub's answer through it. */
+const fetchStub = vi.hoisted(() => vi.fn());
+vi.mock("node-fetch", () => ({ default: fetchStub }));
+// The real release listing runs; only the GPU probe is pinned so no host command is spawned.
+vi.mock("lilbee", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("lilbee")>()),
+    detectHost: vi.fn(async () => ({ platform: "linux", arch: "x64", variant: "default", amdGfxTargets: [] })),
+}));
+
+/** A GitHub API answer: `json` for a 200, or the status alone for an error. */
+function githubAnswer(status: number, json: unknown = {}) {
+    return { ok: status < 400, status, headers: { get: () => null }, json: async () => json, text: async () => "" };
+}
 
 /**
  * The release list tobocop2/lilbee serves: a run of published dev builds ahead
@@ -107,13 +120,8 @@ describe("server version picker with the real release list", () => {
             return this;
         });
 
-        vi.spyOn(node, "execFile").mockRejectedValue(new Error("nvidia-smi not found"));
-        vi.spyOn(node, "requestUrl").mockResolvedValue({
-            status: 200,
-            json: [...DEV_RUN, ...STABLE_RUN].map(ghRelease),
-            arrayBuffer: new ArrayBuffer(0),
-            headers: {},
-        });
+        fetchStub.mockReset();
+        fetchStub.mockResolvedValue(githubAnswer(200, [...DEV_RUN, ...STABLE_RUN].map(ghRelease)));
     });
 
     afterEach(() => {
@@ -189,11 +197,11 @@ describe("server version picker with the real release list", () => {
         (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(node.requestUrl).toHaveBeenCalledTimes(1);
+        expect(fetchStub).toHaveBeenCalledTimes(1);
     });
 
     it("says why and offers a retry when the release list cannot be read", async () => {
-        vi.spyOn(node, "requestUrl").mockRejectedValue(new Error("network down"));
+        fetchStub.mockRejectedValue(new Error("network down"));
         await renderPicker(false);
 
         const labels = buttons.flatMap((b) => b.labels);
@@ -202,7 +210,7 @@ describe("server version picker with the real release list", () => {
     });
 
     it("clicking retry re-renders the settings tab", async () => {
-        vi.spyOn(node, "requestUrl").mockRejectedValue(new Error("network down"));
+        fetchStub.mockRejectedValue(new Error("network down"));
         const tab = makeTab(false);
         const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
         (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
@@ -215,12 +223,7 @@ describe("server version picker with the real release list", () => {
     });
 
     it("names the GitHub rate limit when GitHub answers 403", async () => {
-        vi.spyOn(node, "requestUrl").mockResolvedValue({
-            status: 403,
-            json: { message: "API rate limit exceeded for 1.2.3.4." },
-            arrayBuffer: new ArrayBuffer(0),
-            headers: {},
-        });
+        fetchStub.mockResolvedValue(githubAnswer(403, { message: "API rate limit exceeded for 1.2.3.4." }));
         await renderPicker(false);
 
         expect(descs[descs.length - 1].toLowerCase()).toContain("rate limit");

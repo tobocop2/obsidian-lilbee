@@ -10,25 +10,16 @@ import { err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 
-const mockEnsureBinary = vi.fn();
-const mockBinaryExists = vi.fn();
-const mockDownload = vi.fn();
 const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
 
-vi.mock("../src/binary-manager", () => ({
+vi.mock("../src/server-binary", () => ({
     listReleases: vi.fn(async () => []),
     isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
-    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+    isDownloadCanceled: () => false,
     DownloadCanceledError: class extends Error {},
-    BinaryManager: vi.fn().mockImplementation(function () {
-        return {
-            ensureBinary: mockEnsureBinary,
-            binaryExists: mockBinaryExists,
-            binaryPath: "/fake/bin/lilbee",
-            download: mockDownload,
-        };
-    }),
+    ServerBinary: vi.fn(),
+    migrateFlatBinary: vi.fn(),
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
 }));
@@ -55,7 +46,6 @@ vi.mock("../src/node", () => ({
         },
         createHash: () => ({ update: () => ({ digest: () => "a".repeat(48) }) }),
         processKill: vi.fn(),
-        requestUrl: vi.fn(),
     },
 }));
 

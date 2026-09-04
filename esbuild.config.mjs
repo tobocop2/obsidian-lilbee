@@ -21,7 +21,10 @@ const context = await esbuild.context({
         "@lezer/common",
         "@lezer/highlight",
         "@lezer/lr",
+        // the lilbee launcher imports its proxy agent lazily; the require fails in the renderer and it falls back
+        "undici",
         ...builtins,
+        ...builtins.map((name) => `node:${name}`),
     ],
     format: "cjs",
     target: "es2022",

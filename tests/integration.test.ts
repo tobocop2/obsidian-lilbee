@@ -2,8 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, existsSync, statSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { BinaryManager } from "../src/binary-manager";
-import { node } from "../src/node";
+import { ServerBinary } from "../src/server-binary";
 import { ServerManager } from "../src/server-manager";
 
 // CI passes a stable, version-keyed dir (LILBEE_TEST_BIN_DIR) so a cached
@@ -13,10 +12,10 @@ const tempDir = providedBinDir ?? mkdtempSync(join(tmpdir(), "lilbee-integration
 const binDir = providedBinDir ?? join(tempDir, "bin");
 
 afterAll(async () => {
-    // A caller-provided bin dir is the CI cache — leave it for actions/cache to save.
+    // A caller-provided bin dir is the CI cache: leave it for actions/cache to save.
     if (providedBinDir) return;
     // Windows can briefly hold a file lock on the just-stopped lilbee binary,
-    // making rmdir bin/ throw ENOTEMPTY. Retry briefly, then give up — the CI
+    // making rmdir bin/ throw ENOTEMPTY. Retry briefly, then give up; the CI
     // runner reclaims the temp dir on job exit either way.
     for (let attempt = 0; attempt < 5; attempt++) {
         try {
@@ -28,38 +27,19 @@ afterAll(async () => {
     }
 });
 
-// Auth header avoids GitHub API rate limits (60/hr unauthenticated vs 5000/hr)
-const authHeaders: Record<string, string> = process.env.GITHUB_TOKEN
-    ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
-    : {};
-
-// Polyfill node.requestUrl with native fetch (Obsidian API is not available in Node)
-async function requestUrlPolyfill(req: { url: string; headers?: Record<string, string> }) {
-    const res = await fetch(req.url, { headers: { ...authHeaders, ...req.headers }, redirect: "follow" });
-    const arrayBuffer = await res.arrayBuffer();
-    let json: unknown = {};
-    try {
-        json = JSON.parse(new TextDecoder().decode(arrayBuffer));
-    } catch {}
-    return { status: res.status, json, arrayBuffer, headers: Object.fromEntries(res.headers) };
-}
-
-node.requestUrl = requestUrlPolyfill as typeof node.requestUrl;
-
+// The launcher sends GITHUB_TOKEN from process.env as a bearer, which lifts the API rate limit on CI.
 describe("integration: binary download", () => {
-    let bm: BinaryManager;
-
     it("downloads the binary from GitHub releases", async () => {
-        bm = new BinaryManager(binDir);
-        const path = await bm.ensureBinary();
+        const result = await new ServerBinary(binDir).ensure({ includeDev: false });
 
-        expect(existsSync(path)).toBe(true);
+        expect(existsSync(result.path)).toBe(true);
+        expect(result.path.startsWith(join(binDir, result.release))).toBe(true);
 
-        const size = statSync(path).size;
+        const size = statSync(result.path).size;
         expect(size).toBeGreaterThan(1_000_000);
 
         if (process.platform !== "win32") {
-            const mode = statSync(path).mode;
+            const mode = statSync(result.path).mode;
             expect(mode & 0o111).toBeGreaterThan(0); // executable
         }
     }, 180_000);
@@ -67,11 +47,11 @@ describe("integration: binary download", () => {
 
 describe("integration: server start", () => {
     it("starts the server and reaches ready state", async () => {
-        const bm = new BinaryManager(`${tempDir}/bin`);
-        if (!bm.binaryExists()) return; // skip if download failed
+        const installed = new ServerBinary(binDir).installed();
+        if (!installed) return; // skip if download failed
 
         const sm = new ServerManager({
-            binaryPath: bm.binaryPath,
+            binaryPath: installed.path,
             dataDir: tempDir,
             sharedRoot: tempDir,
             modelsDir: `${tempDir}/models`,

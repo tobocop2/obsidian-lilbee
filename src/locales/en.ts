@@ -1,5 +1,17 @@
 import { AGENT_CLIENT, MODEL_TASK, SERVER_VARIANT, type ServerVariant, type WorkerRole } from "../types";
 
+/** How each server build is named in Settings and notices. */
+const SERVER_BUILD_LABEL: Record<ServerVariant, string> = {
+    [SERVER_VARIANT.DEFAULT]: "default",
+    [SERVER_VARIANT.CU121]: "CUDA 12.1",
+    [SERVER_VARIANT.CU124]: "CUDA 12.4",
+    [SERVER_VARIANT.CU125]: "CUDA 12.5",
+    [SERVER_VARIANT.ROCM]: "ROCm",
+    [SERVER_VARIANT.COMPAT]: "compat",
+    [SERVER_VARIANT.COMPAT_CU124]: "compat + CUDA 12.4",
+    [SERVER_VARIANT.COMPAT_ROCM]: "compat + ROCm",
+};
+
 // Natural-language noun for each worker role, so tooltips read "embedding
 // worker" rather than the internal "embed".
 const ROLE_NOUN: Record<WorkerRole, string> = {
@@ -393,11 +405,7 @@ export const MESSAGES = {
     DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
     /** How a server build is named wherever the user sees one. macOS ships Metal in the
      *  default build and Linux and Windows ship Vulkan, so the default is named for neither. */
-    LABEL_SERVER_BUILD: (variant: ServerVariant): string => {
-        if (variant === SERVER_VARIANT.ROCM) return "ROCm";
-        if (variant === SERVER_VARIANT.DEFAULT) return "default";
-        return `CUDA ${variant.slice(2, 4)}.${variant.slice(4)}`;
-    },
+    LABEL_SERVER_BUILD: (variant: ServerVariant): string => SERVER_BUILD_LABEL[variant],
     DESC_SERVER_BUILD: (build: string) => ` Running the ${build} build.`,
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
         `${tag} installed. The release list could not be read from GitHub: ${reason}`,

@@ -19,19 +19,20 @@ const { FakeDownloadCanceledError } = vi.hoisted(() => ({
     FakeDownloadCanceledError: class DownloadCanceledError extends Error {
         constructor() {
             super("The lilbee server download was cancelled.");
-            this.name = "DownloadCanceledError";
+            this.name = "AbortError";
         }
     },
 }));
 
-vi.mock("../src/binary-manager", () => ({
+vi.mock("../src/server-binary", () => ({
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     listReleases: (...args: any[]) => mockListReleases(...args),
     isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
-    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+    isDownloadCanceled: (err: unknown) => err instanceof FakeDownloadCanceledError,
     DownloadCanceledError: FakeDownloadCanceledError,
-    BinaryManager: vi.fn(),
+    ServerBinary: vi.fn(),
+    migrateFlatBinary: vi.fn(),
 }));
 
 vi.mock("../src/node", () => ({
@@ -2330,9 +2331,9 @@ describe("managed mode settings", () => {
         expect(displaySpy).toHaveBeenCalled();
     });
     const RELEASES = [
-        { tag: "v0.3.0", assetUrl: "https://example.com/3", variant: "default", sizeBytes: 266000000, digest: null },
-        { tag: "v0.2.0", assetUrl: "https://example.com/2", variant: "default", sizeBytes: 265000000, digest: null },
-        { tag: "v0.1.0", assetUrl: "https://example.com/1", variant: "default", sizeBytes: 264000000, digest: null },
+        { tag: "v0.3.0", url: "https://example.com/3", variant: "default", size: 266000000, digest: null },
+        { tag: "v0.2.0", url: "https://example.com/2", variant: "default", size: 265000000, digest: null },
+        { tag: "v0.1.0", url: "https://example.com/1", variant: "default", size: 264000000, digest: null },
     ];
 
     /** The release list loads asynchronously; let its promise settle. */
@@ -2375,9 +2376,9 @@ describe("managed mode settings", () => {
     const DEV_AHEAD = [
         {
             tag: "v0.4.0.dev9",
-            assetUrl: "https://example.com/d",
+            url: "https://example.com/d",
             variant: "default",
-            sizeBytes: 267000000,
+            size: 267000000,
             digest: null,
         },
         ...RELEASES,
@@ -7410,8 +7411,8 @@ describe("managed-mode uninstall section", () => {
 
 describe("managed mode with no server installed", () => {
     const RELEASES = [
-        { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 412_000_000, digest: null },
-        { tag: "v0.2.0", assetUrl: "https://e/2", variant: "default", sizeBytes: 410_000_000, digest: null },
+        { tag: "v0.3.0", url: "https://e/3", variant: "default", size: 412_000_000, digest: null },
+        { tag: "v0.2.0", url: "https://e/2", variant: "default", size: 410_000_000, digest: null },
     ];
 
     async function settle(): Promise<void> {
@@ -7587,9 +7588,7 @@ describe("managed mode with no server installed", () => {
 });
 
 describe("cancelling a server download", () => {
-    const RELEASES = [
-        { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 412_000_000, digest: null },
-    ];
+    const RELEASES = [{ tag: "v0.3.0", url: "https://e/3", variant: "default", size: 412_000_000, digest: null }];
 
     async function settle(): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -7665,7 +7664,7 @@ describe("cancelling a server download", () => {
 describe("version picker when the installed tag is unknown to GitHub", () => {
     it("selects the newest release instead", async () => {
         mockListReleases.mockResolvedValue([
-            { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 1, digest: null },
+            { tag: "v0.3.0", url: "https://e/3", variant: "default", size: 1, digest: null },
         ]);
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v9.9.9-local" });
         mockChatPicker(plugin);

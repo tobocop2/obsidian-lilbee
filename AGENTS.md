@@ -23,7 +23,8 @@ src/
   types.ts           # All interfaces + DEFAULT_SETTINGS + as-const constant sets
   api.ts             # LilbeeClient — typed HTTP client with SSE streaming
   settings.ts        # Settings tab + model management UI
-  binary-manager.ts  # Downloads and verifies the lilbee server binary per platform
+  server-binary.ts   # Adapter over the lilbee npm launcher: release listing, download with progress, install lookup
+  node.ts            # Injectable Node bindings (fs, child_process, path) that tests mock
   server-manager.ts  # Supervises the managed server: adopt-first start, API-first stop with awaited exits
   session-token.ts   # Discovers / holds the server session token
   vault-registry.ts  # Per-vault registry under the shared root; the server's own OS locks enforce one-server-at-a-time
@@ -209,7 +210,7 @@ esbuild bundles `src/main.ts` → `main.js` (CJS, ES2022). Externals: `obsidian`
 
 ## Server Dependency
 
-The plugin needs a reachable lilbee server. In **managed mode** (default) it downloads the binary (`binary-manager.ts`), spawns it (`server-manager.ts`) on a port the OS assigns, and discovers that port and the session token from the server's data dir. In **external mode** the user runs `lilbee serve` themselves and points the plugin at its URL (default `http://127.0.0.1:7433`) plus a session token. When the server is unreachable, API calls fail gracefully with user-visible Notice messages and the status bar shows the error state.
+The plugin needs a reachable lilbee server. In **managed mode** (default) it downloads the binary through the bundled `lilbee` npm launcher (`server-binary.ts`; the package owns host detection, build selection, verification, and the `<shared root>/bin/<release>/<asset name>` layout), spawns it (`server-manager.ts`) on a port the OS assigns, and discovers that port and the session token from the server's data dir. The download runs over `node-fetch`, because GitHub's asset redirect fails CORS in the renderer's own `fetch`. In **external mode** the user runs `lilbee serve` themselves and points the plugin at its URL (default `http://127.0.0.1:7433`) plus a session token. When the server is unreachable, API calls fail gracefully with user-visible Notice messages and the status bar shows the error state.
 
 ## Dependencies & Abstractions
 

@@ -18,13 +18,12 @@ import {
     type AgentWireOutcome,
 } from "./agent-integration";
 import { LilbeeClient, SessionTokenError } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
-import { DownloadCanceledError } from "./binary-manager";
-import type { DownloadProgress, ReleaseInfo } from "./binary-manager";
+import { ServerBinary, getLatestRelease, checkForUpdate, isDownloadCanceled, migrateFlatBinary } from "./server-binary";
+import type { DownloadProgress, EnsureResult, ReleaseInfo } from "./server-binary";
 import { ScopeHeldError, ServerManager, askServerToExit, readScopeOwner, serverIsLive } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -37,6 +36,7 @@ import {
     DEFAULT_AGENT_INTEGRATION,
     DEFAULT_SETTINGS,
     DOT_STATE,
+    ENSURE_SOURCE,
     ERROR_NAME,
     LOGS_DIR,
     MANAGED_CONSENT_RESULT,
@@ -268,15 +268,15 @@ export type ServerDownloadProgressHandler = (msg: string, percent?: number) => v
 
 /** "Downloading... 45% (128 MB of 283 MB)", or bytes-only when the server sends no length. */
 function downloadMessage(progress: DownloadProgress): string {
-    const received = formatDiskSize(progress.receivedBytes);
-    const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
-    if (percent === undefined || progress.totalBytes === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
-    return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatDiskSize(progress.totalBytes));
+    const received = formatDiskSize(progress.done);
+    const percent = percentOfBytes(progress.done, progress.total);
+    if (percent === undefined || progress.total === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
+    return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatDiskSize(progress.total));
 }
 
 /** The status bar is narrow: percent only, with the byte detail left to Settings. */
 function downloadStatusBar(progress: DownloadProgress): string {
-    const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
+    const percent = percentOfBytes(progress.done, progress.total);
     if (percent === undefined) return MESSAGES.STATUS_DOWNLOADING;
     return MESSAGES.STATUS_DOWNLOADING_PERCENT(percent);
 }
@@ -288,7 +288,6 @@ export default class LilbeePlugin extends Plugin {
     statusBarEl: HTMLElement | null = null;
     syncPillEl: HTMLElement | null = null;
     chatRibbonIconEl: HTMLElement | null = null;
-    binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     journal = new ErrorJournal();
     vaultRegistry: VaultRegistry | null = null;
@@ -487,15 +486,14 @@ export default class LilbeePlugin extends Plugin {
                 return;
             }
 
-            this.binaryManager = new BinaryManager(sharedBinDir(sharedRoot));
-            const binaryPath = await this.ensureBinaryWithUi(onProgress);
-            if (binaryPath === null) return;
-            await this.recordLilbeeVersionAfterDownload();
+            const installed = await this.ensureBinaryWithUi(this.serverBinary(sharedRoot), onProgress);
+            if (installed === null) return;
+            this.recordDownloadedBinary(installed);
             // A spawn after unload would leak a server no plugin instance tracks.
             if (this.unloaded) return;
 
             try {
-                this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
+                this.serverManager = this.buildServerManager(installed.path, registry, sharedRoot);
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: MANAGED_PHASE.STARTING, message: MESSAGES.STATUS_STARTING_SERVER });
@@ -621,7 +619,7 @@ export default class LilbeePlugin extends Plugin {
         const registry = this.vaultRegistry;
         if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
 
-        const binaryPresent = new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
+        const binaryPresent = this.serverBinary(registry.sharedRoot).installed() !== null;
         if (binaryPresent && !this.serverUninstalled) {
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
@@ -708,35 +706,44 @@ export default class LilbeePlugin extends Plugin {
         this.downloadController?.abort();
     }
 
-    private async ensureBinaryWithUi(onProgress?: ManagedServerProgressHandler): Promise<string | null> {
-        const bm = this.binaryManager;
-        if (!bm) return null;
-        const needsDownload = !bm.binaryExists();
-        if (needsDownload) {
+    /** The shared bin dir's server binary, with a flat pre-launcher install moved into the launcher's layout first. */
+    private serverBinary(sharedRoot: string): ServerBinary {
+        const binDir = sharedBinDir(sharedRoot);
+        migrateFlatBinary(binDir, this.getSharedLilbeeVersion(), this.getSharedLilbeeVariant());
+        return new ServerBinary(binDir);
+    }
+
+    private async ensureBinaryWithUi(
+        binary: ServerBinary,
+        onProgress?: ManagedServerProgressHandler,
+    ): Promise<EnsureResult | null> {
+        if (binary.installed() === null) {
             this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
             this.setStatusClass("lilbee-status-downloading");
             onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_DOWNLOADING });
         }
         try {
-            const path = await bm.ensureBinary(
-                this.settings.includeDevBuilds,
-                (rawMsg, url, progress) => {
-                    const percent = progress ? percentOfBytes(progress.receivedBytes, progress.totalBytes) : undefined;
-                    const msg = progress ? downloadMessage(progress) : rawMsg;
-                    this.updateStatusBar(progress ? downloadStatusBar(progress) : `lilbee: ${msg}`, DOT_STATE.PRIMARY);
-                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url, percent });
+            const installed = await binary.ensure({
+                includeDev: this.settings.includeDevBuilds,
+                onProgress: (progress) => {
+                    this.updateStatusBar(downloadStatusBar(progress), DOT_STATE.PRIMARY);
+                    onProgress?.({
+                        phase: MANAGED_PHASE.DOWNLOADING,
+                        message: downloadMessage(progress),
+                        percent: percentOfBytes(progress.done, progress.total),
+                    });
                 },
-                () => this.showGatekeeperHelp(),
-                this.startDownloadController().signal,
-            );
+                onQuarantineFailed: () => this.showGatekeeperHelp(),
+                signal: this.startDownloadController().signal,
+            });
             this.finishDownload();
             this.setStatusClass(null);
-            return path;
+            return installed;
         } catch (err) {
             this.finishDownload();
             this.setStatusClass(null);
             // Cancelling is a choice, not a failure: say so plainly and skip the error journal.
-            if (err instanceof DownloadCanceledError) {
+            if (isDownloadCanceled(err)) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
                 this.updateStatusBar(MESSAGES.STATUS_NOT_INSTALLED, DOT_STATE.MUTED, false);
             } else {
@@ -752,14 +759,14 @@ export default class LilbeePlugin extends Plugin {
         new GatekeeperModal(this.app).open();
     }
 
-    private async recordLilbeeVersionAfterDownload(): Promise<void> {
-        if (this.getSharedLilbeeVersion()) return;
+    /** Remember which release and build a download installed; best-effort, the server runs either way. */
+    private recordDownloadedBinary(installed: EnsureResult): void {
+        if (installed.source !== ENSURE_SOURCE.DOWNLOAD) return;
         try {
-            const release = await getLatestRelease(this.settings.includeDevBuilds);
-            this.setSharedLilbeeVersion(release.tag);
-            this.setSharedLilbeeVariant(release.variant);
-        } catch {
-            /* version tracking is best-effort */
+            this.setSharedLilbeeVersion(installed.release);
+            this.setSharedLilbeeVariant(installed.variant);
+        } catch (err) {
+            this.journal.lifecycle(`could not record the downloaded server version: ${errorMessage(err, String(err))}`);
         }
     }
 
@@ -921,7 +928,7 @@ export default class LilbeePlugin extends Plugin {
     isServerInstalled(): boolean {
         const registry = this.vaultRegistry;
         if (!registry) return false;
-        return new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
+        return this.serverBinary(registry.sharedRoot).installed() !== null;
     }
 
     /** Size what an uninstall would delete, so the confirmation can list it. */
@@ -950,7 +957,6 @@ export default class LilbeePlugin extends Plugin {
 
         await this.serverManager?.stop();
         this.serverManager = null;
-        this.binaryManager = null;
         // A server orphaned by a crashed Obsidian still writes to the data dir;
         // ask it to exit before deleting the tree out from under it.
         if (owner !== null) await askServerToExit(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
@@ -1060,9 +1066,7 @@ export default class LilbeePlugin extends Plugin {
         this.journal.lifecycle(
             `updating server binary: ${this.getSharedLilbeeVersion() || "(unknown)"} -> ${release.tag}`,
         );
-        if (!this.binaryManager) {
-            this.binaryManager = new BinaryManager(sharedBinDir(registry.sharedRoot));
-        }
+        const binary = this.serverBinary(registry.sharedRoot);
 
         // Stop the running server first
         if (this.serverManager) {
@@ -1073,32 +1077,24 @@ export default class LilbeePlugin extends Plugin {
 
         // Download the new binary (replaces the old one once its checksum clears)
         onProgress?.("Downloading...");
+        let installed: EnsureResult;
         try {
-            await this.binaryManager.download(
-                release.assetUrl,
-                release.sizeBytes,
-                release.digest,
-                (msg, _url, progress) => {
-                    if (!progress) {
-                        onProgress?.(msg);
-                        return;
-                    }
-                    onProgress?.(
-                        downloadMessage(progress),
-                        percentOfBytes(progress.receivedBytes, progress.totalBytes),
-                    );
-                },
-                () => this.showGatekeeperHelp(),
-                this.startDownloadController().signal,
-            );
+            installed = await binary.ensure({
+                includeDev: this.settings.includeDevBuilds,
+                release: release.tag,
+                force: true,
+                onProgress: (progress) =>
+                    onProgress?.(downloadMessage(progress), percentOfBytes(progress.done, progress.total)),
+                onQuarantineFailed: () => this.showGatekeeperHelp(),
+                signal: this.startDownloadController().signal,
+            });
         } finally {
             this.finishDownload();
         }
 
-        // Save the new version and the build variant we just installed
-        this.setSharedLilbeeVersion(release.tag);
-        this.setSharedLilbeeVariant(release.variant);
-        this.journal.lifecycle(`server binary updated to ${release.tag}`);
+        this.setSharedLilbeeVersion(installed.release);
+        this.setSharedLilbeeVariant(installed.variant);
+        this.journal.lifecycle(`server binary updated to ${installed.release}`);
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -1712,7 +1708,6 @@ export default class LilbeePlugin extends Plugin {
                 this.journal.lifecycle("server mode switched to external; stopping the managed server");
                 void this.serverManager?.stop();
                 this.serverManager = null;
-                this.binaryManager = null;
             }
             this.configureApi(this.settings.serverUrl);
             // External mode owns its own status via the health probe; paint

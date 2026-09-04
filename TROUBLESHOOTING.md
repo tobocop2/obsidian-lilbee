@@ -56,7 +56,7 @@ All vaults on a machine share one lilbee install. The shared root is:
 | **Windows** | `%LOCALAPPDATA%\lilbee` |
 | **Linux** | `~/.local/share/lilbee` (`XDG_DATA_HOME` respected) |
 
-Each vault keeps its own data under `<shared root>/vaults/<id>/`, and the server binary lives at `<shared root>/bin/lilbee`. The logs are in `vaults/<id>/logs/`:
+Each vault keeps its own data under `<shared root>/vaults/<id>/`, and the server binary lives at `<shared root>/bin/<release>/<asset name>` (for example `bin/v0.6.97/lilbee-macos-arm64`). The logs are in `vaults/<id>/logs/`:
 
 | File | What's in it |
 |------|--------------|
@@ -75,13 +75,13 @@ When the managed server won't start and the logs don't say why, run it in a term
 macOS / Linux:
 
 ```bash
-LILBEE_LOG_LEVEL=DEBUG "<shared root>/bin/lilbee" serve --data-dir "<vault data dir>"
+LILBEE_LOG_LEVEL=DEBUG "<shared root>/bin/<release>/<asset name>" serve --data-dir "<vault data dir>"
 ```
 
 Windows (PowerShell):
 
 ```powershell
-$env:LILBEE_LOG_LEVEL="DEBUG"; & "$env:LOCALAPPDATA\lilbee\bin\lilbee.exe" serve --data-dir "<vault data dir>"
+$env:LILBEE_LOG_LEVEL="DEBUG"; & "<shared root>\bin\<release>\<asset name>" serve --data-dir "<vault data dir>"
 ```
 
 Fill in both paths from the settings tab's storage section. If it crashes here too, the terminal output is exactly what a bug report needs.
@@ -91,7 +91,7 @@ Fill in both paths from the settings tab's storage section. If it crashes here t
 - **macOS Gatekeeper.** The server binary is unsigned, and the plugin clears the quarantine flag automatically. If macOS still blocks it: System Settings → Privacy & Security → **Allow Anyway**.
 - **Antivirus / SmartScreen on Windows.** Some scanners quarantine the freshly downloaded exe. Add an exclusion for `%LOCALAPPDATA%\lilbee\bin` and re-run the download from settings.
 - **Outdated NVIDIA drivers.** The CUDA build needs current drivers; update them if the server crashes on startup with a GPU error.
-- **Intel Macs aren't supported in managed mode.** Managed mode covers Apple Silicon Macs, Linux x64, and Windows x64. On an Intel Mac, use external mode: `pip install lilbee`, run `lilbee serve` yourself, and point the plugin at it from Settings → Connection.
+- **Managed mode covers Apple Silicon and Intel Macs, Linux x64, and Windows x64.** On any other machine, use external mode: `pip install lilbee`, run `lilbee serve` yourself, and point the plugin at it from Settings → Connection.
 - **Disk space.** Models run from hundreds of MB to several GB each. A download or index job failing partway through is often just a full disk.
 - **RAM / VRAM exhaustion.** Crashes during chat or indexing usually mean the model doesn't fit in memory. Try a smaller model from the catalog, or close other heavy apps.
 - **Linux: the OOM killer.** If the server dies with `signal SIGKILL` in `spawn-crash.log` and nothing in its own logs, the kernel likely reclaimed its memory. Check with `journalctl -k | grep -i oom`, then free up RAM or pick smaller models.
