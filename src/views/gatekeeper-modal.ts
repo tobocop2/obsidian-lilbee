@@ -29,7 +29,7 @@ export class GatekeeperModal extends Modal {
         const repoLink = source.createEl("a", { text: MESSAGES.LINK_LILBEE_REPO });
         repoLink.setAttribute("href", LILBEE_REPO_URL);
 
-        const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
+        const actions = contentEl.createDiv({ cls: "modal-button-container" });
         const gotItBtn = actions.createEl("button", { text: MESSAGES.BUTTON_GOT_IT, cls: "mod-cta" });
         gotItBtn.addEventListener("click", () => this.close());
     }

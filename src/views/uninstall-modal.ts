@@ -49,7 +49,7 @@ export class UninstallModal extends Modal {
         );
         keep.addClass("is-keep");
 
-        const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
+        const actions = contentEl.createDiv({ cls: "modal-button-container" });
         const cancelBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CANCEL });
         cancelBtn.addEventListener("click", () => this.decide(false));
 

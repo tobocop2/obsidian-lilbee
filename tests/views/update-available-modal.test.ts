@@ -13,7 +13,7 @@ function openModal(build: string | null = null) {
     const close = vi.spyOn(modal, "close");
     modal.open();
     const content = modal.contentEl as unknown as MockElement;
-    const buttons = content.querySelectorAll(".lilbee-confirm-actions")[0].children;
+    const buttons = content.querySelectorAll(".modal-button-container")[0].children;
     const button = (text: string) => buttons.find((b) => b.textContent === text)!;
     return { modal, actions, close, content, button };
 }

@@ -28,7 +28,7 @@ export class UpdateAvailableModal extends Modal {
         contentEl.createEl("p", { text: MESSAGES.UPDATE_MODAL_BODY(this.release.tag, this.build) });
         contentEl.createEl("p", { text: MESSAGES.UPDATE_MODAL_HOW_TO_DISABLE, cls: "lilbee-update-modal-hint" });
 
-        const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
+        const actions = contentEl.createDiv({ cls: "modal-button-container" });
         const open = actions.createEl("button", { text: MESSAGES.BUTTON_OPEN_UPDATE_SETTINGS, cls: "mod-cta" });
         open.addEventListener("click", () => {
             this.close();
