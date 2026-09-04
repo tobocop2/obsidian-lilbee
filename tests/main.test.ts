@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
-import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { DEFAULT_SHARED_CONFIG, INDETERMINATE_PROGRESS, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
@@ -14,6 +14,7 @@ vi.mock("../src/dataset-io", () => ({
     importDatasetFromDisk: vi.fn().mockResolvedValue(undefined),
 }));
 import { exportDiagnostics } from "../src/diagnostics-export";
+import { ok, err } from "../src/result";
 vi.mock("../src/diagnostics-export", () => ({
     exportDiagnostics: vi.fn().mockResolvedValue(undefined),
 }));
@@ -346,6 +347,7 @@ describe("LilbeePlugin", () => {
     });
 
     afterEach(() => {
+        Plugin.clearIntervals();
         vi.useRealTimers();
     });
 
@@ -1677,7 +1679,6 @@ describe("LilbeePlugin", () => {
 
         it("lilbee:model-info-active-chat opens ModelInfoModal when chat_model is set", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
-            const { ok } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
@@ -1738,7 +1739,6 @@ describe("LilbeePlugin", () => {
         it("lilbee:model-info-active-chat shows a Notice when catalog lookup errors", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
             (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
-            const { err } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
@@ -1754,7 +1754,6 @@ describe("LilbeePlugin", () => {
         it("lilbee:model-info-active-chat shows a Notice when catalog returns no rows", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
             (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
-            const { ok } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
@@ -1770,7 +1769,6 @@ describe("LilbeePlugin", () => {
         it("lilbee:model-info-active-embedding resolves embedding_model and falls back to first catalog row", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
             (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
-            const { ok } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ embedding_model: "BAAI/bge-m3" });
@@ -4044,7 +4042,7 @@ describe("LilbeePlugin", () => {
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
-            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.status = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
         });
@@ -4052,7 +4050,7 @@ describe("LilbeePlugin", () => {
         it("skips probing while there are active tasks or while the server is starting", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.api.health = vi.fn();
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
 
             // Enqueue an active task — probe should bail.
             plugin.taskQueue.enqueue("busy", "sync");
@@ -4092,7 +4090,7 @@ describe("LilbeePlugin", () => {
         it("tolerates a single failed probe without flipping to error", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
         });
@@ -4162,15 +4160,15 @@ describe("LilbeePlugin", () => {
         it("resets the failure streak on a successful probe between failures", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
-            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.status = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
         });
@@ -4179,7 +4177,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).readCurrentToken = vi.fn(() => null);
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             Notice.clear();
             await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
@@ -4195,7 +4193,7 @@ describe("LilbeePlugin", () => {
             // at least once — simulate a server that came up then went down.
             (plugin as any).serverEverReady = true;
             (plugin as any).readCurrentToken = vi.fn(() => null);
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             (plugin as any).missingTokenNoticeFired = false;
             (plugin as any).healthFailureStreak = 1;
             Notice.clear();
@@ -4209,7 +4207,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).startingServer = false;
             (plugin as any).serverUnreachable = false;
             (plugin as any).serverEverReady = false;
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             (plugin as any).healthFailureStreak = 5;
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
@@ -4222,7 +4220,7 @@ describe("LilbeePlugin", () => {
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
-            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.status = vi.fn().mockResolvedValue(err(new Error("down")));
             plugin.notifyChatStart();
             await (plugin as any).probeServerHealth();
             expect(plugin.api.health).not.toHaveBeenCalled();
@@ -4243,7 +4241,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).readCurrentToken = vi.fn(() => null);
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             Notice.clear();
             // Two failed probes to cross the streak threshold and fire once.
             await (plugin as any).probeServerHealth();
@@ -4261,7 +4259,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).readCurrentToken = vi.fn(() => "token");
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             (plugin as any).missingTokenNoticeFired = false;
             Notice.clear();
             await (plugin as any).probeServerHealth();
@@ -4271,6 +4269,18 @@ describe("LilbeePlugin", () => {
                     n.message === MESSAGES.NOTICE_NO_TOKEN_MANAGED || n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL,
             );
             expect(fired).toBe(false);
+        });
+
+        it("records the probe interval on the mock so afterEach clears it", async () => {
+            const clearSpy = vi.spyOn(window, "clearInterval");
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const handle = vi.mocked(plugin.registerInterval).mock.calls[0][0];
+            expect(Plugin.intervals).toContain(handle);
+            Plugin.clearIntervals();
+            expect(clearSpy).toHaveBeenCalledWith(handle);
+            expect(Plugin.intervals).toEqual([]);
+            clearSpy.mockRestore();
         });
     });
 
@@ -6296,7 +6306,6 @@ describe("LilbeePlugin", () => {
         const RELEASE = { tag: "v0.6.74", assetUrl: "u", variant: "default", sizeBytes: 1, digest: null };
 
         async function setupExternal(version: string, release: unknown = RELEASE) {
-            const { ok } = await import("../src/result");
             const { getLatestRelease } = await import("../src/binary-manager");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(release);
             const plugin = await createPlugin({ serverMode: "external" });
@@ -6328,7 +6337,6 @@ describe("LilbeePlugin", () => {
         });
 
         it("stays quiet when the server is unreachable", async () => {
-            const { err } = await import("../src/result");
             const plugin = await setupExternal("0.6.60");
             plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).warnExternalServerOutdated();
