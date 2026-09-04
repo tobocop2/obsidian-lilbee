@@ -19,6 +19,7 @@ import {
     readdirSync,
     rmSync,
 } from "fs";
+import { homedir } from "os";
 import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
@@ -42,6 +43,7 @@ const statfsAsync = promisify(statfs);
 /** Exported for test mocking. */
 export const node = {
     spawn,
+    homedir,
     execFile: execFileAsync,
     appendFileSync,
     existsSync,
@@ -92,6 +94,8 @@ const GITHUB_RATE_LIMITED = "GitHub's rate limit was reached; release checks res
 
 /** `nvidia-smi` hangs on a wedged GPU; past this the probe records a timeout instead of waiting. */
 const NVIDIA_SMI_TIMEOUT_MS = 10_000;
+/** Present when the NVIDIA kernel module is loaded, whatever a sandbox hides from PATH. */
+const NVIDIA_DRIVER_VERSION_PATH = "/proc/driver/nvidia/version";
 const NVIDIA_SMI_TIMED_OUT = `nvidia-smi did not answer within ${NVIDIA_SMI_TIMEOUT_MS / 1000} s`;
 
 /** Windows installers put `nvidia-smi` here but leave it off PATH: DCH drivers use System32,
@@ -119,18 +123,30 @@ function probeFailureText(e: unknown): string {
     return text.replace(/\s+/g, " ").trim();
 }
 
-/** Run `nvidia-smi` and return its stdout, or the error the PATH lookup failed with. */
-async function runNvidiaSmi(): Promise<{ stdout: string; error: null } | { stdout: null; error: string }> {
+type NvidiaSmiRun =
+    | { stdout: string; error: null; notFound: false }
+    /** `notFound` is true when no candidate existed at all, as opposed to one that ran and failed. */
+    | { stdout: null; error: string; notFound: boolean };
+
+/** Run `nvidia-smi` and return its stdout, or the error the first lookup failed with. */
+async function runNvidiaSmi(): Promise<NvidiaSmiRun> {
     let firstError = "";
+    let notFound = true;
     for (const command of nvidiaSmiCandidates()) {
         try {
             const { stdout } = await node.execFile(command, [], { timeout: NVIDIA_SMI_TIMEOUT_MS });
-            return { stdout, error: null };
+            return { stdout, error: null, notFound: false };
         } catch (e) {
             if (!firstError) firstError = probeFailureText(e);
+            if ((e as NodeJS.ErrnoException).code !== "ENOENT") notFound = false;
         }
     }
-    return { stdout: null, error: firstError };
+    return { stdout: null, error: firstError, notFound };
+}
+
+/** Linux only: a loaded kernel module without a reachable `nvidia-smi` means a sandbox, not a missing driver. */
+function driverPresentWithoutSmi(): boolean {
+    return process.platform === PLATFORM.LINUX && node.existsSync(NVIDIA_DRIVER_VERSION_PATH);
 }
 
 /** Parse the driver's max CUDA version from `nvidia-smi` output as major*100+minor (12.5 -> 1205). */
@@ -151,8 +167,11 @@ function pickCudaTag(ceiling: number): CudaTag | null {
 /** Probe the NVIDIA driver, recording why the probe ended where it did. */
 async function probeNvidia(): Promise<NvidiaProbe> {
     if (process.platform === PLATFORM.DARWIN) return { status: NVIDIA_PROBE_STATUS.SKIPPED };
-    const { stdout, error } = await runNvidiaSmi();
-    if (stdout === null) return { status: NVIDIA_PROBE_STATUS.MISSING, error };
+    const { stdout, error, notFound } = await runNvidiaSmi();
+    if (stdout === null) {
+        if (notFound && driverPresentWithoutSmi()) return { status: NVIDIA_PROBE_STATUS.SANDBOXED };
+        return { status: NVIDIA_PROBE_STATUS.MISSING, error };
+    }
     const ceiling = parseCudaCeiling(stdout);
     if (ceiling === null) return { status: NVIDIA_PROBE_STATUS.UNREADABLE };
     return { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: ceiling };

@@ -667,12 +667,13 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
 };
 
 /** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
-export type UninstallTargetKind = "binary" | "models" | "index";
+export type UninstallTargetKind = "binary" | "models" | "index" | "cache";
 
 export const UNINSTALL_TARGET = {
     BINARY: "binary",
     MODELS: "models",
     INDEX: "index",
+    CACHE: "cache",
 } as const satisfies Record<string, UninstallTargetKind>;
 
 export interface UninstallTarget {
@@ -1334,12 +1335,14 @@ export const SERVER_VARIANT = {
 export const CUDA_MIN_CEILING = 1201;
 
 /** How the `nvidia-smi` probe ended. */
-export type NvidiaProbeStatus = "skipped" | "missing" | "unreadable" | "detected";
+export type NvidiaProbeStatus = "skipped" | "missing" | "sandboxed" | "unreadable" | "detected";
 export const NVIDIA_PROBE_STATUS = {
     /** macOS: lilbee ships one build there, so nothing is probed. */
     SKIPPED: "skipped",
     /** `nvidia-smi` is absent or exited non-zero at every location tried. */
     MISSING: "missing",
+    /** Linux: the kernel module is loaded but no `nvidia-smi` is reachable (Flatpak, Snap). */
+    SANDBOXED: "sandboxed",
     /** `nvidia-smi` ran but its output names no CUDA version. */
     UNREADABLE: "unreadable",
     /** The driver named the newest CUDA version it supports. */
@@ -1350,6 +1353,7 @@ export const NVIDIA_PROBE_STATUS = {
 export type NvidiaProbe =
     | { status: "skipped" }
     | { status: "missing"; error: string }
+    | { status: "sandboxed" }
     | { status: "unreadable" }
     /** The driver's maximum CUDA version as major*100+minor (12.4 -> 1204). */
     | { status: "detected"; cudaCeiling: number };

@@ -456,6 +456,13 @@ describe("types", () => {
             );
         });
 
+        it("names the sandbox when the driver is present but nvidia-smi is out of reach", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.SANDBOXED }))).toBe(
+                "An NVIDIA driver is present, but this Obsidian cannot reach nvidia-smi, so its CUDA version is unknown. " +
+                    "Flatpak and Snap sandboxes hide it. No AMD compute device.",
+            );
+        });
+
         it("separates a driver that did not answer from one that is absent", () => {
             expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.UNREADABLE }))).toBe(
                 "nvidia-smi ran but reported no CUDA version. No AMD compute device.",

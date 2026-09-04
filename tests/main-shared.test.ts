@@ -60,6 +60,7 @@ vi.mock("../src/binary-manager", () => {
         cpSync: vi.fn(),
         statSync: vi.fn(() => ({ isDirectory: () => false, dev: 1, size: 0 })),
         readdirSync: vi.fn(() => [] as string[]),
+        homedir: () => "/home/u",
         rmSync: vi.fn((p: string) => {
             fsState.files.delete(p);
             fsState.dirs.delete(p);
@@ -134,7 +135,7 @@ vi.mock("../src/server-manager", () => {
 
 import LilbeePlugin from "../src/main";
 import { App, Notice } from "obsidian";
-import { NVIDIA_PROBE_STATUS, SHARED_PATH } from "../src/types";
+import { NVIDIA_PROBE_STATUS, SHARED_PATH, UNINSTALL_TARGET } from "../src/types";
 import type { GpuDetection } from "../src/types";
 
 /** A probe result, as every install now records one. */
@@ -750,11 +751,13 @@ describe("managed-server uninstall", () => {
 
         const plan = plugin.planServerUninstall()!;
 
-        expect(plan.targets.map((t) => t.path)).toEqual([
+        expect(plan.targets.slice(0, 3).map((t) => t.path)).toEqual([
             `${root}/bin`,
             `${root}/models`,
             `${root}/vaults/${plugin.vaultId}`,
         ]);
+        // The server's unpack cache follows; its path depends on the host platform.
+        expect(plan.targets.slice(3).map((t) => t.kind)).toEqual([UNINSTALL_TARGET.CACHE]);
     });
 
     it("has no plan without a vault registry", async () => {

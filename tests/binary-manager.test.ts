@@ -342,6 +342,34 @@ describe("detectHostGpu", () => {
         expect(exec).toHaveBeenCalledWith("nvidia-smi", [], expect.objectContaining({ timeout: 10_000 }));
     });
 
+    it("records a sandboxed driver when nvidia-smi is off PATH but the kernel module is loaded", async () => {
+        restore = stubPlatform("linux", "x64");
+        const notFound = Object.assign(new Error("spawn nvidia-smi ENOENT"), { code: "ENOENT" });
+        vi.spyOn(node, "execFile").mockRejectedValue(notFound);
+        vi.spyOn(node, "existsSync").mockImplementation((path: string) => path === "/proc/driver/nvidia/version");
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "sandboxed" });
+    });
+
+    it("records a missing driver when nvidia-smi is off PATH and no kernel module is loaded", async () => {
+        restore = stubPlatform("linux", "x64");
+        const notFound = Object.assign(new Error("spawn nvidia-smi ENOENT"), { code: "ENOENT" });
+        vi.spyOn(node, "execFile").mockRejectedValue(notFound);
+        stubNoAmd();
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "spawn nvidia-smi ENOENT" });
+    });
+
+    it("keeps a driver error over the sandbox reason when nvidia-smi ran and failed", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockRejectedValue(new Error("Command failed: nvidia-smi"));
+        const exists = vi.spyOn(node, "existsSync").mockReturnValue(true);
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "Command failed: nvidia-smi" });
+        expect(exists).not.toHaveBeenCalledWith("/proc/driver/nvidia/version");
+    });
+
     it("records that nvidia-smi ran but named no CUDA version", async () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "no version line here", stderr: "" });

@@ -416,6 +416,8 @@ export const MESSAGES = {
         if (nvidia.status === NVIDIA_PROBE_STATUS.SKIPPED) return "lilbee ships one macOS build, so nothing is probed.";
         const amd = amdGfxTargets.length > 0 ? `AMD targets: ${amdGfxTargets.join(", ")}.` : "No AMD compute device.";
         if (nvidia.status === NVIDIA_PROBE_STATUS.MISSING) return `nvidia-smi did not run: ${nvidia.error}. ${amd}`;
+        if (nvidia.status === NVIDIA_PROBE_STATUS.SANDBOXED)
+            return `An NVIDIA driver is present, but this Obsidian cannot reach nvidia-smi, so its CUDA version is unknown. Flatpak and Snap sandboxes hide it. ${amd}`;
         if (nvidia.status === NVIDIA_PROBE_STATUS.UNREADABLE)
             return `nvidia-smi ran but reported no CUDA version. ${amd}`;
         const floor =
@@ -464,6 +466,7 @@ export const MESSAGES = {
     LABEL_UNINSTALL_BINARY: "Server executable",
     LABEL_UNINSTALL_MODELS: "Downloaded models",
     LABEL_UNINSTALL_INDEX: "Search index for this vault",
+    LABEL_UNINSTALL_CACHE: "Unpacked server files",
     LABEL_UNINSTALL_KEEP: "Your notes and attachments",
     LABEL_UNINSTALL_KEEP_VALUE: "untouched",
     LABEL_UNINSTALL_DELETE_TAG: "Delete",
