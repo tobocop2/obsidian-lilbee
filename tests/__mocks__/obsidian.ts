@@ -314,7 +314,6 @@ export class App {
         createLeafBySplit: vi.fn().mockReturnValue(null),
         getLeaf: vi.fn().mockReturnValue(null),
         revealLeaf: vi.fn(),
-        rightSplit: { collapsed: false },
         on: vi.fn().mockReturnValue({ id: "mock-event" }),
         getActiveFile: vi.fn().mockReturnValue(null),
         // Obsidian's real workspace fires this once layout is up. Tests run
@@ -626,7 +625,6 @@ export class WorkspaceLeaf {
     }
     setViewState = vi.fn();
     detach = vi.fn();
-    getRoot = vi.fn().mockReturnValue(null);
 }
 
 export class Plugin {

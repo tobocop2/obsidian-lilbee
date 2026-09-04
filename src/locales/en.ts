@@ -814,7 +814,6 @@ export const MESSAGES = {
     COMMAND_DOCUMENTS: "Browse documents",
     COMMAND_SETUP: "Run setup wizard",
     COMMAND_TASKS: "Show task center",
-    COMMAND_TOGGLE_TASKS: "Toggle task center",
     COMMAND_STATUS: "Show status",
 
     // Status modal
