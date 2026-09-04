@@ -1,4 +1,4 @@
-import type { DownloadProgress, EnsureResult, Variant } from "lilbee";
+import type { DownloadProgress, EnsureResult, LauncherErrorCode, Variant } from "lilbee";
 
 export interface Excerpt {
     content: string;
@@ -1334,6 +1334,23 @@ export const ENSURE_SOURCE = {
     CACHE: "cache",
     DOWNLOAD: "download",
 } as const satisfies Record<string, EnsureResult["source"]>;
+
+/** Why the launcher failed a release query or a download. */
+export const LAUNCHER_ERROR_CODE = {
+    RATE_LIMITED: "rate-limited",
+    HTTP: "http",
+    NO_RELEASE: "no-release",
+    NO_SPACE: "no-space",
+    STALLED: "stalled",
+    NO_DIGEST: "no-digest",
+    DIGEST_MISMATCH: "digest-mismatch",
+} as const satisfies Record<string, LauncherErrorCode>;
+
+/** The release and build a flat pre-launcher install was moved under. */
+export interface MigratedBinary {
+    release: string;
+    variant: ServerVariant;
+}
 
 /** GitHub "owner/repo" of the lilbee server. */
 export const LILBEE_GITHUB_REPO = "tobocop2/lilbee";

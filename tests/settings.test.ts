@@ -2373,6 +2373,26 @@ describe("managed mode settings", () => {
         expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
     });
 
+    it("the update section reads releases through the adapter, never GitHub directly", async () => {
+        const fetchSpy = vi.fn();
+        vi.stubGlobal("fetch", fetchSpy);
+        try {
+            mockListReleases.mockClear();
+            mockListReleases.mockResolvedValue(RELEASES);
+            const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+
+            tab.display();
+            await settleReleases();
+
+            expect(mockListReleases).toHaveBeenCalledWith(true);
+            expect(fetchSpy.mock.calls.some(([url]) => String(url).includes("github"))).toBe(false);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     const DEV_AHEAD = [
         {
             tag: "v0.4.0.dev9",

@@ -91,6 +91,27 @@ describe("ManagedConsentModal", () => {
         expect(notes!.attributes["href"]).toContain("/releases/tag/v0.6.66");
     });
 
+    it("reads provenance through the adapter, never GitHub directly", async () => {
+        const fetchSpy = vi.fn();
+        vi.stubGlobal("fetch", fetchSpy);
+        try {
+            mockedGetLatestRelease.mockResolvedValue({
+                tag: "v0.6.66",
+                url: "https://x/lilbee",
+                assetName: "lilbee-linux-x86_64",
+                variant: "default",
+                size: 412_000_000,
+            });
+            openModal();
+            await flush();
+
+            expect(mockedGetLatestRelease).toHaveBeenCalledWith(false);
+            expect(fetchSpy).not.toHaveBeenCalled();
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it("degrades to repo-only when getLatestRelease fails", async () => {
         mockedGetLatestRelease.mockRejectedValue(new Error("offline"));
         const { root } = openModal();

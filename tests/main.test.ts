@@ -207,7 +207,7 @@ vi.mock("../src/server-binary", () => ({
     ServerBinary: vi.fn().mockImplementation(function () {
         return { installed: mockInstalled, ensure: mockEnsure };
     }),
-    migrateFlatBinary: vi.fn(),
+    migrateFlatBinary: vi.fn().mockResolvedValue(null),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
     listReleases: vi.fn(async () => []),
@@ -5864,19 +5864,105 @@ describe("LilbeePlugin", () => {
             );
         });
 
-        it("moves a flat pre-launcher install before checking what is installed", async () => {
-            const { migrateFlatBinary } = await import("../src/server-binary");
-            const migrate = migrateFlatBinary as ReturnType<typeof vi.fn>;
-            migrate.mockClear();
-            mockInstalled.mockClear();
-            const plugin = await createPlugin({ serverMode: "managed" });
-            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
-            vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("cu124");
-            await plugin.onload();
-            await flush();
+        describe("flat pre-launcher install", () => {
+            async function migrateMock() {
+                const { migrateFlatBinary } = await import("../src/server-binary");
+                const migrate = migrateFlatBinary as ReturnType<typeof vi.fn>;
+                migrate.mockClear();
+                migrate.mockResolvedValue(null);
+                return migrate;
+            }
 
-            expect(migrate).toHaveBeenCalledWith(expect.stringMatching(/\/bin$/), "v0.4.0", "cu124");
-            expect(migrate.mock.invocationCallOrder[0]).toBeLessThan(mockInstalled.mock.invocationCallOrder[0]);
+            it("is moved once while settings load, before anything checks what is installed", async () => {
+                const migrate = await migrateMock();
+                mockInstalled.mockClear();
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
+                vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("cu124");
+                await plugin.onload();
+                await flush();
+                plugin.isServerInstalled();
+
+                expect(migrate).toHaveBeenCalledTimes(1);
+                expect(migrate).toHaveBeenCalledWith(expect.stringMatching(/\/bin$/), "v0.4.0", "cu124");
+                expect(migrate.mock.invocationCallOrder[0]).toBeLessThan(mockInstalled.mock.invocationCallOrder[0]);
+            });
+
+            it("records the release and build a probed binary was filed under", async () => {
+                const migrate = await migrateMock();
+                migrate.mockResolvedValue({ release: "v0.6.90b432", variant: "default" });
+                const plugin = await createPlugin({ serverMode: "external" });
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("");
+                const setVersion = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+                const setVariant = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
+
+                await plugin.loadSettings();
+
+                expect(setVersion).toHaveBeenCalledWith("v0.6.90b432");
+                expect(setVariant).toHaveBeenCalledWith("default");
+            });
+
+            it("leaves an existing record alone when the recorded version drove the move", async () => {
+                const migrate = await migrateMock();
+                migrate.mockResolvedValue({ release: "v0.4.0", variant: "cu124" });
+                const plugin = await createPlugin({ serverMode: "external" });
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
+                const setVersion = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+
+                await plugin.loadSettings();
+
+                expect(setVersion).not.toHaveBeenCalled();
+            });
+
+            it("still loads when the move fails, and journals why", async () => {
+                const migrate = await migrateMock();
+                migrate.mockRejectedValue(new Error("EPERM"));
+                const plugin = await createPlugin({ serverMode: "external" });
+
+                await plugin.loadSettings();
+
+                expect(plugin.vaultRegistry).not.toBeNull();
+                expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                    "could not move the installed server into the release layout: EPERM",
+                );
+            });
+        });
+
+        it("shows the release lookup phase before the first progress event when nothing is installed", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 128, total: 256 });
+                return { ...INSTALLED, source: "download" };
+            });
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const statusTexts: string[] = [];
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
+                statusTexts.push(text);
+                origUpdate(text, dot);
+            };
+            const messages: string[] = [];
+
+            await plugin.startManagedServer((event: any) => messages.push(event.message));
+
+            const fetching = statusTexts.indexOf(`lilbee: ${MESSAGES.STATUS_FETCHING_RELEASE}`);
+            const progress = statusTexts.indexOf(MESSAGES.STATUS_DOWNLOADING_PERCENT(50));
+            expect(fetching).toBeGreaterThan(statusTexts.indexOf(MESSAGES.STATUS_DOWNLOADING));
+            expect(progress).toBeGreaterThan(fetching);
+            expect(messages.indexOf(MESSAGES.STATUS_FETCHING_RELEASE)).toBeLessThan(
+                messages.findIndex((m) => m.startsWith("Downloading... 50%")),
+            );
+        });
+
+        it("skips the release lookup phase when a binary is installed", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const messages: string[] = [];
+
+            await plugin.startManagedServer((event: any) => messages.push(event.message));
+
+            expect(messages).not.toContain(MESSAGES.STATUS_FETCHING_RELEASE);
         });
 
         it("does not create serverManager when ensureBinary fails", async () => {
@@ -6317,6 +6403,73 @@ describe("LilbeePlugin", () => {
 
             const result = await plugin.checkForUpdate();
             expect(result.available).toBe(false);
+        });
+    });
+
+    describe("release queries go through the adapter, never GitHub directly", () => {
+        const RELEASE = { tag: "v0.2.0", url: "u", variant: "default", size: 1, digest: null };
+        let fetchSpy: ReturnType<typeof vi.fn>;
+
+        beforeEach(() => {
+            fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 599, json: async () => ({}) });
+            vi.stubGlobal("fetch", fetchSpy);
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        /** Every URL the renderer's fetch saw; the release APIs must not be among them. */
+        const fetchedGithub = () => fetchSpy.mock.calls.some(([url]) => String(url).includes("github"));
+
+        it("checkForUpdate asks the adapter", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(RELEASE);
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            const result = await plugin.checkForUpdate();
+
+            expect(result.release).toBe(RELEASE);
+            expect(getLatestRelease).toHaveBeenCalledWith(plugin.settings.includeDevBuilds);
+            expect(fetchedGithub()).toBe(false);
+        });
+
+        it("the once-per-plugin-version auto-update asks the adapter", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(RELEASE);
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "v0.1.0",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: "",
+                serverAutoUpdate: true,
+            });
+            vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const update = vi.spyOn(plugin, "updateServer").mockResolvedValue(undefined);
+            await plugin.onload();
+            await flush();
+
+            expect(getLatestRelease).toHaveBeenCalled();
+            expect(update).toHaveBeenCalledWith(RELEASE);
+            expect(fetchedGithub()).toBe(false);
+        });
+
+        it("the external-server-outdated warning asks the adapter", async () => {
+            const { ok } = await import("../src/result");
+            const { getLatestRelease } = await import("../src/server-binary");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({ ...RELEASE, tag: "v0.6.74" });
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok", version: "0.6.60" }));
+            await plugin.onload();
+            await flush();
+
+            expect(getLatestRelease).toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(true);
+            expect(fetchedGithub()).toBe(false);
         });
     });
 
@@ -7287,7 +7440,10 @@ describe("LilbeePlugin", () => {
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
             expect(variantSpy).toHaveBeenCalledWith("cu125");
             expect(progress).toContain("Stopping server...");
-            expect(progress).toContain("Downloading...");
+            // The release is looked up inside ensure, so the lookup phase shows before it runs.
+            expect(progress.indexOf(MESSAGES.STATUS_FETCHING_RELEASE)).toBeGreaterThan(
+                progress.indexOf("Stopping server..."),
+            );
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
             const journal = plugin.journal.entries.map((e) => e.message);

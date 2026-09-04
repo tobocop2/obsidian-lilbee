@@ -458,6 +458,12 @@ export const MESSAGES = {
     ERROR_UNINSTALL_SERVER_IN_USE: (vaultName: string) =>
         `The lilbee server is running for ${vaultName}. Close that vault, then uninstall.`,
     ERROR_INSTALL_FAILED: "Could not install the lilbee server",
+    ERROR_DOWNLOAD_NO_SPACE: (needed: string, free: string) =>
+        `Not enough disk space for the lilbee server: need about ${needed} free, but only ${free} is available. Free up some space and try again.`,
+    ERROR_DOWNLOAD_STALLED: "The lilbee server download stalled. Check your connection and try again.",
+    ERROR_DOWNLOAD_UNVERIFIED:
+        "The downloaded lilbee server could not be verified against its checksum and was discarded. Please try again.",
+    ERROR_GITHUB_STATUS: (status: number) => `GitHub API responded ${status}`,
     ERROR_RELEASE_LIST: (reason: string) => `Could not read the lilbee release list from GitHub: ${reason}`,
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
     LABEL_MANUAL_TOKEN: "Session token",
@@ -597,6 +603,7 @@ export const MESSAGES = {
     TITLE_EXTERNAL: "External",
 
     STATUS_DOWNLOADING: "lilbee: downloading...",
+    STATUS_FETCHING_RELEASE: "Fetching latest release info...",
     STATUS_DOWNLOADING_PERCENT: (percent: number) => `lilbee: downloading ${percent}%`,
     STATUS_DOWNLOAD_PROGRESS: (percent: number, received: string, total: string) =>
         `Downloading... ${percent}% (${received} of ${total})`,

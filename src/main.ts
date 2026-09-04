@@ -486,7 +486,8 @@ export default class LilbeePlugin extends Plugin {
                 return;
             }
 
-            const installed = await this.ensureBinaryWithUi(this.serverBinary(sharedRoot), onProgress);
+            const binary = new ServerBinary(sharedBinDir(sharedRoot));
+            const installed = await this.ensureBinaryWithUi(binary, onProgress);
             if (installed === null) return;
             this.recordDownloadedBinary(installed);
             // A spawn after unload would leak a server no plugin instance tracks.
@@ -619,7 +620,7 @@ export default class LilbeePlugin extends Plugin {
         const registry = this.vaultRegistry;
         if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
 
-        const binaryPresent = this.serverBinary(registry.sharedRoot).installed() !== null;
+        const binaryPresent = new ServerBinary(sharedBinDir(registry.sharedRoot)).installed() !== null;
         if (binaryPresent && !this.serverUninstalled) {
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
@@ -706,13 +707,6 @@ export default class LilbeePlugin extends Plugin {
         this.downloadController?.abort();
     }
 
-    /** The shared bin dir's server binary, with a flat pre-launcher install moved into the launcher's layout first. */
-    private serverBinary(sharedRoot: string): ServerBinary {
-        const binDir = sharedBinDir(sharedRoot);
-        migrateFlatBinary(binDir, this.getSharedLilbeeVersion(), this.getSharedLilbeeVariant());
-        return new ServerBinary(binDir);
-    }
-
     private async ensureBinaryWithUi(
         binary: ServerBinary,
         onProgress?: ManagedServerProgressHandler,
@@ -721,6 +715,8 @@ export default class LilbeePlugin extends Plugin {
             this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
             this.setStatusClass("lilbee-status-downloading");
             onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_DOWNLOADING });
+            this.updateStatusBar(`lilbee: ${MESSAGES.STATUS_FETCHING_RELEASE}`, DOT_STATE.PRIMARY);
+            onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_FETCHING_RELEASE });
         }
         try {
             const installed = await binary.ensure({
@@ -928,7 +924,7 @@ export default class LilbeePlugin extends Plugin {
     isServerInstalled(): boolean {
         const registry = this.vaultRegistry;
         if (!registry) return false;
-        return this.serverBinary(registry.sharedRoot).installed() !== null;
+        return new ServerBinary(sharedBinDir(registry.sharedRoot)).installed() !== null;
     }
 
     /** Size what an uninstall would delete, so the confirmation can list it. */
@@ -1066,7 +1062,7 @@ export default class LilbeePlugin extends Plugin {
         this.journal.lifecycle(
             `updating server binary: ${this.getSharedLilbeeVersion() || "(unknown)"} -> ${release.tag}`,
         );
-        const binary = this.serverBinary(registry.sharedRoot);
+        const binary = new ServerBinary(sharedBinDir(registry.sharedRoot));
 
         // Stop the running server first
         if (this.serverManager) {
@@ -1076,7 +1072,7 @@ export default class LilbeePlugin extends Plugin {
         }
 
         // Download the new binary (replaces the old one once its checksum clears)
-        onProgress?.("Downloading...");
+        onProgress?.(MESSAGES.STATUS_FETCHING_RELEASE);
         let installed: EnsureResult;
         try {
             installed = await binary.ensure({
@@ -1620,6 +1616,22 @@ export default class LilbeePlugin extends Plugin {
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
         this.serverUninstalled = this.vaultRegistry.loadConfig().serverUninstalled;
+        await this.migrateFlatInstall(this.vaultRegistry.sharedRoot);
+    }
+
+    /** Move a flat pre-launcher install into the release layout; a probed identity fills an empty record. */
+    private async migrateFlatInstall(sharedRoot: string): Promise<void> {
+        const recorded = this.getSharedLilbeeVersion();
+        try {
+            const moved = await migrateFlatBinary(sharedBinDir(sharedRoot), recorded, this.getSharedLilbeeVariant());
+            if (moved === null || recorded) return;
+            this.setSharedLilbeeVersion(moved.release);
+            this.setSharedLilbeeVariant(moved.variant);
+        } catch (err) {
+            this.journal.lifecycle(
+                `could not move the installed server into the release layout: ${errorMessage(err, String(err))}`,
+            );
+        }
     }
 
     /** Mirrors `SharedConfig.serverUninstalled`; read on every status paint and health probe. */

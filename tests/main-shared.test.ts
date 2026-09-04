@@ -102,7 +102,7 @@ vi.mock("../src/server-binary", () => {
         ServerBinary: vi.fn().mockImplementation(function () {
             return { installed: vi.fn().mockReturnValue(INSTALLED), ensure: mockEnsure };
         }),
-        migrateFlatBinary: vi.fn(),
+        migrateFlatBinary: vi.fn().mockResolvedValue(null),
         getLatestRelease: vi.fn().mockResolvedValue({ tag: "v0.5.1", url: "https://example.com" }),
         checkForUpdate: vi.fn(() => false),
     };
