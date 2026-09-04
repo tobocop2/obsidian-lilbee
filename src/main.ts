@@ -1493,6 +1493,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "tasks-toggle",
+            name: MESSAGES.COMMAND_TOGGLE_TASKS,
+            callback: () => this.toggleTaskView(),
+        });
+
+        this.addCommand({
             id: "arrange-views",
             name: "Arrange views",
             callback: () => this.arrangeViews(),
@@ -2450,6 +2456,21 @@ export default class LilbeePlugin extends Plugin {
             await leaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
             void this.app.workspace.revealLeaf(leaf);
         }
+    }
+
+    /** Opens the Task Center, reveals it when its sidebar is collapsed, and closes it otherwise. */
+    async toggleTaskView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
+        if (existing.length === 0) {
+            await this.activateTaskView();
+            return;
+        }
+        const sidebar = this.app.workspace.rightSplit;
+        if (existing[0].getRoot() === sidebar && sidebar.collapsed) {
+            void this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        for (const leaf of existing) leaf.detach();
     }
 
     refreshOpenWikiViews(): void {

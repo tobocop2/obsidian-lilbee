@@ -99,6 +99,17 @@ describe("TaskCenterView.onOpen", () => {
         expect(clearBtn!.textContent).toBe("Clear");
     });
 
+    it("registers a header action that detaches the leaf", () => {
+        const closeBtn = (view as any).actions.find((el: MockElement) => el.attributes["data-icon"] === "x");
+        expect(closeBtn).toBeDefined();
+        expect(closeBtn!.getAttribute("aria-label")).toBe("Close task center");
+
+        const leaf = (view as any).leaf as WorkspaceLeaf;
+        expect(leaf.detach).not.toHaveBeenCalled();
+        closeBtn!.trigger("click");
+        expect(leaf.detach).toHaveBeenCalledTimes(1);
+    });
+
     it("renders counters in header", () => {
         const counters = contentEl.find("lilbee-tasks-counters");
         expect(counters).not.toBeNull();

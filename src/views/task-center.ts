@@ -66,6 +66,8 @@ export class TaskCenterView extends ItemView {
             this.render();
         });
 
+        this.addAction("x", MESSAGES.LABEL_CLOSE_TASK_CENTER, () => this.leaf.detach());
+
         this.activeSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
         this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).setText(MESSAGES.LABEL_ACTIVE_TASKS);
 
