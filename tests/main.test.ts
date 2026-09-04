@@ -5955,6 +5955,37 @@ describe("LilbeePlugin", () => {
             );
         });
 
+        it("shows the bare download phase for the zero-byte event that opens the transfer", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 0, total: 256 });
+                onProgress?.({ done: 128, total: 256 });
+                return { ...INSTALLED, source: "download" };
+            });
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const statusTexts: string[] = [];
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
+                statusTexts.push(text);
+                origUpdate(text, dot);
+            };
+            const events: Array<{ message: string; percent?: number }> = [];
+
+            await plugin.startManagedServer((event: any) => events.push(event));
+
+            const bare = statusTexts.indexOf(`lilbee: ${MESSAGES.STATUS_DOWNLOAD_STARTING}`);
+            expect(bare).toBeGreaterThan(statusTexts.indexOf(`lilbee: ${MESSAGES.STATUS_FETCHING_RELEASE}`));
+            expect(statusTexts.indexOf(MESSAGES.STATUS_DOWNLOADING_PERCENT(50))).toBeGreaterThan(bare);
+            expect(statusTexts).not.toContain(MESSAGES.STATUS_DOWNLOADING_PERCENT(0));
+            expect(events).toContainEqual({
+                phase: "downloading",
+                message: MESSAGES.STATUS_DOWNLOAD_STARTING,
+                percent: undefined,
+            });
+            expect(events.some((e) => e.message.startsWith("Downloading... 0%"))).toBe(false);
+        });
+
         it("skips the release lookup phase when a binary is installed", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -7466,6 +7497,30 @@ describe("LilbeePlugin", () => {
                 (msg, percent) => seen.push([msg, percent]),
             );
 
+            expect(seen).toContainEqual(["Downloading... 50% (128 MB of 256 MB)", 50]);
+        });
+
+        it("keeps the Settings bar indeterminate on the zero-byte event that opens the transfer", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress({ done: 0, total: 256_000_000 });
+                onProgress({ done: 128_000_000, total: 256_000_000 });
+                return INSTALLED;
+            });
+
+            const seen: Array<[string, number | undefined]> = [];
+            await plugin.updateServer(
+                { tag: "v1", url: "https://e/dl", variant: "default", size: 1, digest: null } as any,
+                (msg, percent) => seen.push([msg, percent]),
+            );
+
+            // Once before ensure (the release is known), once for the transfer opening.
+            expect(seen.filter(([msg]) => msg === MESSAGES.STATUS_DOWNLOAD_STARTING)).toEqual([
+                [MESSAGES.STATUS_DOWNLOAD_STARTING, undefined],
+                [MESSAGES.STATUS_DOWNLOAD_STARTING, undefined],
+            ]);
+            expect(seen.some(([msg]) => msg.startsWith("Downloading... 0%"))).toBe(false);
             expect(seen).toContainEqual(["Downloading... 50% (128 MB of 256 MB)", 50]);
         });
 

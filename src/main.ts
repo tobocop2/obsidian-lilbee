@@ -268,17 +268,25 @@ export type ServerDownloadProgressHandler = (msg: string, percent?: number) => v
 
 /** "Downloading... 45% (128 MB of 283 MB)", or bytes-only when the server sends no length. */
 function downloadMessage(progress: DownloadProgress): string {
+    if (progress.done === 0) return MESSAGES.STATUS_DOWNLOAD_STARTING;
     const received = formatDiskSize(progress.done);
-    const percent = percentOfBytes(progress.done, progress.total);
+    const percent = downloadPercent(progress);
     if (percent === undefined || progress.total === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
     return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatDiskSize(progress.total));
 }
 
 /** The status bar is narrow: percent only, with the byte detail left to Settings. */
 function downloadStatusBar(progress: DownloadProgress): string {
-    const percent = percentOfBytes(progress.done, progress.total);
+    if (progress.done === 0) return `lilbee: ${MESSAGES.STATUS_DOWNLOAD_STARTING}`;
+    const percent = downloadPercent(progress);
     if (percent === undefined) return MESSAGES.STATUS_DOWNLOADING;
     return MESSAGES.STATUS_DOWNLOADING_PERCENT(percent);
+}
+
+/** Percent for a progress bar; undefined until bytes arrive, so the bar stays indeterminate while the transfer opens. */
+function downloadPercent(progress: DownloadProgress): number | undefined {
+    if (progress.done === 0) return undefined;
+    return percentOfBytes(progress.done, progress.total);
 }
 
 export default class LilbeePlugin extends Plugin {
@@ -726,7 +734,7 @@ export default class LilbeePlugin extends Plugin {
                     onProgress?.({
                         phase: MANAGED_PHASE.DOWNLOADING,
                         message: downloadMessage(progress),
-                        percent: percentOfBytes(progress.done, progress.total),
+                        percent: downloadPercent(progress),
                     });
                 },
                 onQuarantineFailed: () => this.showGatekeeperHelp(),
@@ -1079,8 +1087,7 @@ export default class LilbeePlugin extends Plugin {
                 includeDev: this.settings.includeDevBuilds,
                 release: release.tag,
                 force: true,
-                onProgress: (progress) =>
-                    onProgress?.(downloadMessage(progress), percentOfBytes(progress.done, progress.total)),
+                onProgress: (progress) => onProgress?.(downloadMessage(progress), downloadPercent(progress)),
                 onQuarantineFailed: () => this.showGatekeeperHelp(),
                 signal: this.startDownloadController().signal,
             });
