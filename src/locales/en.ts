@@ -708,6 +708,8 @@ export const MESSAGES = {
     NOTICE_SESSION_TOKEN_INVALID_MANAGED:
         "lilbee: managed server rejected its own token — restart the server from Settings → Switch to managed server, or open Status for logs",
     NOTICE_QUEUE_FULL: "lilbee: too many tasks queued — wait for some to finish",
+    NOTICE_SYNC_IN_PROGRESS:
+        "lilbee: a sync is already running or queued. Wait for it to finish, or cancel it in the Task Center.",
     LABEL_DATASET_FILTER: "lilbee dataset",
     LABEL_DATASET_IMPORT_TASK: "Importing dataset",
     STATUS_DATASET_IMPORTING: "Re-embedding pages…",

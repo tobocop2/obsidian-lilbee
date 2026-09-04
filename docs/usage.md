@@ -137,7 +137,7 @@ There are several ways to get documents into your library:
 - **Rebuild index** drops the entire index and re-embeds from scratch — use it after changing the embedding model or chunking. It asks for confirmation first.
 - **Retry skipped documents** re-attempts files that yielded no content last time (for example a scan that needed OCR you've since enabled).
 
-All of this runs as background jobs in the [Task Center](#the-task-center), so you can keep asking questions while indexing proceeds.
+All of this runs as background jobs in the [Task Center](#the-task-center). Chat and search keep working while indexing proceeds. Other jobs you start take a slot or wait in the queue, so check the [Task Center](#the-task-center) before you start a big sync.
 
 ---
 
@@ -189,7 +189,11 @@ Downloads run through the [Task Center](#the-task-center), so you can keep worki
 - Jobs are grouped into **active**, **queued**, and **completed**, with a header count.
 - Each row shows a type badge, name, elapsed time, a progress bar (with bytes and rate for downloads), and any detail or error.
 - Active jobs can be **Cancelled**; failed ones can be **Retried**.
-- Jobs of the same type queue behind a concurrency cap so a big sync doesn't starve everything else. **Clear Tasks** tidies the completed list.
+- Two jobs run at a time, and only one of each type. A crawl started during a sync runs alongside it. A third job waits in **queued** until a slot opens.
+- Chat and search aren't jobs. They keep working while a sync, a crawl, or a model download runs.
+- The sync commands (**Sync vault**, **Rebuild index**, **Retry skipped documents**) don't start a second sync while one is active or queued. They tell you a sync is already running, so wait for it or cancel it first. This keeps repeated clicks from stacking up several passes over your vault.
+- Each type holds five queued jobs. Past that, lilbee asks you to wait for some to finish.
+- **Clear Tasks** tidies the completed list.
 
 ---
 

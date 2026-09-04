@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { DEFAULT_SHARED_CONFIG, INDETERMINATE_PROGRESS, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
+import { DEFAULT_SHARED_CONFIG, INDETERMINATE_PROGRESS, SETUP_OUTCOME, SSE_EVENT, SYNC_TRIGGER } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -738,11 +738,13 @@ describe("LilbeePlugin", () => {
             expect(events.some((e) => e.event === SSE_EVENT.ERROR)).toBe(true);
         });
 
-        it("collectVaultUploads reads a single file", async () => {
+        it("collectVaultUploads keys a single file by its vault path", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             plugin.app.vault.readBinary = vi.fn().mockResolvedValue(new ArrayBuffer(2));
-            const uploads = await (plugin as any).collectVaultUploads(Object.assign(new TFile(), { name: "one.py" }));
-            expect((uploads as any[])[0].name).toBe("one.py");
+            const uploads = await (plugin as any).collectVaultUploads(
+                Object.assign(new TFile(), { name: "one.py", path: "src/one.py" }),
+            );
+            expect((uploads as any[])[0].name).toBe("src/one.py");
         });
 
         it("collectVaultUploads yields nothing for an abstract entry that is neither file nor folder", async () => {
@@ -794,15 +796,43 @@ describe("LilbeePlugin", () => {
                 .mockImplementation(async (f: any) => new TextEncoder().encode(f.name).buffer);
             const sub = Object.assign(new TFolder(), {
                 name: "sub",
-                children: [Object.assign(new TFile(), { name: "b.py" })],
+                path: "src/sub",
+                children: [Object.assign(new TFile(), { name: "b.py", path: "src/sub/b.py" })],
             });
             const root = Object.assign(new TFolder(), {
                 name: "src",
+                path: "src",
                 // A child that is neither a TFile nor a TFolder is skipped.
-                children: [Object.assign(new TFile(), { name: "a.py" }), sub, { name: "ignored" } as unknown as TFile],
+                children: [
+                    Object.assign(new TFile(), { name: "a.py", path: "src/a.py" }),
+                    sub,
+                    { name: "ignored", path: "src/ignored" } as unknown as TFile,
+                ],
             });
             const uploads = await (plugin as any).collectVaultUploads(root);
-            expect((uploads as any[]).map((u) => u.name).sort()).toEqual(["a.py", "b.py"]);
+            expect((uploads as any[]).map((u) => u.name).sort()).toEqual(["src/a.py", "src/sub/b.py"]);
+        });
+
+        it("collectVaultUploads gives same-named notes in different folders distinct keys", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.app.vault.readBinary = vi
+                .fn()
+                .mockImplementation(async (f: any) => new TextEncoder().encode(f.path).buffer);
+            const alpha = Object.assign(new TFolder(), {
+                name: "alpha",
+                path: "notes/alpha",
+                children: [Object.assign(new TFile(), { name: "index.md", path: "notes/alpha/index.md" })],
+            });
+            const beta = Object.assign(new TFolder(), {
+                name: "beta",
+                path: "notes/beta",
+                children: [Object.assign(new TFile(), { name: "index.md", path: "notes/beta/index.md" })],
+            });
+            const root = Object.assign(new TFolder(), { name: "notes", path: "notes", children: [alpha, beta] });
+            const uploads = await (plugin as any).collectVaultUploads(root);
+            const names = (uploads as any[]).map((u) => u.name).sort();
+            expect(names).toEqual(["notes/alpha/index.md", "notes/beta/index.md"]);
+            expect(new Set(names).size).toBe(2);
         });
 
         it("runUpload with no files notices and skips runAdd", async () => {
@@ -1437,6 +1467,37 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
             expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
             await plugin.triggerSync();
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
+        });
+
+        it("tells the user why a second sync did nothing", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* hangs() {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.syncStream = vi.fn().mockImplementation(() => hangs());
+            void plugin.triggerSync();
+            await new Promise((r) => setTimeout(r, 0));
+            Notice.clear();
+            // Rebuild and retry-skipped route through the same guard, so the
+            // message has to be true for every sync command.
+            await plugin.triggerSync({ forceRebuild: true });
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
+        });
+
+        it("stays silent when an automatic trigger finds a sync already pending", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* hangs() {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.syncStream = vi.fn().mockImplementation(() => hangs());
+            void plugin.triggerSync();
+            await new Promise((r) => setTimeout(r, 0));
+            Notice.clear();
+            await plugin.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
             expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
         });
 
@@ -2683,7 +2744,8 @@ describe("LilbeePlugin", () => {
 
             expect(runUploadSpy).toHaveBeenCalled();
             const uploads = runUploadSpy.mock.calls[0][0] as { name: string; data: ArrayBuffer }[];
-            expect(uploads[0].name).toBe("foo.py");
+            // The copy lands in the vault, so its upload key is the vault path.
+            expect(uploads[0].name).toBe("lilbee/imports/foo.py");
             expect(uploads[0].data.byteLength).toBeGreaterThan(0);
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
         });
@@ -2704,7 +2766,7 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("EACCES"))).toBe(true);
         });
 
-        it("readUploadsFromDisk recurses picked directories", async () => {
+        it("readUploadsFromDisk recurses picked directories and keys files by their path under the pick", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             const { node } = await import("../src/binary-manager");
             const statSync = node.statSync as ReturnType<typeof vi.fn>;
@@ -2714,7 +2776,71 @@ describe("LilbeePlugin", () => {
             readFileSync.mockReturnValue(Buffer.from("x"));
             try {
                 const uploads = (plugin as any).readUploadsFromDisk(["/root/pkg"]) as { name: string }[];
-                expect(uploads.map((u) => u.name).sort()).toEqual(["a.py", "b.py"]);
+                expect(uploads.map((u) => u.name).sort()).toEqual(["pkg/a.py", "pkg/b.py"]);
+            } finally {
+                statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
+                readFileSync.mockReset();
+            }
+        });
+
+        it("readUploadsFromDisk gives same-named files in nested directories distinct keys", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const { node } = await import("../src/binary-manager");
+            const statSync = node.statSync as ReturnType<typeof vi.fn>;
+            const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
+            const tree: Record<string, string[]> = {
+                "/root/pkg": ["alpha", "beta"],
+                "/root/pkg/alpha": ["index.md"],
+                "/root/pkg/beta": ["index.md"],
+            };
+            statSync.mockImplementation((p: string) => ({ isDirectory: () => p in tree, dev: 1, size: 1 }));
+            (node.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: string) => tree[p]);
+            readFileSync.mockReturnValue(Buffer.from("x"));
+            try {
+                const uploads = (plugin as any).readUploadsFromDisk(["/root/pkg"]) as { name: string }[];
+                expect(uploads.map((u) => u.name).sort()).toEqual(["pkg/alpha/index.md", "pkg/beta/index.md"]);
+            } finally {
+                statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
+                (node.readdirSync as ReturnType<typeof vi.fn>).mockReset();
+                readFileSync.mockReset();
+            }
+        });
+
+        it("readUploadsFromDisk keys a picked vault folder the same way collectVaultUploads does", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const { node } = await import("../src/binary-manager");
+            const statSync = node.statSync as ReturnType<typeof vi.fn>;
+            const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
+            const tree: Record<string, string[]> = { "/test/vault/notes/sub": ["a.md"] };
+            statSync.mockImplementation((p: string) => ({ isDirectory: () => p in tree, dev: 1, size: 1 }));
+            (node.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: string) => tree[p]);
+            readFileSync.mockReturnValue(Buffer.from("x"));
+            try {
+                const uploads = (plugin as any).readUploadsFromDisk(["/test/vault/notes/sub"]) as { name: string }[];
+                expect(uploads.map((u) => u.name)).toEqual(["notes/sub/a.md"]);
+            } finally {
+                statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
+                (node.readdirSync as ReturnType<typeof vi.fn>).mockReset();
+                readFileSync.mockReset();
+            }
+        });
+
+        it("readUploadsFromDisk keys a Windows vault path with forward slashes and no drive prefix", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            (plugin.app.vault.adapter.getBasePath as ReturnType<typeof vi.fn>).mockReturnValue(
+                "C:\\Users\\me\\vault\\",
+            );
+            const { node } = await import("../src/binary-manager");
+            const statSync = node.statSync as ReturnType<typeof vi.fn>;
+            const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
+            statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 1 }));
+            readFileSync.mockReturnValue(Buffer.from("x"));
+            try {
+                const uploads = (plugin as any).readUploadsFromDisk([
+                    "C:\\Users\\me\\vault\\notes\\a.md",
+                    "C:/Users/me/vault2/b.md",
+                ]) as { name: string }[];
+                expect(uploads.map((u) => u.name)).toEqual(["notes/a.md", "b.md"]);
             } finally {
                 statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
                 readFileSync.mockReset();

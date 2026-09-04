@@ -274,6 +274,14 @@ export interface SyncOptions {
     retrySkipped?: boolean;
 }
 
+/** Who asked for a sync. Only a user-initiated one reports that a sync is already pending. */
+export type SyncTrigger = "user" | "automatic";
+
+export const SYNC_TRIGGER = {
+    USER: "user",
+    AUTOMATIC: "automatic",
+} as const satisfies Record<string, SyncTrigger>;
+
 export interface GenerationOptions {
     temperature?: number;
     top_p?: number;
