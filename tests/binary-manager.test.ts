@@ -10,7 +10,7 @@ import {
     listReleases,
     isDevBuild,
     checkForUpdate,
-    detectAmdGfxTargets,
+    probeAmd,
     detectHostGpu,
     BinaryManager,
 } from "../src/binary-manager";
@@ -84,17 +84,17 @@ function stubNoNvidia() {
 }
 
 /** The detection a host records when nvidia-smi is absent. */
-function noNvidiaDetection(amdGfxTargets: string[] = []) {
+function noNvidiaDetection(amd: AmdProbe = { status: "missing" }) {
     return {
         nvidia: { status: "missing", error: "nvidia-smi not found" },
-        amdGfxTargets,
+        amd,
         detectedAt: expect.any(String),
     };
 }
 
 /** The detection a host records when the driver names a CUDA ceiling. */
 function cudaDetection(cudaCeiling: number) {
-    return { nvidia: { status: "detected", cudaCeiling }, amdGfxTargets: [], detectedAt: expect.any(String) };
+    return { nvidia: { status: "detected", cudaCeiling }, amd: { status: "missing" }, detectedAt: expect.any(String) };
 }
 
 /** Mock the amdgpu KFD topology: one node per gfx_target_version, plus a CPU node reporting 0. */
@@ -301,7 +301,7 @@ describe("detectHostGpu", () => {
         const { cuda, detection } = await detectHostGpu();
         expect(cuda).toBeNull();
         expect(detection.nvidia).toEqual({ status: "skipped" });
-        expect(detection.amdGfxTargets).toEqual([]);
+        expect(detection.amd).toEqual({ status: "skipped" });
         expect(Date.parse(detection.detectedAt)).not.toBeNaN();
     });
 
@@ -391,38 +391,38 @@ describe("detectHostGpu", () => {
         stubNoNvidia();
         stubKfdTopology([110000, 90006]);
         const { detection } = await detectHostGpu();
-        expect(detection.amdGfxTargets).toEqual(["gfx1100", "gfx906"]);
+        expect(detection.amd).toEqual({ status: "detected", gfxTargets: ["gfx1100", "gfx906"] });
     });
 });
 
 /* ------------------------------------------------------------------ */
-/*  detectAmdGfxTargets                                               */
+/*  probeAmd                                               */
 /* ------------------------------------------------------------------ */
 
-describe("detectAmdGfxTargets", () => {
+describe("probeAmd", () => {
     let restore: () => void;
     afterEach(() => restore?.());
 
     it("returns nothing on macOS without touching the filesystem", () => {
         restore = stubPlatform("darwin", "arm64");
         const exists = vi.spyOn(node, "existsSync");
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "skipped" });
         expect(exists).not.toHaveBeenCalled();
     });
 
-    it("returns nothing when the host exposes no compute device", () => {
+    it("records a missing device when the host exposes no compute device", () => {
         restore = stubPlatform("linux", "x64");
         // A readable topology naming a real card, with /dev/kfd absent: an empty
         // result can then only come from that gate, not from unreadable sysfs.
         stubKfdTopology([110000]);
         stubNoAmd();
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "missing" });
     });
 
     it("names the gfx target the driver reports", () => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([110000]);
-        expect(detectAmdGfxTargets()).toEqual(["gfx1100"]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: ["gfx1100"] });
     });
 
     it.each([
@@ -434,19 +434,19 @@ describe("detectAmdGfxTargets", () => {
     ])("prints target version %i as %s", (version, name) => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([version]);
-        expect(detectAmdGfxTargets()).toEqual([name]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: [name] });
     });
 
     it("reports every card on a multi-GPU host, without duplicates", () => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([110000, 90006, 110000]);
-        expect(detectAmdGfxTargets()).toEqual(["gfx1100", "gfx906"]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: ["gfx1100", "gfx906"] });
     });
 
-    it("ignores CPU nodes, which report no target", () => {
+    it("records a missing device when only CPU nodes report", () => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([]);
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "missing" });
     });
 
     it("skips a node whose properties cannot be read", () => {
@@ -459,16 +459,22 @@ describe("detectAmdGfxTargets", () => {
             return readable(path);
         });
 
-        expect(detectAmdGfxTargets()).toEqual(["gfx1100"]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: ["gfx1100"] });
     });
 
-    it("returns nothing when the topology cannot be read", () => {
+    it("records an unreadable topology", () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "existsSync").mockReturnValue(true);
         vi.spyOn(node, "readdirSync").mockImplementation(() => {
             throw new Error("EACCES");
         });
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "unreadable" });
+    });
+
+    it("records a sandbox when the amdgpu module is loaded but /dev/kfd is hidden", () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "existsSync").mockImplementation((path: string) => path === "/sys/module/amdgpu");
+        expect(probeAmd()).toEqual({ status: "sandboxed" });
     });
 });
 
@@ -637,7 +643,7 @@ describe("getLatestRelease", () => {
             tag: "v1.0.0",
             assetUrl: "https://e/rocm",
             variant: "rocm",
-            detection: noNvidiaDetection(["gfx1100"]),
+            detection: noNvidiaDetection({ status: "detected", gfxTargets: ["gfx1100"] }),
             sizeBytes: 20,
             digest: "sha256:rocm",
         });
@@ -652,6 +658,11 @@ describe("getLatestRelease", () => {
         const release = await getLatestRelease(false);
         expect(release.variant).toBe("default");
         expect(release.assetUrl).toBe("https://e/default");
+        expect(release.detection.amd).toEqual({
+            status: "unsupported",
+            gfxTargets: ["gfx906"],
+            reason: "missing-kernels",
+        });
     });
 
     it("keeps the default build when only one of two cards is covered", async () => {
@@ -668,8 +679,21 @@ describe("getLatestRelease", () => {
         stubNoNvidia();
         stubKfdTopology([110000]);
         stubReleasesAndManifest([rocmRelease("v1.0.0", null)], null);
+        const release = await getLatestRelease(false);
+        expect(release.variant).toBe("default");
+        expect(release.detection.amd).toMatchObject({ status: "unsupported", reason: "no-manifest" });
+    });
 
-        expect((await getLatestRelease(false)).variant).toBe("default");
+    it("records that the release ships no ROCm build at all", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        const { assets } = rocmRelease("v1.0.0", null);
+        stubReleasesAndManifest([{ tag_name: "v1.0.0", assets: assets.slice(0, 1) }], null);
+
+        const release = await getLatestRelease(false);
+        expect(release.variant).toBe("default");
+        expect(release.detection.amd).toEqual({ status: "unsupported", gfxTargets: ["gfx1100"], reason: "no-asset" });
     });
 
     it("keeps the default build when the manifest cannot be fetched", async () => {

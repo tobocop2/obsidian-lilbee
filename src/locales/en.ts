@@ -1,10 +1,13 @@
 import {
     AGENT_CLIENT,
+    AMD_PROBE_STATUS,
+    type AmdProbe,
     CUDA_MIN_CEILING,
+    type GpuDetection,
     MODEL_TASK,
     NVIDIA_PROBE_STATUS,
+    type RocmRefusal,
     SERVER_VARIANT,
-    type GpuDetection,
     type ServerVariant,
     type WorkerRole,
 } from "../types";
@@ -23,6 +26,30 @@ const cudaVersionLabel = (ceiling: number): string => `${Math.floor(ceiling / 10
 const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 const RETRY_SKIPPED_COMMAND = "Retry skipped documents";
+
+const ROCM_REFUSAL_TEXT: Record<RocmRefusal, string> = {
+    "no-asset": "This release has no ROCm build, so the default build runs.",
+    "no-manifest": "The ROCm build's kernel list could not be read, so the default build runs.",
+    "missing-kernels": "The ROCm build ships no kernels for these targets, so the default build runs.",
+};
+
+/** The AMD half of the detection sentence. */
+function amdDetectionText(amd: AmdProbe): string {
+    switch (amd.status) {
+        case AMD_PROBE_STATUS.SKIPPED:
+            return "lilbee ships a ROCm build for Linux only.";
+        case AMD_PROBE_STATUS.MISSING:
+            return "No AMD compute device.";
+        case AMD_PROBE_STATUS.SANDBOXED:
+            return "An amdgpu driver is loaded, but this Obsidian cannot reach /dev/kfd, so the GPU is unknown. Flatpak and Snap sandboxes hide it.";
+        case AMD_PROBE_STATUS.UNREADABLE:
+            return "The amdgpu driver is present, but its topology could not be read.";
+        case AMD_PROBE_STATUS.DETECTED:
+            return `AMD targets: ${amd.gfxTargets.join(", ")}.`;
+        case AMD_PROBE_STATUS.UNSUPPORTED:
+            return `AMD targets: ${amd.gfxTargets.join(", ")}. ${ROCM_REFUSAL_TEXT[amd.reason]}`;
+    }
+}
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
@@ -416,9 +443,9 @@ export const MESSAGES = {
     DESC_SERVER_BUILD: (build: string) => ` Running the ${build} build.`,
     /** Why the GPU probe chose the build it did. */
     DESC_GPU_DETECTION: (detection: GpuDetection): string => {
-        const { nvidia, amdGfxTargets } = detection;
+        const { nvidia } = detection;
         if (nvidia.status === NVIDIA_PROBE_STATUS.SKIPPED) return "lilbee ships one macOS build, so nothing is probed.";
-        const amd = amdGfxTargets.length > 0 ? `AMD targets: ${amdGfxTargets.join(", ")}.` : "No AMD compute device.";
+        const amd = amdDetectionText(detection.amd);
         if (nvidia.status === NVIDIA_PROBE_STATUS.MISSING) return `nvidia-smi did not run: ${nvidia.error}. ${amd}`;
         if (nvidia.status === NVIDIA_PROBE_STATUS.SANDBOXED)
             return `An NVIDIA driver is present, but this Obsidian cannot reach nvidia-smi, so its CUDA version is unknown. Flatpak and Snap sandboxes hide it. ${amd}`;

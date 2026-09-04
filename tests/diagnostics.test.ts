@@ -9,7 +9,7 @@ import type { DiagnosticsContext, GpuDetection } from "../src/types";
 
 const DETECTION: GpuDetection = {
     nvidia: { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1204 },
-    amdGfxTargets: [],
+    amd: { status: "missing" },
     detectedAt: "2026-01-01T00:00:00.000Z",
 };
 

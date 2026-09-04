@@ -34,6 +34,10 @@ import {
     type GpuTag,
     type NvidiaProbe,
     type ServerVariant,
+    AMD_PROBE_STATUS,
+    ROCM_REFUSAL,
+    type AmdProbe,
+    type RocmRefusal,
 } from "./types";
 import { formatDiskSize } from "./utils";
 
@@ -213,27 +217,29 @@ function nodeGfxTarget(nodeName: string): string | null {
     return null;
 }
 
-/**
- * The gfx targets of this host's AMD GPUs, read from the amdgpu driver's KFD topology.
- * Empty on any platform but Linux, when the host has no AMD compute device, and on any
- * read failure. Read from the driver rather than from rocm-smi or amd-smi: those ship
- * with ROCm, which the ROCm build bundles, so the host needs only the amdgpu driver.
- */
-export function detectAmdGfxTargets(): string[] {
-    if (process.platform !== PLATFORM.LINUX) return [];
-    if (!node.existsSync(KFD_DEVICE_PATH)) return [];
+/** Present whenever the amdgpu module is loaded, even when a sandbox hides `/dev/kfd`. */
+const AMDGPU_MODULE_PATH = "/sys/module/amdgpu";
+
+/** Probe the AMD driver through the KFD topology, recording why the probe ended where it did. */
+export function probeAmd(): AmdProbe {
+    if (process.platform !== PLATFORM.LINUX) return { status: AMD_PROBE_STATUS.SKIPPED };
+    if (!node.existsSync(KFD_DEVICE_PATH)) {
+        const status = node.existsSync(AMDGPU_MODULE_PATH) ? AMD_PROBE_STATUS.SANDBOXED : AMD_PROBE_STATUS.MISSING;
+        return { status };
+    }
     let nodes: string[];
     try {
         nodes = node.readdirSync(KFD_TOPOLOGY_NODES);
     } catch {
-        return [];
+        return { status: AMD_PROBE_STATUS.UNREADABLE };
     }
     const targets = new Set<string>();
     for (const nodeName of nodes) {
         const target = nodeGfxTarget(nodeName);
         if (target) targets.add(target);
     }
-    return [...targets].sort();
+    if (targets.size === 0) return { status: AMD_PROBE_STATUS.MISSING };
+    return { status: AMD_PROBE_STATUS.DETECTED, gfxTargets: [...targets].sort() };
 }
 
 /** What this host can run, resolved once per release check. */
@@ -251,7 +257,7 @@ export async function detectHostGpu(): Promise<HostGpu> {
         cuda: cudaTagFor(nvidia),
         detection: {
             nvidia,
-            amdGfxTargets: detectAmdGfxTargets(),
+            amd: probeAmd(),
             detectedAt: new Date().toISOString(),
         },
     };
@@ -327,10 +333,12 @@ async function shippedGfxTargets(manifest: GitHubAsset | undefined): Promise<Set
  * build refuses to start on a card it ships no kernels for, so a host it only partly
  * covers is better served by the default build, which runs all of them over Vulkan.
  */
-async function rocmServesHost(data: GitHubRelease, gfxTargets: string[]): Promise<boolean> {
+/** Why the release's ROCm kernel manifest cannot serve *gfxTargets*, or null when it can. */
+async function manifestRefusal(data: GitHubRelease, gfxTargets: string[]): Promise<RocmRefusal | null> {
     const manifestName = `${getPlatformAssetName(SERVER_VARIANT.ROCM)}${GFX_MANIFEST_SUFFIX}`;
     const shipped = await shippedGfxTargets(data.assets.find((a) => a.name === manifestName));
-    return shipped !== null && gfxTargets.every((target) => shipped.has(target));
+    if (shipped === null) return ROCM_REFUSAL.NO_MANIFEST;
+    return gfxTargets.every((target) => shipped.has(target)) ? null : ROCM_REFUSAL.MISSING_KERNELS;
 }
 
 /** A release that ships a build for this machine, with the build it falls back to. */
@@ -340,34 +348,38 @@ interface InstallableRelease {
     fallback: GitHubAsset;
 }
 
-/** Choose the vendor asset the host can run and the release ships; otherwise the default build. */
 async function selectAsset(
     release: InstallableRelease,
     host: HostGpu,
-): Promise<{ variant: ServerVariant; asset: GitHubAsset }> {
+): Promise<{ variant: ServerVariant; asset: GitHubAsset; amd: AmdProbe }> {
     const { data } = release;
+    const { amd } = host.detection;
     if (host.cuda) {
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(host.cuda));
-        if (cudaAsset) return { variant: host.cuda, asset: cudaAsset };
+        if (cudaAsset) return { variant: host.cuda, asset: cudaAsset, amd };
     }
-    const { amdGfxTargets } = host.detection;
-    if (amdGfxTargets.length > 0) {
-        const rocmAsset = data.assets.find((a) => a.name === getPlatformAssetName(SERVER_VARIANT.ROCM));
-        if (rocmAsset && (await rocmServesHost(data, amdGfxTargets))) {
-            return { variant: SERVER_VARIANT.ROCM, asset: rocmAsset };
-        }
-    }
-    return { variant: SERVER_VARIANT.DEFAULT, asset: release.fallback };
+    const fallback = { variant: SERVER_VARIANT.DEFAULT, asset: release.fallback };
+    if (amd.status !== AMD_PROBE_STATUS.DETECTED) return { ...fallback, amd };
+    const unsupported = (reason: RocmRefusal): AmdProbe => ({
+        status: AMD_PROBE_STATUS.UNSUPPORTED,
+        gfxTargets: amd.gfxTargets,
+        reason,
+    });
+    const rocmAsset = data.assets.find((a) => a.name === getPlatformAssetName(SERVER_VARIANT.ROCM));
+    if (!rocmAsset) return { ...fallback, amd: unsupported(ROCM_REFUSAL.NO_ASSET) };
+    const refusal = await manifestRefusal(data, amd.gfxTargets);
+    if (refusal !== null) return { ...fallback, amd: unsupported(refusal) };
+    return { variant: SERVER_VARIANT.ROCM, asset: rocmAsset, amd };
 }
 
 async function toReleaseInfo(release: InstallableRelease, host: HostGpu): Promise<ReleaseInfo> {
-    const { variant, asset } = await selectAsset(release, host);
+    const { variant, asset, amd } = await selectAsset(release, host);
     const { data } = release;
     return {
         tag: data.tag_name,
         assetUrl: asset.browser_download_url,
         variant,
-        detection: host.detection,
+        detection: { ...host.detection, amd },
         sizeBytes: asset.size,
         digest: asset.digest,
     };

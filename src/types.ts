@@ -1374,10 +1374,40 @@ export type NvidiaProbe =
     | { status: "detected"; cudaCeiling: number };
 
 /** Why the plugin picked the server build it did. Recorded at every install and update check. */
+export type AmdProbeStatus = "skipped" | "missing" | "sandboxed" | "unreadable" | "detected" | "unsupported";
+export const AMD_PROBE_STATUS = {
+    /** lilbee ships a ROCm build for Linux only, so other platforms probe nothing. */
+    SKIPPED: "skipped",
+    /** No amdgpu module and no compute device. */
+    MISSING: "missing",
+    /** The amdgpu module is loaded but `/dev/kfd` is not visible (Flatpak, Snap). */
+    SANDBOXED: "sandboxed",
+    /** `/dev/kfd` is present but its topology could not be read. */
+    UNREADABLE: "unreadable",
+    /** The driver named the gfx targets and the ROCm build serves them. */
+    DETECTED: "detected",
+    /** The driver named the gfx targets but the release's ROCm build cannot serve them. */
+    UNSUPPORTED: "unsupported",
+} as const satisfies Record<string, AmdProbeStatus>;
+
+export type RocmRefusal = "no-asset" | "no-manifest" | "missing-kernels";
+export const ROCM_REFUSAL = {
+    NO_ASSET: "no-asset",
+    NO_MANIFEST: "no-manifest",
+    MISSING_KERNELS: "missing-kernels",
+} as const satisfies Record<string, RocmRefusal>;
+
+export type AmdProbe =
+    | { status: "skipped" }
+    | { status: "missing" }
+    | { status: "sandboxed" }
+    | { status: "unreadable" }
+    | { status: "detected"; gfxTargets: string[] }
+    | { status: "unsupported"; gfxTargets: string[]; reason: RocmRefusal };
+
 export interface GpuDetection {
     nvidia: NvidiaProbe;
-    /** The gfx targets of the host's AMD GPUs; empty when there are none. */
-    amdGfxTargets: string[];
+    amd: AmdProbe;
     /** When the probe ran, ISO 8601. */
     detectedAt: string;
 }

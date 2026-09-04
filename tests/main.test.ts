@@ -298,7 +298,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 /** The GPU probe every release now carries, as a host without an NVIDIA driver records it. */
 const GPU_DETECTION = {
     nvidia: { status: "missing", error: "nvidia-smi not found" },
-    amdGfxTargets: [],
+    amd: { status: "missing" },
     detectedAt: "2026-01-01T00:00:00.000Z",
 };
 

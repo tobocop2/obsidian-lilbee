@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
 import { MODEL_TASK, NVIDIA_PROBE_STATUS, SERVER_VARIANT } from "../../src/types";
-import type { GpuDetection, NvidiaProbe } from "../../src/types";
+import type { AmdProbe, GpuDetection, NvidiaProbe } from "../../src/types";
 
 describe("MESSAGES", () => {
     describe("BUTTON_ constants", () => {
@@ -462,8 +462,8 @@ describe("types", () => {
 
     describe("DESC_GPU_DETECTION", () => {
         /** A detection with the given NVIDIA probe and AMD targets. */
-        function detection(nvidia: NvidiaProbe, amdGfxTargets: string[] = []): GpuDetection {
-            return { nvidia, amdGfxTargets, detectedAt: "2026-01-01T00:00:00.000Z" };
+        function detection(nvidia: NvidiaProbe, amd: AmdProbe = { status: "missing" }): GpuDetection {
+            return { nvidia, amd, detectedAt: "2026-01-01T00:00:00.000Z" };
         }
 
         it("says nothing was probed on macOS", () => {
@@ -499,6 +499,30 @@ describe("types", () => {
             );
         });
 
+        it.each([
+            [{ status: "skipped" } as const, "lilbee ships a ROCm build for Linux only."],
+            [
+                { status: "sandboxed" } as const,
+                "An amdgpu driver is loaded, but this Obsidian cannot reach /dev/kfd, so the GPU is unknown. Flatpak and Snap sandboxes hide it.",
+            ],
+            [{ status: "unreadable" } as const, "The amdgpu driver is present, but its topology could not be read."],
+            [
+                { status: "unsupported", gfxTargets: ["gfx1103"], reason: "missing-kernels" } as const,
+                "AMD targets: gfx1103. The ROCm build ships no kernels for these targets, so the default build runs.",
+            ],
+            [
+                { status: "unsupported", gfxTargets: ["gfx1100"], reason: "no-asset" } as const,
+                "AMD targets: gfx1100. This release has no ROCm build, so the default build runs.",
+            ],
+            [
+                { status: "unsupported", gfxTargets: ["gfx1100"], reason: "no-manifest" } as const,
+                "AMD targets: gfx1100. The ROCm build's kernel list could not be read, so the default build runs.",
+            ],
+        ])("explains the AMD probe result %o", (amd, text) => {
+            const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "ENOENT" } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe, amd))).toBe(`nvidia-smi did not run: ENOENT. ${text}`);
+        });
+
         it("names the floor when the driver is too old for any CUDA build", () => {
             const probe = { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1108 } as const;
             expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
@@ -508,9 +532,11 @@ describe("types", () => {
 
         it("names every AMD target the host reports", () => {
             const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "ENOENT" } as const;
-            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe, ["gfx1100", "gfx906"]))).toBe(
-                "nvidia-smi did not run: ENOENT. AMD targets: gfx1100, gfx906.",
-            );
+            expect(
+                MESSAGES.DESC_GPU_DETECTION(
+                    detection(probe, { status: "detected", gfxTargets: ["gfx1100", "gfx906"] }),
+                ),
+            ).toBe("nvidia-smi did not run: ENOENT. AMD targets: gfx1100, gfx906.");
         });
     });
 

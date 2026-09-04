@@ -141,7 +141,7 @@ import type { GpuDetection } from "../src/types";
 /** A probe result, as every install now records one. */
 const DETECTION: GpuDetection = {
     nvidia: { status: NVIDIA_PROBE_STATUS.MISSING, error: "spawn nvidia-smi ENOENT" },
-    amdGfxTargets: [],
+    amd: { status: "missing" },
     detectedAt: "2026-01-01T00:00:00.000Z",
 };
 

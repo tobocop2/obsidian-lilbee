@@ -171,7 +171,7 @@ describe("server version picker with the real release list", () => {
             getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
             getSharedGpuDetection: (): GpuDetection => ({
                 nvidia: { status: NVIDIA_PROBE_STATUS.MISSING, error: "spawn nvidia-smi ENOENT" },
-                amdGfxTargets: [],
+                amd: { status: "missing" },
                 detectedAt: "2026-01-01T00:00:00.000Z",
             }),
         } as unknown as LilbeePlugin;
