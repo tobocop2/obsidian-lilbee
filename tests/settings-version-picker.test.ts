@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { DEFAULT_SETTINGS, SERVER_MODE, SERVER_VARIANT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import type LilbeePlugin from "../src/main";

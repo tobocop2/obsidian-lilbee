@@ -32,6 +32,9 @@ vi.mock("../src/binary-manager", () => ({
     LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     DownloadCanceledError: FakeDownloadCanceledError,
     BinaryManager: vi.fn(),
+}));
+
+vi.mock("../src/node", () => ({
     node: {
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(),

@@ -1,65 +1,8 @@
-import { requestUrl } from "obsidian";
-import { execFile, spawn } from "child_process";
-import { get as httpsGet } from "https";
 import type { ClientRequest, IncomingMessage } from "http";
-import {
-    appendFileSync,
-    createWriteStream,
-    existsSync,
-    mkdirSync,
-    chmodSync,
-    writeFileSync,
-    readFileSync,
-    unlinkSync,
-    copyFileSync,
-    cpSync,
-    statSync,
-    statfs,
-    renameSync,
-    readdirSync,
-    rmSync,
-} from "fs";
-import { basename, join, resolve, dirname } from "path";
-import { createHash } from "crypto";
-import { promisify } from "util";
+import { join } from "path";
+import { node } from "./node";
 import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type GpuTag, type ServerVariant } from "./types";
 import { formatDiskSize } from "./utils";
-
-const execFileAsync = promisify(execFile);
-const statfsAsync = promisify(statfs);
-
-/** Exported for test mocking. */
-export const node = {
-    spawn,
-    execFile: execFileAsync,
-    appendFileSync,
-    existsSync,
-    mkdirSync,
-    chmodSync,
-    writeFileSync,
-    readFileSync,
-    unlinkSync,
-    copyFileSync,
-    cpSync,
-    statSync,
-    statfs: statfsAsync,
-    renameSync,
-    readdirSync,
-    rmSync,
-    createWriteStream,
-    join,
-    basename,
-    resolve,
-    dirname,
-    createHash,
-    processKill: process.kill.bind(process),
-    requestUrl,
-    // Node's https, not the renderer's fetch: GitHub's asset redirect fails CORS
-    // in the renderer, which is why requestUrl was adopted for it originally.
-    // Unlike requestUrl, this streams, so the download reports real progress.
-    httpsGet,
-    fetch: window.fetch.bind(window),
-};
 
 export const GITHUB_REPO = "tobocop2/lilbee";
 export const LILBEE_GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`;

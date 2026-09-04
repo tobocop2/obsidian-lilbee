@@ -18,7 +18,8 @@ import {
     type AgentWireOutcome,
 } from "./agent-integration";
 import { LilbeeClient, SessionTokenError } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
+import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
+import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";

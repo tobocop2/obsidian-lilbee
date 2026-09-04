@@ -1,5 +1,5 @@
 import { posix } from "path";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 
 // Present a unix-like platform to the unit suite so platform-branch tests run
 // the same on macOS and Windows runners as on the Ubuntu reference. Tests that
@@ -10,7 +10,7 @@ Object.defineProperty(process, "platform", { value: "linux", configurable: true 
 
 // Make path joins deterministic across host OSes so the suite asserts one path
 // shape (POSIX) regardless of the runner. Runs after tests/setup.ts so `window`
-// is defined before binary-manager loads. The shipped plugin uses each
+// is defined before node.ts loads. The shipped plugin uses each
 // platform's native separators; only the test environment is normalized here.
 node.join = posix.join;
 node.dirname = posix.dirname;

@@ -215,6 +215,9 @@ vi.mock("../src/binary-manager", () => ({
     },
     GITHUB_REPO: "tobocop2/lilbee",
     LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+}));
+
+vi.mock("../src/node", () => ({
     node: {
         spawn: vi.fn(),
         execFile: vi.fn(),
@@ -2631,7 +2634,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("print('hi')"));
             const runUploadSpy = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
 
@@ -2648,7 +2651,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
                 throw new Error("EACCES");
             });
@@ -2662,7 +2665,7 @@ describe("LilbeePlugin", () => {
 
         it("readUploadsFromDisk recurses picked directories", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const statSync = node.statSync as ReturnType<typeof vi.fn>;
             const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
             statSync.mockImplementation((p: string) => ({ isDirectory: () => p.endsWith("pkg"), dev: 1, size: 1 }));
@@ -2876,7 +2879,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("passes through sources already under the vault root without copying", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -2896,7 +2899,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("drops files that fail to copy and proceeds with the rest", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -2919,7 +2922,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns without indexing when every external file fails to copy", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -2935,7 +2938,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("appends a -N suffix when the target import filename already exists", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -2958,7 +2961,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("falls back to a timestamp suffix when 999 sequential collisions are exhausted", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -2983,7 +2986,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("appends -N to extensionless filenames without adding a spurious dot", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3006,7 +3009,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("surfaces a Notice and returns early when the imports dir can't be created", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3024,7 +3027,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("detects Windows-style vault-local paths so disk picks on the same drive don't double-copy", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3052,7 +3055,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("recursively copies picked directories into imports/", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3085,7 +3088,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("handles a mixed batch of file and directory sources", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3114,7 +3117,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("surfaces a Notice when a directory copy fails and keeps the rest of the batch", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -5718,7 +5721,7 @@ describe("LilbeePlugin", () => {
             expect(stateChange).toBeDefined();
 
             const expectedTokenPath = `${mockServerOpts.dataDir}/data/server.json`;
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.existsSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => p === expectedTokenPath);
             (node.readFileSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) =>
                 p === expectedTokenPath ? JSON.stringify({ token: "fresh-token-after-restart" }) : "",
@@ -6063,7 +6066,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("x"));
 
             // External mode uploads bytes, so the token error comes off the upload stream.
@@ -7750,7 +7753,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("x"));
             async function* withError() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };

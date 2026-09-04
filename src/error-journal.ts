@@ -1,4 +1,4 @@
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { LOG_FILE, type JournalEntry } from "./types";
 import { appendCapped } from "./utils/capped-log";
 

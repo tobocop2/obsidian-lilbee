@@ -2,7 +2,8 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, existsSync, statSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { node, BinaryManager } from "../src/binary-manager";
+import { BinaryManager } from "../src/binary-manager";
+import { node } from "../src/node";
 import { ServerManager } from "../src/server-manager";
 
 // CI passes a stable, version-keyed dir (LILBEE_TEST_BIN_DIR) so a cached

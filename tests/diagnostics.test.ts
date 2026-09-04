@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { buildZip, collectDiagnostics, LOG_TAIL_MAX_BYTES, renderSummary, resolveOutputDir } from "../src/diagnostics";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { MESSAGES } from "../src/locales/en";
 import { DEFAULT_SETTINGS, SERVER_STATE } from "../src/types";
 import type { DiagnosticsContext } from "../src/types";
 
-vi.mock("../src/binary-manager", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/binary-manager")>();
+vi.mock("../src/node", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/node")>();
     return {
-        ...actual,
         node: {
             ...actual.node,
             existsSync: vi.fn().mockReturnValue(false),

@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import {
     LOCK_REFUSAL_EXIT_CODE,
     ScopeHeldError,

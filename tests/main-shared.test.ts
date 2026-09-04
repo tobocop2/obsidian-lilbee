@@ -23,7 +23,7 @@ const fsState = (() => {
     };
 })();
 
-vi.mock("../src/binary-manager", () => {
+vi.mock("../src/node", () => {
     const nodeMock = {
         spawn: vi.fn(),
         execFile: vi.fn(),
@@ -79,8 +79,11 @@ vi.mock("../src/binary-manager", () => {
         requestUrl: vi.fn(),
         fetch: vi.fn(),
     };
+    return { node: nodeMock };
+});
+
+vi.mock("../src/binary-manager", () => {
     return {
-        node: nodeMock,
         DownloadCanceledError: class DownloadCanceledError extends Error {
             constructor() {
                 super("The lilbee server download was cancelled.");

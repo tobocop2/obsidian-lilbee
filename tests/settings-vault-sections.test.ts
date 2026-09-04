@@ -31,6 +31,9 @@ vi.mock("../src/binary-manager", () => ({
     }),
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
+}));
+
+vi.mock("../src/node", () => ({
     node: {
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(),

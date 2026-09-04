@@ -2,9 +2,9 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { StatsFs } from "fs";
 import { createHash } from "crypto";
 import { Readable, Writable } from "stream";
+import { node } from "../src/node";
 import {
     DownloadCanceledError,
-    node,
     getPlatformAssetName,
     getLatestRelease,
     listReleases,

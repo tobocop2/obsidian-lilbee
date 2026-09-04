@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { ErrorJournal, JOURNAL_MAX_ENTRIES, PLUGIN_LOG_MAX_BYTES } from "../src/error-journal";
 
-vi.mock("../src/binary-manager", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/binary-manager")>();
+vi.mock("../src/node", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/node")>();
     return {
-        ...actual,
         node: {
             ...actual.node,
             existsSync: vi.fn().mockReturnValue(true),

@@ -7,7 +7,7 @@ const { rmSync, existsSync, readdirSync, statSync } = vi.hoisted(() => ({
     statSync: vi.fn(),
 }));
 
-vi.mock("../src/binary-manager", () => ({
+vi.mock("../src/node", () => ({
     node: {
         rmSync,
         existsSync,

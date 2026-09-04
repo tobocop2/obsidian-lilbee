@@ -2,14 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Notice } from "obsidian";
 import { shell } from "electron";
 import { exportDiagnostics } from "../src/diagnostics-export";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { DEFAULT_SETTINGS, SERVER_STATE } from "../src/types";
 import type { DiagnosticsContext } from "../src/types";
 
-vi.mock("../src/binary-manager", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/binary-manager")>();
+vi.mock("../src/node", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/node")>();
     return {
-        ...actual,
         node: {
             ...actual.node,
             existsSync: vi.fn().mockReturnValue(true),

@@ -14,7 +14,7 @@
  *      - Windows: %LOCALAPPDATA%/lilbee
  *      - Linux:   $XDG_DATA_HOME/lilbee (or ~/.local/share/lilbee)
  */
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { PLATFORM } from "./types";
 
 const MAX_WALK_UP_DEPTH = 32;

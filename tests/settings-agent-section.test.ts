@@ -13,6 +13,8 @@ vi.mock("../src/binary-manager", () => ({
     isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
     LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     DownloadCanceledError: class DownloadCanceledError extends Error {},
+}));
+vi.mock("../src/node", () => ({
     node: { requestUrl: vi.fn() },
 }));
 
