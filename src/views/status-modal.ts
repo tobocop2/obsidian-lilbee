@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from "../types";
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, noticeForResultError } from "../utils";
+import { bindEscapeToClose, noticeForResultError, revealInFileExplorer } from "../utils";
 
 export class StatusModal extends Modal {
     private plugin: LilbeePlugin;
@@ -74,6 +74,7 @@ export class StatusModal extends Modal {
             return;
         }
         // A member of an archive is named archive/member; the archive is the vault file.
+        // Opening it would hand the archive to the OS, so select it in the explorer instead.
         const archive = this.enclosingArchive(filename);
         if (!archive) {
             new Notice(MESSAGES.NOTICE_DOCUMENT_NOT_IN_VAULT(filename));
@@ -81,7 +82,7 @@ export class StatusModal extends Modal {
         }
         new Notice(MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE(filename, archive.file.name));
         this.close();
-        void workspace.getLeaf(false).openFile(archive.file);
+        revealInFileExplorer(this.app, archive.file);
     }
 
     private vaultFile(sourceName: string): TFile | null {

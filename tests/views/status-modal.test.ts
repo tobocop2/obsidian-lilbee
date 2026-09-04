@@ -499,6 +499,39 @@ describe("StatusModal document list", () => {
         );
         const openFile = vi.fn();
         asMock(app.workspace.getLeaf).mockReturnValue({ openFile });
+        const revealInFolder = vi.fn();
+        const explorer = { view: { revealInFolder } };
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([explorer]);
+        app.workspace.revealLeaf = vi.fn();
+        const modal = new StatusModal(app, plugin);
+        const closeSpy = vi.spyOn(modal, "close");
+        modal.open();
+        const content = (modal as any).contentEl as MockElement;
+        await vi.waitFor(() => {
+            expect(content.find("lilbee-documents-row-link")).toBeTruthy();
+        });
+        content.find("lilbee-documents-row-link")!.trigger("click");
+        expect(openFile).not.toHaveBeenCalled();
+        expect(revealInFolder).toHaveBeenCalledWith(archive);
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(explorer);
+        expect(closeSpy).toHaveBeenCalledTimes(1);
+        expect(Notice.instances.map((n: any) => n.message)).toContain(
+            MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE(member, "docs.zip"),
+        );
+    });
+
+    it("still names the archive when the file explorer is closed", async () => {
+        const plugin = makePlugin();
+        asMock(plugin.api.status).mockResolvedValue(ok(makeStatus()));
+        asMock(plugin.api.showModel).mockResolvedValue({});
+        asMock(plugin.api.listDocuments).mockResolvedValue(makeDocsResponse([makeDoc({ filename: "docs.zip/a.pdf" })]));
+        const app = new App();
+        const archive = new TFile();
+        archive.name = "docs.zip";
+        asMock(app.vault.getAbstractFileByPath).mockImplementation((path: string) =>
+            path === "lilbee/docs.zip" ? archive : null,
+        );
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
         const modal = new StatusModal(app, plugin);
         modal.open();
         const content = (modal as any).contentEl as MockElement;
@@ -506,9 +539,8 @@ describe("StatusModal document list", () => {
             expect(content.find("lilbee-documents-row-link")).toBeTruthy();
         });
         content.find("lilbee-documents-row-link")!.trigger("click");
-        expect(openFile).toHaveBeenCalledWith(archive);
         expect(Notice.instances.map((n: any) => n.message)).toContain(
-            MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE(member, "docs.zip"),
+            MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE("docs.zip/a.pdf", "docs.zip"),
         );
     });
 
