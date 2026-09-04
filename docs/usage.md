@@ -2,7 +2,7 @@
 
 Everything the lilbee plugin can do inside Obsidian: the setup wizard, the chat and search surfaces, models, the wiki, crawling, and every setting. For installation see the [README quick start](../README.md#quick-start); for the engine itself (how it indexes and retrieves) see [lilbee](https://lilbee.sh/).
 
-The plugin talks to a local **lilbee** server over HTTP. In the default _managed_ mode it downloads and runs that server for you — there's nothing else to install, and no Ollama. Everything stays on your computer unless you choose a cloud model.
+The plugin talks to a local **lilbee** server over HTTP. In the default _managed_ mode it downloads and runs that server for you. There is nothing else to install, and no Ollama. Everything stays on your computer unless you choose a cloud model.
 
 - [First launch: the setup wizard](#first-launch-the-setup-wizard)
 - [The status bar and ribbon](#the-status-bar-and-ribbon)
@@ -244,7 +244,7 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 | **Search & Retrieval**      | **Results count** (1–20, default 12), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). Search strictness and Adaptive threshold are server settings. They apply to every client of this server, and each row has a reset. |
 | **Generation** _(advanced)_ | System prompts for answering with and without documents, **Chat mode**, **Creativity** (temperature), **Top P**, **Top K**, **Repetition penalty**, **Seed**, and caps like max tokens, reasoning length, keep-alive, and GPU memory fraction. Blank means "use the model's default."   |
 | **Retrieval (advanced)**    | Candidate-pool multiplier, minimum relevance score, max sources per answer, max chunks per source, and the MMR relevance/diversity balance.                                                                                                                                             |
-| **Ingest**                  | Chunk size and overlap (changing these invalidates the index), and OCR timeouts.                                                                                                                                                                                                        |
+| **Ingest**                  | Chunk size and overlap (changing these invalidates the index), **Max chunks per file** (a file over the limit is skipped and reported; 0 means no limit), and OCR timeouts.                                                                                                              |
 | **Worker pool**             | Timeouts and idle behavior for the background model workers; whether to start them eagerly.                                                                                                                                                                                             |
 | **Crawling**                | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, and URL exclude patterns.                                                                                                                                                                                        |
 | **Wiki (beta)**             | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons.                                                                                                                                                           |

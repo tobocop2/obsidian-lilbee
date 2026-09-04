@@ -187,6 +187,7 @@ export const MESSAGES = {
     LABEL_INGEST_HELP: "How documents are split, OCR'd and prepared before they enter the index.",
     LABEL_CHUNK_SIZE: "Chunk size (tokens)",
     LABEL_CHUNK_OVERLAP: "Chunk overlap (tokens)",
+    LABEL_MAX_CHUNKS_PER_FILE: "Max chunks per file",
     LABEL_TESSERACT_TIMEOUT: "Tesseract per-page timeout (s)",
     LABEL_VISION_LOAD_BUDGET: "Vision OCR pool budget (s)",
     LABEL_RETRIEVAL_ADVANCED: "Retrieval (advanced)",
@@ -507,6 +508,8 @@ export const MESSAGES = {
     DESC_CRAWL_RETRY_MAX_ATTEMPTS: "Retry count per URL before giving up.",
     DESC_CHUNK_SIZE: "Document chunk size in tokens (changes invalidate the index)",
     DESC_CHUNK_OVERLAP: "Tokens of overlap between adjacent chunks (preserves context across boundaries)",
+    DESC_MAX_CHUNKS_PER_FILE:
+        "Most chunks one file can add to the index. A file over the limit is skipped and reported. 0 means no limit. Raise it for a long document at a small chunk size.",
     DESC_EMBEDDING_MODEL: "The AI model used to understand your documents. Changing requires re-indexing.",
     DESC_LLM_PROVIDER: "Auto picks the best available. Use External to connect to OpenAI, Claude, or other services.",
     DESC_LLM_PROVIDER_AUTO: "Auto (recommended)",

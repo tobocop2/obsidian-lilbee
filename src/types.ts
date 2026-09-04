@@ -111,6 +111,7 @@ export interface ConfigResponse {
     vision_load_budget_s?: number;
     chunk_size?: number;
     chunk_overlap?: number;
+    max_chunks_per_file?: number;
     tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;

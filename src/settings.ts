@@ -1630,6 +1630,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
         );
         this.appendResetAffordance(chunkOverlapSetting, "chunk_overlap", MESSAGES.LABEL_CHUNK_OVERLAP);
 
+        const maxChunksSetting = this.renderHideableNumberField(
+            details,
+            "max_chunks_per_file",
+            MESSAGES.LABEL_MAX_CHUNKS_PER_FILE,
+            MESSAGES.DESC_MAX_CHUNKS_PER_FILE,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(maxChunksSetting, "max_chunks_per_file", MESSAGES.LABEL_MAX_CHUNKS_PER_FILE);
+
         const tesseractSetting = this.renderHideableNumberField(
             details,
             "tesseract_timeout",

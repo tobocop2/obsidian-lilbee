@@ -619,10 +619,10 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // sharedRoot + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
+            // sharedRoot + 9 generation + 5 retrieval-advanced + 5 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken
-            // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices) = 40
-            expect(textOnChanges.length).toBe(50);
+            // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
+            expect(textOnChanges.length).toBe(51);
         });
     });
 
@@ -2888,6 +2888,18 @@ describe("managed mode settings", () => {
 
             await textByName.get(MESSAGES.LABEL_CHUNK_OVERLAP)!("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
+        });
+
+        it("max_chunks_per_file calls updateConfig without a reindex confirm", async () => {
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES.LABEL_MAX_CHUNKS_PER_FILE)!("0");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_chunks_per_file: 0 });
+            mockGenericConfirmResult = true;
         });
 
         it("skips empty value", async () => {
@@ -6997,6 +7009,14 @@ describe("managed mode settings", () => {
     });
 
     describe("ingest settings", () => {
+        const INGEST_HIDEABLE_KEYS = [
+            "chunk_size",
+            "chunk_overlap",
+            "max_chunks_per_file",
+            "tesseract_timeout",
+            "vision_load_budget_s",
+        ];
+
         it("hides each ingest row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
@@ -7005,7 +7025,7 @@ describe("managed mode settings", () => {
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
-            for (const key of ["chunk_size", "chunk_overlap", "tesseract_timeout", "vision_load_budget_s"]) {
+            for (const key of INGEST_HIDEABLE_KEYS) {
                 expect(hideable.get(key)?.style.display).toBe("none");
             }
         });
@@ -7015,6 +7035,7 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 chunk_size: 512,
                 chunk_overlap: 64,
+                max_chunks_per_file: 3000,
                 tesseract_timeout: 30,
                 vision_load_budget_s: 90,
             });
@@ -7023,9 +7044,31 @@ describe("managed mode settings", () => {
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
-            for (const key of ["chunk_size", "chunk_overlap", "tesseract_timeout", "vision_load_budget_s"]) {
+            for (const key of INGEST_HIDEABLE_KEYS) {
                 expect(hideable.get(key)?.style.display).toBe("");
             }
+        });
+
+        it("fills max_chunks_per_file with the server value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ max_chunks_per_file: 3000 });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const inputs = (tab as any).serverConfigInputs as Map<string, { value: string }>;
+            expect(inputs.get("max_chunks_per_file")?.value).toBe("3000");
+        });
+
+        it("resets max_chunks_per_file by PATCHing the server default", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ max_chunks_per_file: 3000 });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            for (const click of extraButtonOnClicks) await click();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_chunks_per_file: 3000 });
         });
 
         it("PATCHes tesseract_timeout with a parsed float", async () => {
