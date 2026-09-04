@@ -22,6 +22,8 @@ const roleNoun = (role: WorkerRole): string => ROLE_NOUN[role];
 const cudaVersionLabel = (ceiling: number): string => `${Math.floor(ceiling / 100)}.${ceiling % 100}`;
 const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
+const RETRY_SKIPPED_COMMAND = "Retry skipped documents";
+
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
     LABEL_VAULT_ROOT: "Vault root",
@@ -58,6 +60,7 @@ export const MESSAGES = {
     BUTTON_BROWSE_MORE: "Browse more…",
     BUTTON_DOWNLOAD_CONTINUE: "Download & continue",
     BUTTON_DELETE_SELECTED: "Remove selected",
+    BUTTON_LOAD_MORE: "Load more",
     BUTTON_CRAWL: "Crawl",
     BUTTON_START: "Start",
     BUTTON_STOP: "Stop",
@@ -574,6 +577,7 @@ export const MESSAGES = {
     TITLE_SEARCH: "Search knowledge base",
     TITLE_MODEL_CATALOG: "Model Catalog",
     TITLE_DOCUMENTS: "Documents",
+    LABEL_DOCUMENT_CHUNKS: (count: number): string => `${count} chunks`,
     TITLE_SESSIONS: "Sessions",
 
     LABEL_OPEN_SESSIONS: "Saved conversations",
@@ -802,7 +806,7 @@ export const MESSAGES = {
     COMMAND_ADD_FILE: "Add current file",
     COMMAND_ADD_FOLDER: "Add current folder",
     COMMAND_SYNC: "Sync vault",
-    COMMAND_SYNC_RETRY_SKIPPED: "Retry skipped documents",
+    COMMAND_SYNC_RETRY_SKIPPED: RETRY_SKIPPED_COMMAND,
     COMMAND_SYNC_REBUILD: "Rebuild index",
     COMMAND_EXPORT_DATASET: "Export dataset",
     COMMAND_IMPORT_DATASET: "Import dataset",
@@ -818,6 +822,13 @@ export const MESSAGES = {
     TITLE_STATUS: "lilbee Status",
     LABEL_STATUS_DOCUMENTS: "Documents",
     LABEL_STATUS_CHUNKS: "Chunks",
+    LABEL_STATUS_DOCUMENTS_EMPTY: "The index has no documents.",
+    LABEL_STATUS_DOCUMENTS_SHOWING: (shown: number, total: number): string => `Showing ${shown} of ${total}.`,
+    LABEL_STATUS_DOCUMENTS_COMPLETE: (total: number): string => `Showing all ${total}.`,
+    LABEL_STATUS_HELD_OUT: "Held out of the index",
+    LABEL_STATUS_HELD_OUT_MORE: (count: number): string => `${count} more held out.`,
+    LABEL_STATUS_HELD_OUT_RETRY: `Run "${RETRY_SKIPPED_COMMAND}" to index them again.`,
+    LABEL_STATUS_DOCUMENTS_FAILED: 'Could not load the document list. Select "Load more" to try again.',
     LABEL_STATUS_CHAT_MODEL: "Chat model",
     LABEL_STATUS_OCR: "OCR",
     STATUS_VALUE_OCR_AUTO: "Auto",

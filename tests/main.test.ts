@@ -684,6 +684,7 @@ describe("LilbeePlugin", () => {
                             unchanged: 0,
                             failed: [],
                             skipped: [],
+                            held_out: [{ filename: `${batch[0].name}.pdf`, reason: "no text extracted" }],
                         },
                     };
                 })(),
@@ -701,6 +702,10 @@ describe("LilbeePlugin", () => {
             const dones = events.filter((e) => e.event === SSE_EVENT.DONE);
             expect(dones).toHaveLength(1);
             expect(dones[0].data.added).toHaveLength(95);
+            expect(dones[0].data.held_out.map((h: { filename: string }) => h.filename)).toEqual([
+                "f0.py.pdf",
+                "f90.py.pdf",
+            ]);
         });
 
         it("uploadInBatches ignores an unparseable done from a batch", async () => {
@@ -2935,6 +2940,35 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("1 skipped"))).toBe(true);
         });
 
+        it("includes held-out count in summary Notice when a skip marker holds files out", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withHeldOut() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["good.pdf"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        skipped: [],
+                        held_out: [
+                            { filename: "scan.pdf", reason: "no text extracted" },
+                            { filename: "empty.md", reason: "file is empty" },
+                        ],
+                    },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withHeldOut());
+
+            await plugin.addExternalFiles(["/home/user/good.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("1 added, 2 held out"))).toBe(true);
+        });
+
         it("updates status bar on FILE_START during addExternalFiles", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -4129,6 +4163,7 @@ describe("LilbeePlugin", () => {
                     unchanged: 2,
                     failed: ["d"],
                     skipped: ["e"],
+                    held_out: [{ filename: "f", reason: "no text extracted" }],
                 }),
             ).toEqual({
                 added: ["a"],
@@ -4137,6 +4172,7 @@ describe("LilbeePlugin", () => {
                 unchanged: 2,
                 failed: ["d"],
                 skipped: ["e"],
+                held_out: [{ filename: "f", reason: "no text extracted" }],
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -4147,6 +4183,7 @@ describe("LilbeePlugin", () => {
                 unchanged: 0,
                 failed: [],
                 skipped: [],
+                held_out: [],
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
@@ -4164,6 +4201,7 @@ describe("LilbeePlugin", () => {
                 unchanged: 1,
                 failed: [],
                 skipped: ["z.pdf"],
+                held_out: [],
             });
 
             // Malformed inputs return null.

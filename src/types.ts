@@ -249,6 +249,9 @@ export const DISCOVER_RAIL = {
 export interface StatusResponse {
     config: Record<string, string>;
     document_count: number;
+    /** Held-out files, capped by the server; `skipped_total` is the real count. */
+    skipped?: SkippedSource[];
+    skipped_total?: number;
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
     wiki?: {
@@ -259,6 +262,12 @@ export interface StatusResponse {
     };
 }
 
+/** A file a skip marker holds out of the index, with the reason the server recorded. */
+export interface SkippedSource {
+    filename: string;
+    reason: string;
+}
+
 export interface SyncDone {
     added: string[];
     updated: string[];
@@ -266,6 +275,7 @@ export interface SyncDone {
     unchanged: number;
     failed: string[];
     skipped: string[];
+    held_out: SkippedSource[];
 }
 
 /** Recovery options for a sync. Both default off (a plain incremental sync). */

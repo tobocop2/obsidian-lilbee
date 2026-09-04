@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelShowResponse, StatusResponse } from "../types";
+import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, noticeForResultError } from "../utils";
 
@@ -31,6 +32,7 @@ export class StatusModal extends Modal {
             }
             const status = statusResult.value;
             this.renderDocuments(contentEl, status);
+            this.renderHeldOut(contentEl, status);
             await this.renderModels(contentEl, status);
             this.renderWiki(contentEl, status);
         } catch {
@@ -39,6 +41,7 @@ export class StatusModal extends Modal {
         }
     }
 
+    /** The first document page loads in the background: a slow documents call must not delay the sections below. */
     private renderDocuments(container: HTMLElement, status: StatusResponse): void {
         const section = container.createEl("details", { attr: { open: "" } });
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_DOCUMENTS });
@@ -46,6 +49,43 @@ export class StatusModal extends Modal {
         const table = section.createEl("table", { cls: "lilbee-status-table" });
         this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.document_count));
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
+
+        const listEl = section.createDiv({ cls: "lilbee-status-documents" });
+        const list = new DocumentList(listEl, (limit, offset) =>
+            this.plugin.api.listDocuments(undefined, limit, offset),
+        );
+
+        const footer = section.createDiv({ cls: "lilbee-status-documents-footer" });
+        const summary = footer.createDiv({ cls: "lilbee-status-documents-summary" });
+        const button = footer.createEl("button", {
+            text: MESSAGES.BUTTON_LOAD_MORE,
+            cls: "lilbee-status-load-more",
+        });
+        button.hide();
+        button.addEventListener("click", () => void loadDocumentPage(list, button, summary));
+
+        void loadDocumentPage(list, button, summary);
+    }
+
+    private renderHeldOut(container: HTMLElement, status: StatusResponse): void {
+        const skipped = status.skipped ?? [];
+        if (skipped.length === 0) return;
+        const section = container.createEl("details", { cls: "lilbee-status-held-out", attr: { open: "" } });
+        section.createEl("summary", { text: MESSAGES.LABEL_STATUS_HELD_OUT });
+        for (const source of skipped) {
+            const row = section.createDiv({ cls: "lilbee-status-held-out-row" });
+            const nameEl = row.createDiv({ cls: "lilbee-status-held-out-name", text: source.filename });
+            nameEl.setAttribute("title", source.filename);
+            row.createDiv({ cls: "lilbee-status-held-out-reason", text: source.reason });
+        }
+        const hidden = (status.skipped_total ?? skipped.length) - skipped.length;
+        if (hidden > 0) {
+            section.createDiv({
+                cls: "lilbee-status-held-out-more",
+                text: MESSAGES.LABEL_STATUS_HELD_OUT_MORE(hidden),
+            });
+        }
+        section.createDiv({ cls: "lilbee-status-held-out-retry", text: MESSAGES.LABEL_STATUS_HELD_OUT_RETRY });
     }
 
     private async renderModels(container: HTMLElement, status: StatusResponse): Promise<void> {
@@ -133,6 +173,20 @@ export class StatusModal extends Modal {
         cell.setText(shortModelLabel(model));
         cell.setAttribute("title", model);
     }
+}
+
+async function loadDocumentPage(list: DocumentList, button: HTMLButtonElement, summary: HTMLElement): Promise<void> {
+    const loaded = await list.loadMore();
+    summary.setText(documentSummaryText(list, loaded));
+    if (list.hasMore) button.show();
+    else button.hide();
+}
+
+function documentSummaryText(list: DocumentList, loaded: boolean): string {
+    if (!loaded) return MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED;
+    if (list.loaded === 0) return MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY;
+    if (list.hasMore) return MESSAGES.LABEL_STATUS_DOCUMENTS_SHOWING(list.loaded, list.total);
+    return MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(list.total);
 }
 
 function shortModelLabel(model: string): string {
