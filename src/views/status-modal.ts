@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from "../types";
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, noticeForResultError } from "../utils";
+import { bindEscapeToClose, noticeForResultError, revealInFileExplorer } from "../utils";
 
 export class StatusModal extends Modal {
     private plugin: LilbeePlugin;
@@ -66,16 +66,41 @@ export class StatusModal extends Modal {
 
     /** Opens the note behind an indexed document, which lives under the managed folder when content is stored in the vault. */
     private openDocument(filename: string): void {
-        const { vault, workspace } = this.app;
-        const file = [`${MANAGED_DOCS_PREFIX}${filename}`, filename]
-            .map((path) => vault.getAbstractFileByPath(path))
-            .find((entry): entry is TFile => entry instanceof TFile);
-        if (!file) {
+        const { workspace } = this.app;
+        const file = this.vaultFile(filename);
+        if (file) {
+            this.close();
+            void workspace.getLeaf(false).openFile(file);
+            return;
+        }
+        // A member of an archive is named archive/member; the archive is the vault file.
+        // Opening it would hand the archive to the OS, so select it in the explorer instead.
+        const archive = this.enclosingArchive(filename);
+        if (!archive) {
             new Notice(MESSAGES.NOTICE_DOCUMENT_NOT_IN_VAULT(filename));
             return;
         }
+        new Notice(MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE(filename, archive.file.name));
         this.close();
-        void workspace.getLeaf(false).openFile(file);
+        revealInFileExplorer(this.app, archive.file);
+    }
+
+    private vaultFile(sourceName: string): TFile | null {
+        const { vault } = this.app;
+        return (
+            [`${MANAGED_DOCS_PREFIX}${sourceName}`, sourceName]
+                .map((path) => vault.getAbstractFileByPath(path))
+                .find((entry): entry is TFile => entry instanceof TFile) ?? null
+        );
+    }
+
+    private enclosingArchive(sourceName: string): { file: TFile } | null {
+        const segments = sourceName.split("/");
+        for (let end = segments.length - 1; end > 0; end -= 1) {
+            const file = this.vaultFile(segments.slice(0, end).join("/"));
+            if (file) return { file };
+        }
+        return null;
     }
 
     private renderHeldOut(container: HTMLElement, status: StatusResponse): void {

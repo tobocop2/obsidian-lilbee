@@ -483,6 +483,67 @@ describe("StatusModal document list", () => {
         expect(closeSpy).toHaveBeenCalledTimes(1);
     });
 
+    it.each([
+        ["docs.zip/report.pdf", "lilbee/docs.zip"],
+        ["docs.zip/inner.zip/notes.txt", "docs.zip"],
+    ])("opens the archive behind a member row %s and says which archive holds it", async (member, archivePath) => {
+        const plugin = makePlugin();
+        asMock(plugin.api.status).mockResolvedValue(ok(makeStatus()));
+        asMock(plugin.api.showModel).mockResolvedValue({});
+        asMock(plugin.api.listDocuments).mockResolvedValue(makeDocsResponse([makeDoc({ filename: member })]));
+        const app = new App();
+        const archive = new TFile();
+        archive.name = "docs.zip";
+        asMock(app.vault.getAbstractFileByPath).mockImplementation((path: string) =>
+            path === archivePath ? archive : null,
+        );
+        const openFile = vi.fn();
+        asMock(app.workspace.getLeaf).mockReturnValue({ openFile });
+        const revealInFolder = vi.fn();
+        const explorer = { view: { revealInFolder } };
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([explorer]);
+        app.workspace.revealLeaf = vi.fn();
+        const modal = new StatusModal(app, plugin);
+        const closeSpy = vi.spyOn(modal, "close");
+        modal.open();
+        const content = (modal as any).contentEl as MockElement;
+        await vi.waitFor(() => {
+            expect(content.find("lilbee-documents-row-link")).toBeTruthy();
+        });
+        content.find("lilbee-documents-row-link")!.trigger("click");
+        expect(openFile).not.toHaveBeenCalled();
+        expect(revealInFolder).toHaveBeenCalledWith(archive);
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(explorer);
+        expect(closeSpy).toHaveBeenCalledTimes(1);
+        expect(Notice.instances.map((n: any) => n.message)).toContain(
+            MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE(member, "docs.zip"),
+        );
+    });
+
+    it("still names the archive when the file explorer is closed", async () => {
+        const plugin = makePlugin();
+        asMock(plugin.api.status).mockResolvedValue(ok(makeStatus()));
+        asMock(plugin.api.showModel).mockResolvedValue({});
+        asMock(plugin.api.listDocuments).mockResolvedValue(makeDocsResponse([makeDoc({ filename: "docs.zip/a.pdf" })]));
+        const app = new App();
+        const archive = new TFile();
+        archive.name = "docs.zip";
+        asMock(app.vault.getAbstractFileByPath).mockImplementation((path: string) =>
+            path === "lilbee/docs.zip" ? archive : null,
+        );
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+        const modal = new StatusModal(app, plugin);
+        modal.open();
+        const content = (modal as any).contentEl as MockElement;
+        await vi.waitFor(() => {
+            expect(content.find("lilbee-documents-row-link")).toBeTruthy();
+        });
+        content.find("lilbee-documents-row-link")!.trigger("click");
+        expect(Notice.instances.map((n: any) => n.message)).toContain(
+            MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE("docs.zip/a.pdf", "docs.zip"),
+        );
+    });
+
     it("says when a document is not in this vault", async () => {
         const plugin = makePlugin();
         asMock(plugin.api.listDocuments).mockResolvedValue(makeDocsResponse([makeDoc({ filename: "outside.pdf" })]));
