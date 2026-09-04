@@ -5623,6 +5623,48 @@ describe("LilbeePlugin", () => {
             expect(mockServerStart).not.toHaveBeenCalled();
         });
 
+        it("reports whether it has unloaded, so UI that outlives it can stop reporting", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            expect(plugin.isUnloaded()).toBe(false);
+            plugin.onunload();
+            expect(plugin.isUnloaded()).toBe(true);
+        });
+
+        it("onunload aborts an in-flight download and stays silent about it", async () => {
+            const { DownloadCanceledError } = await import("../src/server-binary");
+            let seenSignal: AbortSignal | undefined;
+            mockInstalled.mockReturnValue(null);
+            // Plays the package: the transfer rejects with its cancel error once the signal aborts.
+            mockEnsure.mockImplementationOnce(
+                ({ signal }: any) =>
+                    new Promise((_, reject) => {
+                        seenSignal = signal;
+                        signal.addEventListener("abort", () => reject(new DownloadCanceledError()));
+                    }),
+            );
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+            const statusSpy = vi.spyOn(plugin as any, "updateStatusBar");
+            const events: Array<{ phase: string }> = [];
+
+            const started = plugin.startManagedServer((event: any) => events.push(event));
+            await flush();
+            expect(plugin.isDownloadingServer()).toBe(true);
+            Notice.clear();
+            statusSpy.mockClear();
+            plugin.onunload();
+            await started;
+
+            expect(seenSignal?.aborted).toBe(true);
+            expect(plugin.isDownloadingServer()).toBe(false);
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+            expect(statusSpy).not.toHaveBeenCalled();
+            expect(events.map((e) => e.phase)).not.toContain("error");
+        });
+
         it("startManagedServer onProgress emits 'error' phase when ensureBinary rejects", async () => {
             mockInstalled.mockReturnValueOnce(null);
             mockEnsure.mockRejectedValueOnce(new Error("boom"));
@@ -6628,6 +6670,25 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(RELEASE.tag));
+        });
+
+        it("stays quiet when the plugin unloads while the automatic update downloads", async () => {
+            const { DownloadCanceledError } = await import("../src/server-binary");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: RELEASE });
+            let cancel!: () => void;
+            vi.spyOn(plugin, "updateServer").mockImplementation(
+                () => new Promise((_, reject) => (cancel = () => reject(new DownloadCanceledError()))),
+            );
+            seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            plugin.onunload();
+            cancel();
+            await flush();
+
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED);
         });
 
         it("skips the check when this plugin version already checked", async () => {

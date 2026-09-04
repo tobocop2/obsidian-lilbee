@@ -182,6 +182,7 @@ function makePlugin(
         taskQueue: new TaskQueue(),
         getSharedLilbeeVersion: () => sharedVersion,
         getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
+        isUnloaded: () => false,
         setSharedLilbeeVersion: (v: string) => {
             sharedVersion = v;
         },
@@ -7661,6 +7662,40 @@ describe("cancelling a server download", () => {
         await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
 
         expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+    });
+
+    it("says nothing and restores nothing when an unload cut the update short", async () => {
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        (plugin as any).updateServer = vi.fn().mockRejectedValue(new FakeDownloadCanceledError());
+        (plugin as any).isUnloaded = () => true;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await captured.buttonOnClicks[2]();
+
+        expect(Notice.instances.map((n) => n.message)).not.toContain("lilbee server download cancelled.");
+        // The tab is gone by then: the panel and the button stay as the download left them.
+        expect(tab.containerEl.find("lilbee-update-progress")!.style.display).not.toBe("none");
+        expect(captured.buttons.some((b) => b.text === MESSAGES.BUTTON_DOWNLOADING && b.disabled)).toBe(true);
+    });
+
+    it("says nothing and restores nothing when an unload cut the first install short", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => false;
+        (plugin as any).installServer = vi.fn().mockRejectedValue(new FakeDownloadCanceledError());
+        (plugin as any).isUnloaded = () => true;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(Notice.instances.map((n) => n.message)).not.toContain("lilbee server download cancelled.");
+        expect(tab.containerEl.find("lilbee-update-progress")!.style.display).not.toBe("none");
+        expect(captured.buttons.some((b) => b.text === MESSAGES.BUTTON_DOWNLOADING && b.disabled)).toBe(true);
     });
 
     it("offers to stop a download that started outside settings", async () => {

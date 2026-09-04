@@ -793,6 +793,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             new Notice(MESSAGES.NOTICE_INSTALLED(release.tag));
             this.render();
         } catch (err) {
+            // Unloading aborted it, and this tab is gone with the plugin.
+            if (this.plugin.isUnloaded()) return;
             if (isDownloadCanceled(err)) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
             } else {
@@ -840,6 +842,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.render();
             return true;
         } catch (err) {
+            // Unloading aborted it, and this tab is gone with the plugin.
+            if (this.plugin.isUnloaded()) return false;
             if (isDownloadCanceled(err)) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
             } else {

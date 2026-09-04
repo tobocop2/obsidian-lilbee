@@ -307,6 +307,11 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     private unloaded = false;
+
+    /** True once onunload ran; UI that outlives the instance must stop reporting. */
+    isUnloaded(): boolean {
+        return this.unloaded;
+    }
     // Guards chat-leaf creation against re-entrant duplicate tabs while setViewState is in flight (issue #169).
     private openingChatLeaf = false;
     // Same re-entrancy guard for the placement view's main-area tab and beside-chat split.
@@ -745,6 +750,8 @@ export default class LilbeePlugin extends Plugin {
             return installed;
         } catch (err) {
             this.finishDownload();
+            // Unloading aborted it, and the UI it would report to is gone.
+            if (this.unloaded) return null;
             this.setStatusClass(null);
             // Cancelling is a choice, not a failure: say so plainly and skip the error journal.
             if (isDownloadCanceled(err)) {
@@ -1043,7 +1050,7 @@ export default class LilbeePlugin extends Plugin {
                 build ? MESSAGES.NOTICE_SERVER_SWITCHED_BUILD(build) : MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag),
             );
         } catch {
-            new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
+            if (!this.unloaded) new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
         } finally {
             notice.hide();
         }
@@ -1593,6 +1600,9 @@ export default class LilbeePlugin extends Plugin {
 
     onunload(): void {
         this.unloaded = true;
+        // A download must not outlive the instance: a re-enabled plugin would race it for the same bin dir.
+        this.cancelServerDownload();
+        this.finishDownload();
         if (this.pendingHintTimeout) {
             window.clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
