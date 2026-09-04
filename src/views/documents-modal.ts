@@ -5,11 +5,10 @@ import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
 
-const SCROLL_BOTTOM_THRESHOLD_PX = 200;
-
 export class DocumentsModal extends Modal {
     private plugin: LilbeePlugin;
     private list: DocumentList | null = null;
+    private unbindScroll: (() => void) | null = null;
     private resultsEl: HTMLElement | null = null;
     private removeBtn: HTMLElement | null = null;
     private searchQuery = "";
@@ -50,28 +49,20 @@ export class DocumentsModal extends Modal {
         this.removeBtn.addEventListener("click", () => void this.removeSelected());
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-documents-results" });
-        this.resultsEl.addEventListener("scroll", this.onScroll);
         this.list = new DocumentList(
             this.resultsEl,
             (limit, offset) => this.plugin.api.listDocuments(this.searchQuery || undefined, limit, offset),
             { selectable: true, onSelectionChange: () => this.updateRemoveBtn() },
         );
+        this.unbindScroll = this.list.bindScroll(this.resultsEl);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
-        this.resultsEl?.removeEventListener("scroll", this.onScroll);
+        this.unbindScroll?.();
     }
-
-    private onScroll = (): void => {
-        if (!this.resultsEl || !this.list || this.list.isFetching || !this.list.hasMore) return;
-        const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
-        if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
-            void this.list.loadMore();
-        }
-    };
 
     private resetAndFetch(): void {
         if (!this.list) return;

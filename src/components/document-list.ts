@@ -3,7 +3,9 @@ import type { DocumentEntry, DocumentsResponse } from "../types";
 import { MESSAGES } from "../locales/en";
 import { relativeTimeFromIso } from "../utils";
 
-export const DOCUMENT_PAGE_SIZE = 20;
+export const DOCUMENT_PAGE_SIZE = 200;
+/** Distance from the bottom of the scroll box at which the next page loads. */
+const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 
 export type DocumentPageFetcher = (limit: number, offset: number) => Promise<DocumentsResponse>;
 
@@ -11,6 +13,10 @@ export interface DocumentListOptions {
     /** Renders a checkbox per row and tracks the checked filenames. */
     selectable?: boolean;
     onSelectionChange?: () => void;
+    /** Makes each filename a link that hands the document to the caller. */
+    onOpen?: (doc: DocumentEntry) => void;
+    /** Runs after every page attempt with whether the fetch succeeded. */
+    onPage?: (loaded: boolean) => void;
 }
 
 /** Paged list of indexed documents, shared by the Documents modal and the Status modal. */
@@ -46,10 +52,6 @@ export class DocumentList {
         return this.more;
     }
 
-    get isFetching(): boolean {
-        return this.fetching;
-    }
-
     get selected(): string[] {
         return Array.from(this.selectedNames);
     }
@@ -65,9 +67,26 @@ export class DocumentList {
         this.containerEl.empty();
     }
 
+    /** Loads the next page whenever *scrollEl* scrolls near its bottom. Returns the unbind function. */
+    bindScroll(scrollEl: HTMLElement): () => void {
+        const onScroll = (): void => {
+            if (this.fetching || !this.more) return;
+            const { scrollTop, clientHeight, scrollHeight } = scrollEl;
+            if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) void this.loadMore();
+        };
+        scrollEl.addEventListener("scroll", onScroll);
+        return () => scrollEl.removeEventListener("scroll", onScroll);
+    }
+
     /** Appends the next page. Returns false when the fetch fails. */
     async loadMore(): Promise<boolean> {
         if (this.fetching || !this.more) return true;
+        const loaded = await this.fetchNextPage();
+        this.options.onPage?.(loaded);
+        return loaded;
+    }
+
+    private async fetchNextPage(): Promise<boolean> {
         this.fetching = true;
         const generation = this.generation;
         try {
@@ -95,6 +114,10 @@ export class DocumentList {
 
         const nameEl = row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
         nameEl.setAttribute("title", doc.filename);
+        if (this.options.onOpen) {
+            nameEl.addClass("lilbee-documents-row-link");
+            nameEl.addEventListener("click", () => this.options.onOpen?.(doc));
+        }
         row.createDiv({
             cls: "lilbee-documents-row-chunks",
             text: MESSAGES.LABEL_DOCUMENT_CHUNKS(doc.chunk_count),

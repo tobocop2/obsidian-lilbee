@@ -240,6 +240,9 @@ export const MODEL_COMPAT = {
 
 export type DiscoverRail = "for_you" | "your_collection" | "fresh";
 
+/** Vault folder that holds the managed documents when content is stored in the vault. */
+export const MANAGED_DOCS_PREFIX = "lilbee/";
+
 export const DISCOVER_RAIL = {
     FOR_YOU: "for_you",
     YOUR_COLLECTION: "your_collection",

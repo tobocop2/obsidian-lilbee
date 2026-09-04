@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { App, Notice } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
 import { ok, err } from "../../src/result";
 import { StatusModal } from "../../src/views/status-modal";
 import { MESSAGES } from "../../src/locales/en";
@@ -411,7 +411,7 @@ describe("StatusModal document list", () => {
 
         const content = await openWithDocuments(plugin);
 
-        expect(plugin.api.listDocuments).toHaveBeenCalledWith(undefined, 20, 0);
+        expect(plugin.api.listDocuments).toHaveBeenCalledWith(undefined, 200, 0);
         const names = content.findAll("lilbee-documents-row-name").map((el: MockElement) => el.textContent);
         expect(names).toEqual(["a.md", "b.md"]);
         expect(content.findAll("lilbee-documents-checkbox").length).toBe(0);
@@ -424,7 +424,6 @@ describe("StatusModal document list", () => {
         const content = await openWithDocuments(plugin);
 
         expect(content.find("lilbee-status-documents-summary")!.textContent).toBe("Showing all 1.");
-        expect(content.find("lilbee-status-load-more")!.style.display).toBe("none");
     });
 
     it("says the index is empty when no documents come back", async () => {
@@ -434,33 +433,65 @@ describe("StatusModal document list", () => {
         const content = await openWithDocuments(plugin);
 
         expect(content.find("lilbee-status-documents-summary")!.textContent).toBe("The index has no documents.");
-        expect(content.find("lilbee-status-load-more")!.style.display).toBe("none");
     });
 
-    it("loads the next page when the reader selects load more", async () => {
-        const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
+    it("loads the next page when the reader scrolls near the bottom", async () => {
+        const page1 = Array.from({ length: 200 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
         const plugin = makePlugin();
         asMock(plugin.api.listDocuments)
-            .mockResolvedValueOnce(makeDocsResponse(page1, 21, true))
-            .mockResolvedValueOnce(makeDocsResponse([makeDoc({ filename: "f20.md" })], 21));
+            .mockResolvedValueOnce(makeDocsResponse(page1, 201, true))
+            .mockResolvedValueOnce(makeDocsResponse([makeDoc({ filename: "f200.md" })], 201));
 
         const content = await openWithDocuments(plugin);
         const summary = content.find("lilbee-status-documents-summary")!;
-        const button = content.find("lilbee-status-load-more")!;
-        expect(summary.textContent).toBe("Showing 20 of 21.");
-        expect(button.style.display).not.toBe("none");
+        expect(summary.textContent).toBe("Showing 200 of 201.");
 
-        button.trigger("click");
+        const listEl = content.find("lilbee-status-documents")!;
+        Object.assign(listEl, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        listEl.trigger("scroll");
         await vi.waitFor(() => {
-            expect(summary.textContent).toBe("Showing all 21.");
+            expect(summary.textContent).toBe("Showing all 201.");
         });
 
-        expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 20, 20);
-        expect(content.findAll("lilbee-documents-row").length).toBe(21);
-        expect(button.style.display).toBe("none");
+        expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 200, 200);
+        expect(content.findAll("lilbee-documents-row").length).toBe(201);
     });
 
-    it("reports a failed document fetch and keeps load more for a retry", async () => {
+    it("opens the note behind a row from the managed folder and closes", async () => {
+        const plugin = makePlugin();
+        asMock(plugin.api.status).mockResolvedValue(ok(makeStatus()));
+        asMock(plugin.api.showModel).mockResolvedValue({});
+        asMock(plugin.api.listDocuments).mockResolvedValue(makeDocsResponse([makeDoc({ filename: "notes/a.md" })]));
+        const app = new App();
+        const file = new TFile();
+        asMock(app.vault.getAbstractFileByPath).mockImplementation((path: string) =>
+            path === "lilbee/notes/a.md" ? file : null,
+        );
+        const openFile = vi.fn();
+        asMock(app.workspace.getLeaf).mockReturnValue({ openFile });
+
+        const modal = new StatusModal(app, plugin);
+        modal.open();
+        const content = (modal as any).contentEl as MockElement;
+        await vi.waitFor(() => {
+            expect(content.find("lilbee-documents-row-link")).toBeTruthy();
+        });
+        content.find("lilbee-documents-row-link")!.trigger("click");
+
+        expect(openFile).toHaveBeenCalledWith(file);
+    });
+
+    it("says when a document is not in this vault", async () => {
+        const plugin = makePlugin();
+        asMock(plugin.api.listDocuments).mockResolvedValue(makeDocsResponse([makeDoc({ filename: "outside.pdf" })]));
+
+        const content = await openWithDocuments(plugin);
+        content.find("lilbee-documents-row-link")!.trigger("click");
+
+        expect(Notice.instances.map((n: any) => n.message)).toContain("outside.pdf is not in this vault.");
+    });
+
+    it("reports a failed document fetch in the summary", async () => {
         const plugin = makePlugin();
         asMock(plugin.api.listDocuments).mockRejectedValue(new Error("network"));
 
@@ -469,7 +500,6 @@ describe("StatusModal document list", () => {
         expect(content.find("lilbee-status-documents-summary")!.textContent).toBe(
             MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED,
         );
-        expect(content.find("lilbee-status-load-more")!.style.display).not.toBe("none");
         expect(Notice.instances.some((n: any) => n.message.includes("failed to load documents"))).toBe(true);
     });
 });

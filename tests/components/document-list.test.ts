@@ -106,20 +106,20 @@ describe("DocumentList", () => {
         const container = new MockElement();
         const fetchPage = vi
             .fn()
-            .mockResolvedValueOnce(makeResponse(page1, 21, true))
-            .mockResolvedValueOnce(makeResponse([makeDoc({ filename: "f20.md" })], 21));
+            .mockResolvedValueOnce(makeResponse(page1, DOCUMENT_PAGE_SIZE + 1, true))
+            .mockResolvedValueOnce(makeResponse([makeDoc({ filename: "last.md" })], DOCUMENT_PAGE_SIZE + 1));
         const list = new DocumentList(container as unknown as HTMLElement, fetchPage);
 
         await list.loadMore();
-        expect(list.loaded).toBe(20);
-        expect(list.total).toBe(21);
+        expect(list.loaded).toBe(DOCUMENT_PAGE_SIZE);
+        expect(list.total).toBe(DOCUMENT_PAGE_SIZE + 1);
         expect(list.hasMore).toBe(true);
 
         await list.loadMore();
-        expect(fetchPage).toHaveBeenLastCalledWith(DOCUMENT_PAGE_SIZE, 20);
-        expect(list.loaded).toBe(21);
+        expect(fetchPage).toHaveBeenLastCalledWith(DOCUMENT_PAGE_SIZE, DOCUMENT_PAGE_SIZE);
+        expect(list.loaded).toBe(DOCUMENT_PAGE_SIZE + 1);
         expect(list.hasMore).toBe(false);
-        expect(container.findAll("lilbee-documents-row").length).toBe(21);
+        expect(container.findAll("lilbee-documents-row").length).toBe(DOCUMENT_PAGE_SIZE + 1);
     });
 
     it("does not fetch again when the last page is loaded", async () => {
@@ -216,5 +216,47 @@ describe("DocumentList", () => {
 
         await list.loadMore();
         expect(fetchPage).toHaveBeenLastCalledWith(DOCUMENT_PAGE_SIZE, 0);
+    });
+
+    it("loads the next page when the bound element scrolls near its bottom, until the last page", async () => {
+        const container = new MockElement();
+        const fetchPage = vi
+            .fn()
+            .mockResolvedValueOnce(makeResponse([makeDoc({ filename: "a.md" })], 2, true))
+            .mockResolvedValueOnce(makeResponse([makeDoc({ filename: "b.md" })], 2, false));
+        const list = new DocumentList(container as unknown as HTMLElement, fetchPage);
+        await list.loadMore();
+        const scrollEl = new MockElement();
+        const unbind = list.bindScroll(scrollEl as unknown as HTMLElement);
+
+        Object.assign(scrollEl, { scrollTop: 0, clientHeight: 400, scrollHeight: 2000 });
+        scrollEl.trigger("scroll");
+        expect(fetchPage).toHaveBeenCalledTimes(1);
+
+        Object.assign(scrollEl, { scrollTop: 1500 });
+        scrollEl.trigger("scroll");
+        await vi.waitFor(() => expect(list.loaded).toBe(2));
+        scrollEl.trigger("scroll");
+        expect(fetchPage).toHaveBeenCalledTimes(2);
+
+        unbind();
+        Object.assign(scrollEl, { scrollTop: 1600 });
+        scrollEl.trigger("scroll");
+        expect(fetchPage).toHaveBeenCalledTimes(2);
+    });
+
+    it("hands a clicked filename to onOpen and reports every page to onPage", async () => {
+        const container = new MockElement();
+        const opened: string[] = [];
+        const pages: boolean[] = [];
+        const list = new DocumentList(
+            container as unknown as HTMLElement,
+            vi.fn().mockResolvedValue(makeResponse([makeDoc({ filename: "a.md" })])),
+            { onOpen: (doc) => opened.push(doc.filename), onPage: (loaded) => pages.push(loaded) },
+        );
+        await list.loadMore();
+        container.find("lilbee-documents-row-link")!.trigger("click");
+        expect(opened).toEqual(["a.md"]);
+        expect(pages).toEqual([true]);
     });
 });

@@ -78,6 +78,7 @@ import {
     type UninstallPlan,
     type VaultAdapter,
     type SkippedSource,
+    MANAGED_DOCS_PREFIX,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -139,7 +140,6 @@ const UPLOAD_BATCH_MAX_BYTES = 8 * BYTES_PER_MB;
 
 // Vault-relative folder where managed mode stores lilbee's documents
 // (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
-const MANAGED_DOCS_PREFIX = "lilbee/";
 
 const basename = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
 

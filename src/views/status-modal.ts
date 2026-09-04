@@ -1,6 +1,6 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, TFile } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelShowResponse, StatusResponse } from "../types";
+import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from "../types";
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, noticeForResultError } from "../utils";
@@ -51,20 +51,31 @@ export class StatusModal extends Modal {
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
 
         const listEl = section.createDiv({ cls: "lilbee-status-documents" });
-        const list = new DocumentList(listEl, (limit, offset) =>
-            this.plugin.api.listDocuments(undefined, limit, offset),
+        const summary = section.createDiv({ cls: "lilbee-status-documents-summary" });
+        const list = new DocumentList(
+            listEl,
+            (limit, offset) => this.plugin.api.listDocuments(undefined, limit, offset),
+            {
+                onOpen: (doc) => this.openDocument(doc.filename),
+                onPage: (loaded) => summary.setText(documentSummaryText(list, loaded)),
+            },
         );
+        list.bindScroll(listEl);
+        void list.loadMore();
+    }
 
-        const footer = section.createDiv({ cls: "lilbee-status-documents-footer" });
-        const summary = footer.createDiv({ cls: "lilbee-status-documents-summary" });
-        const button = footer.createEl("button", {
-            text: MESSAGES.BUTTON_LOAD_MORE,
-            cls: "lilbee-status-load-more",
-        });
-        button.hide();
-        button.addEventListener("click", () => void loadDocumentPage(list, button, summary));
-
-        void loadDocumentPage(list, button, summary);
+    /** Opens the note behind an indexed document, which lives under the managed folder when content is stored in the vault. */
+    private openDocument(filename: string): void {
+        const { vault, workspace } = this.app;
+        const file = [`${MANAGED_DOCS_PREFIX}${filename}`, filename]
+            .map((path) => vault.getAbstractFileByPath(path))
+            .find((entry): entry is TFile => entry instanceof TFile);
+        if (!file) {
+            new Notice(MESSAGES.NOTICE_DOCUMENT_NOT_IN_VAULT(filename));
+            return;
+        }
+        this.close();
+        void workspace.getLeaf(false).openFile(file);
     }
 
     private renderHeldOut(container: HTMLElement, status: StatusResponse): void {
@@ -173,13 +184,6 @@ export class StatusModal extends Modal {
         cell.setText(shortModelLabel(model));
         cell.setAttribute("title", model);
     }
-}
-
-async function loadDocumentPage(list: DocumentList, button: HTMLButtonElement, summary: HTMLElement): Promise<void> {
-    const loaded = await list.loadMore();
-    summary.setText(documentSummaryText(list, loaded));
-    if (list.hasMore) button.show();
-    else button.hide();
 }
 
 function documentSummaryText(list: DocumentList, loaded: boolean): string {

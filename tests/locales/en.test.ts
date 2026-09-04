@@ -33,7 +33,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_CLEAR_CHAT).toBe("Clear chat");
             expect(MESSAGES.BUTTON_SEND).toBe("Send");
             expect(MESSAGES.BUTTON_OPEN_CHAT).toBe("Open chat");
-            expect(MESSAGES.BUTTON_LOAD_MORE).toBe("Load more");
         });
     });
 
@@ -333,8 +332,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(45)).toBe("Showing all 45.");
             expect(MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY).toBe("The index has no documents.");
             expect(MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED).toBe(
-                'Could not load the document list. Select "Load more" to try again.',
+                "Could not load the document list. Scroll to try again.",
             );
+            expect(MESSAGES.NOTICE_DOCUMENT_NOT_IN_VAULT("a.md")).toBe("a.md is not in this vault.");
         });
 
         it("held-out strings name the retry command and count the overflow", () => {
