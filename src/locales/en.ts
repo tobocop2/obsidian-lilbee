@@ -855,6 +855,8 @@ export const MESSAGES = {
     LABEL_STATUS_HELD_OUT_RETRY: `Run "${RETRY_SKIPPED_COMMAND}" to index them again.`,
     LABEL_STATUS_DOCUMENTS_FAILED: "Could not load the document list. Scroll to try again.",
     NOTICE_DOCUMENT_NOT_IN_VAULT: (name: string): string => `${name} is not in this vault.`,
+    NOTICE_DOCUMENT_IN_ARCHIVE: (name: string, archive: string): string =>
+        `${name} is inside ${archive}. Opening the archive.`,
     LABEL_STATUS_CHAT_MODEL: "Chat model",
     LABEL_STATUS_OCR: "OCR",
     STATUS_VALUE_OCR_AUTO: "Auto",
