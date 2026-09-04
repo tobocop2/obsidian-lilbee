@@ -74,6 +74,7 @@ import {
     type WikiPhasePayload,
     type UninstallPlan,
     type VaultAdapter,
+    type SkippedSource,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -155,6 +156,7 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
+    if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
     return parts.join(", ");
 }
 
@@ -236,6 +238,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         unchanged: typeof obj.unchanged === "number" ? obj.unchanged : 0,
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
+        held_out: Array.isArray(obj.held_out) ? (obj.held_out as SkippedSource[]) : [],
     };
 }
 
@@ -2284,7 +2287,15 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         const total = files.length;
-        const merged: SyncDone = { added: [], updated: [], removed: [], unchanged: 0, failed: [], skipped: [] };
+        const merged: SyncDone = {
+            added: [],
+            updated: [],
+            removed: [],
+            unchanged: 0,
+            failed: [],
+            skipped: [],
+            held_out: [],
+        };
         let done = 0;
         for (const batch of batches) {
             for await (const event of this.api.uploadFiles(batch, signal)) {
@@ -2296,6 +2307,7 @@ export default class LilbeePlugin extends Plugin {
                         merged.removed.push(...parsed.removed);
                         merged.failed.push(...parsed.failed);
                         merged.skipped.push(...parsed.skipped);
+                        merged.held_out.push(...parsed.held_out);
                         merged.unchanged += parsed.unchanged;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {

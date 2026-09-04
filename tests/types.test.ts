@@ -240,9 +240,12 @@ describe("StatusResponse interface", () => {
             config: { model: "llama3" },
             sources: [{ filename: "a.md", chunk_count: 3 }],
             total_chunks: 3,
+            skipped: [{ filename: "scan.pdf", reason: "no text extracted" }],
+            skipped_total: 1,
         };
         expect(s.total_chunks).toBe(3);
         expect(s.sources[0].filename).toBe("a.md");
+        expect(s.skipped?.[0].reason).toBe("no text extracted");
     });
 });
 
@@ -254,8 +257,11 @@ describe("SyncDone interface", () => {
             removed: ["b.md"],
             unchanged: 10,
             failed: [],
+            skipped: [],
+            held_out: [{ filename: "scan.pdf", reason: "no text extracted" }],
         };
         expect(d.added).toContain("a.md");
+        expect(d.held_out[0].filename).toBe("scan.pdf");
         expect(d.unchanged).toBe(10);
     });
 });

@@ -452,3 +452,76 @@ describe("StatusModal document list", () => {
         expect(Notice.instances.some((n: any) => n.message.includes("failed to load documents"))).toBe(true);
     });
 });
+
+describe("StatusModal held-out files", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    async function openWithStatus(status: StatusResponse): Promise<MockElement> {
+        const plugin = makePlugin();
+        asMock(plugin.api.status).mockResolvedValue(ok(status));
+        asMock(plugin.api.showModel).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        const content = (modal as any).contentEl as MockElement;
+        await vi.waitFor(() => {
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+        return content;
+    }
+
+    it.each([
+        ["the server omits the fields", makeStatus()],
+        ["no files are held out", makeStatus({ skipped: [], skipped_total: 0 })],
+    ])("renders no held-out section when %s", async (_label, status) => {
+        const content = await openWithStatus(status);
+
+        expect(content.find("lilbee-status-held-out")).toBeNull();
+        expect(content.find("lilbee-status-held-out-retry")).toBeNull();
+    });
+
+    it("lists each held-out file with its reason and names the retry command", async () => {
+        const content = await openWithStatus(
+            makeStatus({
+                skipped: [
+                    { filename: "scan.pdf", reason: "no text extracted" },
+                    { filename: "empty.md", reason: "file is empty" },
+                ],
+                skipped_total: 2,
+            }),
+        );
+
+        const names = content.findAll("lilbee-status-held-out-name").map((el: MockElement) => el.textContent);
+        const reasons = content.findAll("lilbee-status-held-out-reason").map((el: MockElement) => el.textContent);
+        expect(names).toEqual(["scan.pdf", "empty.md"]);
+        expect(reasons).toEqual(["no text extracted", "file is empty"]);
+        expect(content.find("lilbee-status-held-out-name")!.attributes["title"]).toBe("scan.pdf");
+        expect(content.find("lilbee-status-held-out-more")).toBeNull();
+        expect(content.find("lilbee-status-held-out-retry")!.textContent).toContain(
+            MESSAGES.COMMAND_SYNC_RETRY_SKIPPED,
+        );
+    });
+
+    it("shows no overflow line when the server sends the list without a total", async () => {
+        const content = await openWithStatus(
+            makeStatus({ skipped: [{ filename: "scan.pdf", reason: "no text extracted" }] }),
+        );
+
+        expect(content.findAll("lilbee-status-held-out-name").length).toBe(1);
+        expect(content.find("lilbee-status-held-out-more")).toBeNull();
+    });
+
+    it("says how many more files are held out when the list is capped", async () => {
+        const content = await openWithStatus(
+            makeStatus({
+                skipped: [{ filename: "scan.pdf", reason: "no text extracted" }],
+                skipped_total: 13,
+            }),
+        );
+
+        expect(content.findAll("lilbee-status-held-out-name").length).toBe(1);
+        expect(content.find("lilbee-status-held-out-more")!.textContent).toBe("12 more held out.");
+    });
+});

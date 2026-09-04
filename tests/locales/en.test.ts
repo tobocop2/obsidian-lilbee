@@ -336,6 +336,14 @@ describe("MESSAGES", () => {
             );
         });
 
+        it("held-out strings name the retry command and count the overflow", () => {
+            expect(MESSAGES.LABEL_STATUS_HELD_OUT).toBe("Held out of the index");
+            expect(MESSAGES.LABEL_STATUS_HELD_OUT_MORE(12)).toBe("12 more held out.");
+            expect(MESSAGES.LABEL_STATUS_HELD_OUT_RETRY).toBe(
+                `Run "${MESSAGES.COMMAND_SYNC_RETRY_SKIPPED}" to index them again.`,
+            );
+        });
+
         it("NOTICE_WIKI_SYNC produces correct output", () => {
             expect(MESSAGES.NOTICE_WIKI_SYNC(3, 1)).toBe("lilbee: wiki sync — 3 written, 1 removed");
             expect(MESSAGES.NOTICE_WIKI_SYNC(0, 0)).toBe("lilbee: wiki sync — 0 written, 0 removed");

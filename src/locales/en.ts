@@ -11,6 +11,8 @@ const ROLE_NOUN: Record<WorkerRole, string> = {
 const roleNoun = (role: WorkerRole): string => ROLE_NOUN[role];
 const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
+const RETRY_SKIPPED_COMMAND = "Retry skipped documents";
+
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
     LABEL_VAULT_ROOT: "Vault root",
@@ -769,7 +771,7 @@ export const MESSAGES = {
     COMMAND_ADD_FILE: "Add current file",
     COMMAND_ADD_FOLDER: "Add current folder",
     COMMAND_SYNC: "Sync vault",
-    COMMAND_SYNC_RETRY_SKIPPED: "Retry skipped documents",
+    COMMAND_SYNC_RETRY_SKIPPED: RETRY_SKIPPED_COMMAND,
     COMMAND_SYNC_REBUILD: "Rebuild index",
     COMMAND_EXPORT_DATASET: "Export dataset",
     COMMAND_IMPORT_DATASET: "Import dataset",
@@ -787,6 +789,9 @@ export const MESSAGES = {
     LABEL_STATUS_DOCUMENTS_EMPTY: "The index has no documents.",
     LABEL_STATUS_DOCUMENTS_SHOWING: (shown: number, total: number): string => `Showing ${shown} of ${total}.`,
     LABEL_STATUS_DOCUMENTS_COMPLETE: (total: number): string => `Showing all ${total}.`,
+    LABEL_STATUS_HELD_OUT: "Held out of the index",
+    LABEL_STATUS_HELD_OUT_MORE: (count: number): string => `${count} more held out.`,
+    LABEL_STATUS_HELD_OUT_RETRY: `Run "${RETRY_SKIPPED_COMMAND}" to index them again.`,
     LABEL_STATUS_DOCUMENTS_FAILED: 'Could not load the document list. Select "Load more" to try again.',
     LABEL_STATUS_CHAT_MODEL: "Chat model",
     LABEL_STATUS_OCR: "OCR",

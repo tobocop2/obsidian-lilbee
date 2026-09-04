@@ -32,6 +32,7 @@ export class StatusModal extends Modal {
             }
             const status = statusResult.value;
             this.renderDocuments(contentEl, status);
+            this.renderHeldOut(contentEl, status);
             await this.renderModels(contentEl, status);
             this.renderWiki(contentEl, status);
         } catch {
@@ -64,6 +65,27 @@ export class StatusModal extends Modal {
         button.addEventListener("click", () => void loadDocumentPage(list, button, summary));
 
         void loadDocumentPage(list, button, summary);
+    }
+
+    private renderHeldOut(container: HTMLElement, status: StatusResponse): void {
+        const skipped = status.skipped ?? [];
+        if (skipped.length === 0) return;
+        const section = container.createEl("details", { cls: "lilbee-status-held-out", attr: { open: "" } });
+        section.createEl("summary", { text: MESSAGES.LABEL_STATUS_HELD_OUT });
+        for (const source of skipped) {
+            const row = section.createDiv({ cls: "lilbee-status-held-out-row" });
+            const nameEl = row.createDiv({ cls: "lilbee-status-held-out-name", text: source.filename });
+            nameEl.setAttribute("title", source.filename);
+            row.createDiv({ cls: "lilbee-status-held-out-reason", text: source.reason });
+        }
+        const hidden = (status.skipped_total ?? skipped.length) - skipped.length;
+        if (hidden > 0) {
+            section.createDiv({
+                cls: "lilbee-status-held-out-more",
+                text: MESSAGES.LABEL_STATUS_HELD_OUT_MORE(hidden),
+            });
+        }
+        section.createDiv({ cls: "lilbee-status-held-out-retry", text: MESSAGES.LABEL_STATUS_HELD_OUT_RETRY });
     }
 
     private async renderModels(container: HTMLElement, status: StatusResponse): Promise<void> {

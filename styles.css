@@ -1571,6 +1571,33 @@
     background-color: var(--background-modifier-hover);
 }
 
+.lilbee-status-held-out-row {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-status-held-out-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-status-held-out-reason,
+.lilbee-status-held-out-more,
+.lilbee-status-held-out-retry {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-status-held-out-more,
+.lilbee-status-held-out-retry {
+    margin-top: var(--size-4-2, 8px);
+}
+
 /* Chat Empty State */
 
 .lilbee-chat-empty-state {
