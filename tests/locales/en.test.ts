@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
-import { MODEL_TASK } from "../../src/types";
+import { MODEL_TASK, NVIDIA_PROBE_STATUS, SERVER_VARIANT } from "../../src/types";
+import type { GpuDetection, NvidiaProbe } from "../../src/types";
 
 describe("MESSAGES", () => {
     describe("BUTTON_ constants", () => {
@@ -434,6 +435,68 @@ describe("types", () => {
         expect(sorts).toContain(FILTERS.SORT.NAME);
         expect(sorts).toContain(FILTERS.SORT.SIZE_ASC);
         expect(sorts).toContain(FILTERS.SORT.SIZE_DESC);
+    });
+
+    describe("DESC_GPU_DETECTION", () => {
+        /** A detection with the given NVIDIA probe and AMD targets. */
+        function detection(nvidia: NvidiaProbe, amdGfxTargets: string[] = []): GpuDetection {
+            return { nvidia, amdGfxTargets, detectedAt: "2026-01-01T00:00:00.000Z" };
+        }
+
+        it("says nothing was probed on macOS", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.SKIPPED }))).toBe(
+                "lilbee ships one macOS build, so nothing is probed.",
+            );
+        });
+
+        it("carries the error nvidia-smi failed with", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "spawn nvidia-smi ENOENT" } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "nvidia-smi did not run: spawn nvidia-smi ENOENT. No AMD compute device.",
+            );
+        });
+
+        it("names the sandbox when the driver is present but nvidia-smi is out of reach", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.SANDBOXED }))).toBe(
+                "An NVIDIA driver is present, but this Obsidian cannot reach nvidia-smi, so its CUDA version is unknown. " +
+                    "Flatpak and Snap sandboxes hide it. No AMD compute device.",
+            );
+        });
+
+        it("separates a driver that did not answer from one that is absent", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.UNREADABLE }))).toBe(
+                "nvidia-smi ran but reported no CUDA version. No AMD compute device.",
+            );
+        });
+
+        it("prints the CUDA ceiling the way the driver does", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1204 } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "The NVIDIA driver reports CUDA 12.4. No AMD compute device.",
+            );
+        });
+
+        it("names the floor when the driver is too old for any CUDA build", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1108 } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "The NVIDIA driver reports CUDA 11.8. lilbee ships CUDA builds for 12.1 and newer, so the default build runs. No AMD compute device.",
+            );
+        });
+
+        it("names every AMD target the host reports", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "ENOENT" } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe, ["gfx1100", "gfx906"]))).toBe(
+                "nvidia-smi did not run: ENOENT. AMD targets: gfx1100, gfx906.",
+            );
+        });
+    });
+
+    describe("LABEL_SERVER_BUILD", () => {
+        it("names each build the way a user would", () => {
+            expect(MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.DEFAULT)).toBe("default");
+            expect(MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.ROCM)).toBe("ROCm");
+            expect(MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.CU124)).toBe("CUDA 12.4");
+        });
     });
 
     describe("PLACEMENT_ tooltip functions", () => {

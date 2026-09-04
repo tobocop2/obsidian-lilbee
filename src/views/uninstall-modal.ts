@@ -7,6 +7,7 @@ const TARGET_LABELS: Record<UninstallTargetKind, string> = {
     [UNINSTALL_TARGET.BINARY]: MESSAGES.LABEL_UNINSTALL_BINARY,
     [UNINSTALL_TARGET.MODELS]: MESSAGES.LABEL_UNINSTALL_MODELS,
     [UNINSTALL_TARGET.INDEX]: MESSAGES.LABEL_UNINSTALL_INDEX,
+    [UNINSTALL_TARGET.CACHE]: MESSAGES.LABEL_UNINSTALL_CACHE,
 };
 
 /** Confirms a managed-server uninstall by naming and sizing everything it deletes. */

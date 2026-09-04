@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactSecrets, redactSettings } from "../src/redact";
+import { redactConfigKeys, redactSecrets, redactSettings } from "../src/redact";
 import { DEFAULT_SETTINGS, DEFAULT_SHARED_CONFIG } from "../src/types";
 
 describe("redactSecrets", () => {
@@ -58,5 +58,36 @@ describe("redactSettings", () => {
     it("ignores secret fields that are absent", () => {
         const out = redactSettings({ ...DEFAULT_SETTINGS });
         expect(out.hfToken).toBeUndefined();
+    });
+});
+
+describe("redactConfigKeys", () => {
+    it("blanks the shared config's HuggingFace token, which text redaction cannot reach", () => {
+        const raw = JSON.stringify({ hfToken: "hf_secret", lilbeeVariant: "cu124" });
+        // No word boundary before "Token", so the line-based pass leaves it in place.
+        expect(redactSecrets(raw)).toContain("hf_secret");
+
+        const out = redactConfigKeys(JSON.parse(raw) as Record<string, unknown>);
+        expect(out.hfToken).toBe("[redacted]");
+        expect(out.lilbeeVariant).toBe("cu124");
+    });
+
+    it("blanks any key that names a credential, so a new one cannot ship unredacted", () => {
+        const out = redactConfigKeys({
+            openaiApiKey: "sk-1",
+            proxy_password: "pw",
+            clientSecret: "cs",
+            manualToken: "tok",
+            topK: 12,
+            tokenizer: "bert",
+        });
+        expect(out).toEqual({
+            openaiApiKey: "[redacted]",
+            proxy_password: "[redacted]",
+            clientSecret: "[redacted]",
+            manualToken: "[redacted]",
+            topK: 12,
+            tokenizer: "bert",
+        });
     });
 });

@@ -54,6 +54,7 @@ import {
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
+    type GpuDetection,
     type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
@@ -763,7 +764,8 @@ export default class LilbeePlugin extends Plugin {
         try {
             const release = await getLatestRelease(this.settings.includeDevBuilds);
             this.setSharedLilbeeVersion(release.tag);
-            this.setSharedLilbeeVariant(release.variant);
+            this.setSharedLilbeeVariant(release.variant, release.detection);
+            this.journalGpuDetection("gpu detection at install", release);
         } catch {
             /* version tracking is best-effort */
         }
@@ -967,6 +969,7 @@ export default class LilbeePlugin extends Plugin {
             ...registry.loadConfig(),
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             serverAutoUpdate: true,
             serverUninstalled: true,
         });
@@ -988,8 +991,17 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass(null);
     }
 
+    /** Journal which build the GPU probe chose and why. */
+    private journalGpuDetection(context: string, release: ReleaseInfo): void {
+        this.journal.lifecycle(
+            `${context}: ${MESSAGES.LABEL_SERVER_BUILD(release.variant)} build. ` +
+                MESSAGES.DESC_GPU_DETECTION(release.detection),
+        );
+    }
+
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
         const release = await getLatestRelease(this.settings.includeDevBuilds);
+        this.journalGpuDetection("gpu detection at update check", release);
         const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
         // A known installed variant that differs from the detected one means the
         // hardware-appropriate build changed (e.g. an NVIDIA driver was added).
@@ -1103,7 +1115,8 @@ export default class LilbeePlugin extends Plugin {
 
         // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
-        this.setSharedLilbeeVariant(release.variant);
+        this.setSharedLilbeeVariant(release.variant, release.detection);
+        this.journalGpuDetection("gpu detection at install", release);
         this.journal.lifecycle(`server binary updated to ${release.tag}`);
 
         // Restart if in managed mode
@@ -1143,6 +1156,8 @@ export default class LilbeePlugin extends Plugin {
             journalEntries: this.journal.entries,
             pluginVersion: this.manifest.version,
             serverVersion: this.getSharedLilbeeVersion(),
+            serverVariant: this.getSharedLilbeeVariant(),
+            gpuDetection: this.getSharedGpuDetection(),
             serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
             serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
             lastOutput: this.serverManager?.lastOutput ?? "",
@@ -1666,10 +1681,15 @@ export default class LilbeePlugin extends Plugin {
         return this.vaultRegistry?.loadConfig().lilbeeVariant ?? "";
     }
 
-    setSharedLilbeeVariant(variant: ServerVariant): void {
+    /** The GPU probe that chose the installed build, or null when none is recorded. */
+    getSharedGpuDetection(): GpuDetection | null {
+        return this.vaultRegistry?.loadConfig().lilbeeDetection ?? null;
+    }
+
+    setSharedLilbeeVariant(variant: ServerVariant, detection: GpuDetection): void {
         const reg = this.vaultRegistry;
         if (!reg) return;
-        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant });
+        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant, lilbeeDetection: detection });
     }
 
     isServerAutoUpdateEnabled(): boolean {
