@@ -370,6 +370,11 @@ describe("ChatView.onOpen — DOM structure", () => {
         await view.onOpen();
     });
 
+    it("closes its leaf from the toolbar x", () => {
+        container.find("lilbee-panel-close")!.trigger("click");
+        expect((view as any).leaf.detach).toHaveBeenCalledTimes(1);
+    });
+
     it("empties and adds class to the content container", () => {
         expect(container.classList.contains("lilbee-chat-container")).toBe(true);
     });

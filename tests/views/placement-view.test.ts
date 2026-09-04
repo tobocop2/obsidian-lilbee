@@ -154,6 +154,14 @@ describe("VIEW_TYPE_PLACEMENT + metadata", () => {
     });
 });
 
+describe("PlacementView close", () => {
+    it("closes its leaf from the header x", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        contentEl.find("lilbee-panel-close")!.trigger("click");
+        expect((view as unknown as { leaf: WorkspaceLeaf }).leaf.detach).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe("PlacementView multi-GPU (auto)", () => {
     it("renders the GPU table, role matrix, read-only chips, and the edit button", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));

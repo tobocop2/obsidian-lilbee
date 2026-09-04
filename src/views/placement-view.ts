@@ -19,6 +19,7 @@ import {
     type RolePlacement,
     type WorkerRole,
 } from "../types";
+import { addCloseButton } from "../components/close-button";
 import { MESSAGES } from "../locales/en";
 import { errorMessage } from "../utils";
 
@@ -228,6 +229,7 @@ export class PlacementView extends ItemView {
         header.createEl("h2", { text: MESSAGES.PLACEMENT_TITLE });
         const state = this.applying ? "applying" : this.mode;
         header.createSpan({ cls: `lilbee-placement-state is-${state}`, text: this.stateLabel(data) });
+        addCloseButton(header, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_PLACEMENT_VIEW));
     }
 
     /** Server-issued host fix hint, rendered verbatim under a localized label. */

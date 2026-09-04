@@ -539,7 +539,8 @@
 .lilbee-chat-save,
 .lilbee-chat-clear,
 .lilbee-chat-sessions,
-.lilbee-chat-gpu {
+.lilbee-chat-gpu,
+.lilbee-panel-close {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -556,7 +557,8 @@
 .lilbee-chat-save:hover,
 .lilbee-chat-clear:hover,
 .lilbee-chat-sessions:hover,
-.lilbee-chat-gpu:hover {
+.lilbee-chat-gpu:hover,
+.lilbee-panel-close:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }

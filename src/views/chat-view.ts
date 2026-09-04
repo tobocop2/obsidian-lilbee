@@ -45,6 +45,7 @@ import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
+import { addCloseButton } from "../components/close-button";
 import { MESSAGES } from "../locales/en";
 import {
     RETRY_INTERVAL_MS,
@@ -367,6 +368,7 @@ export class ChatView extends ItemView {
         setIcon(clearBtn, "eraser");
         clearBtn.setAttribute("aria-label", MESSAGES.BUTTON_CLEAR_CHAT);
         clearBtn.addEventListener("click", () => this.clearChat());
+        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_CHAT_VIEW));
     }
 
     private createInputArea(container: HTMLElement): void {

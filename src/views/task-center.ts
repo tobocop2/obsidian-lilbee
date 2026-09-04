@@ -8,6 +8,7 @@ import {
     type TaskEntry,
     type TaskStatus,
 } from "../types";
+import { addCloseButton } from "../components/close-button";
 import { MESSAGES } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { FLASH_WINDOW_MS } from "../task-queue";
@@ -66,7 +67,7 @@ export class TaskCenterView extends ItemView {
             this.render();
         });
 
-        this.addAction("x", MESSAGES.LABEL_CLOSE_TASK_CENTER, () => this.leaf.detach());
+        addCloseButton(header, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_TASKS_VIEW));
 
         this.activeSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
         this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).setText(MESSAGES.LABEL_ACTIVE_TASKS);

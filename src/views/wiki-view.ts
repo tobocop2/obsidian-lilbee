@@ -2,6 +2,7 @@ import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from "obsi
 import type LilbeePlugin from "../main";
 import type { WikiGenerateResult, WikiPage, WikiPageDetail, WikiStub } from "../types";
 import { CONCEPT_ONLY_WIKI_PAGE_TYPES, INDETERMINATE_PROGRESS, SSE_EVENT, TASK_TYPE, WIKI_PAGE_TYPE } from "../types";
+import { addCloseButton } from "../components/close-button";
 import { MESSAGES } from "../locales/en";
 import { errorMessage, extractSseErrorMessage, relativeTime } from "../utils";
 import { CitationModal } from "./citation-modal";
@@ -67,6 +68,7 @@ export class WikiView extends ItemView {
         const lintBtn = actions.createEl("button", { cls: "lilbee-tasks-clear" });
         setIcon(lintBtn, "check-circle");
         lintBtn.setAttribute("aria-label", MESSAGES.LABEL_WIKI_RUN_LINT);
+        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_WIKI_VIEW));
         lintBtn.addEventListener("click", () => {
             void this.plugin.runWikiLint();
         });

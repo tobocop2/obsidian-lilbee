@@ -308,7 +308,7 @@ export const MESSAGES = {
         "These settings affect how your documents are processed. Only change if you know what you're doing.",
     LABEL_CLOSE_GLYPH: "\u00D7",
     LABEL_TASK_CENTER: "Task Center",
-    LABEL_CLOSE_TASK_CENTER: "Close task center",
+    LABEL_CLOSE_VIEW: (view: string): string => `Close ${view}`,
     LABEL_TASK_CAP_PILL: "{active}/{cap} running",
     LABEL_TASK_COUNTERS: "{active} running · {queued} queued · {done} done",
     LABEL_ACTIVE_TASKS: "ACTIVE",
