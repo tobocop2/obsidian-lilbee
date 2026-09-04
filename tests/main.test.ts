@@ -7440,10 +7440,11 @@ describe("LilbeePlugin", () => {
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
             expect(variantSpy).toHaveBeenCalledWith("cu125");
             expect(progress).toContain("Stopping server...");
-            // The release is looked up inside ensure, so the lookup phase shows before it runs.
-            expect(progress.indexOf(MESSAGES.STATUS_FETCHING_RELEASE)).toBeGreaterThan(
+            // The release is already known here, so the bare download phase follows the stop, as before.
+            expect(progress.indexOf(MESSAGES.STATUS_DOWNLOAD_STARTING)).toBeGreaterThan(
                 progress.indexOf("Stopping server..."),
             );
+            expect(progress).not.toContain(MESSAGES.STATUS_FETCHING_RELEASE);
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
             const journal = plugin.journal.entries.map((e) => e.message);

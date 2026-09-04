@@ -1072,7 +1072,7 @@ export default class LilbeePlugin extends Plugin {
         }
 
         // Download the new binary (replaces the old one once its checksum clears)
-        onProgress?.(MESSAGES.STATUS_FETCHING_RELEASE);
+        onProgress?.(MESSAGES.STATUS_DOWNLOAD_STARTING);
         let installed: EnsureResult;
         try {
             installed = await binary.ensure({

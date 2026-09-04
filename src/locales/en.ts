@@ -603,6 +603,7 @@ export const MESSAGES = {
     TITLE_EXTERNAL: "External",
 
     STATUS_DOWNLOADING: "lilbee: downloading...",
+    STATUS_DOWNLOAD_STARTING: "Downloading...",
     STATUS_FETCHING_RELEASE: "Fetching latest release info...",
     STATUS_DOWNLOADING_PERCENT: (percent: number) => `lilbee: downloading ${percent}%`,
     STATUS_DOWNLOAD_PROGRESS: (percent: number, received: string, total: string) =>
