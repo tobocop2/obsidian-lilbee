@@ -111,6 +111,7 @@ export interface ConfigResponse {
     vision_load_budget_s?: number;
     chunk_size?: number;
     chunk_overlap?: number;
+    max_chunks_per_file?: number;
     tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;
@@ -576,15 +577,11 @@ export const AGENT_MIN_CONTEXT_TOKENS = 20_000;
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
-    maxDistance: number;
-    adaptiveThreshold: boolean;
     serverMode: ServerMode;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
     setupCompleted: boolean;
     wikiEnabled: boolean;
-    wikiPruneRaw: boolean;
-    wikiFaithfulnessThreshold: number;
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
@@ -620,15 +617,11 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     // Match the server's default retrieval depth (core config top_k = 12) so the
     // plugin and a bare `lilbee serve` behave identically out of the box.
     topK: 12,
-    maxDistance: 0.9,
-    adaptiveThreshold: false,
     serverMode: "managed",
     ragSystemPrompt: "",
     generalSystemPrompt: "",
     setupCompleted: false,
     wikiEnabled: false,
-    wikiPruneRaw: false,
-    wikiFaithfulnessThreshold: 0.7,
     searchChunkType: SEARCH_CHUNK_TYPE.ALL,
     // On, but only reached once the wiki itself is enabled (which is opt-in).
     // A wiki you cannot open in the vault is most of the point missing: these
