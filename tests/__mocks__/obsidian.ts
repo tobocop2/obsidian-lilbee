@@ -645,7 +645,17 @@ export class Plugin {
 
     registerView = vi.fn();
     registerEvent = vi.fn();
-    registerInterval = vi.fn((handle: number) => handle);
+    registerInterval = vi.fn((handle: number) => {
+        Plugin.intervals.push(handle);
+        return handle;
+    });
+
+    // Test helper mirroring Notice.instances: interval ids handed to registerInterval.
+    static intervals: number[] = [];
+    static clearIntervals(): void {
+        for (const handle of Plugin.intervals) window.clearInterval(handle);
+        Plugin.intervals = [];
+    }
 
     // Test helper: handlers registered via registerDomEvent, invoked directly
     // by tests since the Node env has no DOM event machinery.
