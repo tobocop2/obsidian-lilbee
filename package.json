@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.3",
-    "lilbee": "^0.6.97",
+    "lilbee": "file:vendor/lilbee-0.6.97.tgz",
     "node-fetch": "^3.3.2"
   },
   "overrides": {
