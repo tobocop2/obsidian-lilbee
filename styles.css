@@ -539,7 +539,8 @@
 .lilbee-chat-save,
 .lilbee-chat-clear,
 .lilbee-chat-sessions,
-.lilbee-chat-gpu {
+.lilbee-chat-gpu,
+.lilbee-panel-close {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -556,7 +557,8 @@
 .lilbee-chat-save:hover,
 .lilbee-chat-clear:hover,
 .lilbee-chat-sessions:hover,
-.lilbee-chat-gpu:hover {
+.lilbee-chat-gpu:hover,
+.lilbee-panel-close:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }
@@ -1530,6 +1532,56 @@
     font-size: var(--font-smallest, 10px);
     text-align: right;
     white-space: nowrap;
+}
+
+/* Status Modal Document List */
+
+.lilbee-status-documents {
+    max-height: 30vh;
+    overflow-y: auto;
+    margin-top: var(--size-4-2, 8px);
+}
+
+.lilbee-status-documents-summary {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-documents-row-link {
+    cursor: pointer;
+}
+
+.lilbee-documents-row-link:hover {
+    color: var(--text-accent);
+    text-decoration: underline;
+}
+
+.lilbee-status-held-out-row {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-status-held-out-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-status-held-out-reason,
+.lilbee-status-held-out-more,
+.lilbee-status-held-out-retry {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-status-held-out-more,
+.lilbee-status-held-out-retry {
+    margin-top: var(--size-4-2, 8px);
 }
 
 /* Chat Empty State */
@@ -2754,6 +2806,43 @@
 
 .side-dock-ribbon-action.lilbee-ribbon-icon svg {
     transition: color 180ms ease;
+}
+
+/* Update-available ribbon icon: an accent dot the theme colours, on top of the icon. */
+.side-dock-ribbon-action.lilbee-ribbon-update {
+    position: relative;
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-update::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--background-secondary);
+}
+
+.lilbee-setting-focus {
+    animation: lilbee-setting-focus 2.4s ease-out;
+}
+
+@keyframes lilbee-setting-focus {
+    from {
+        background-color: var(--background-modifier-hover);
+        box-shadow: inset 0 0 0 2px var(--color-accent);
+    }
+    to {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+.lilbee-update-modal-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
 }
 
 .lilbee-task-cancel {
@@ -4238,6 +4327,9 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-placement-header h2 {
     margin: 0;
     font-size: 1.25em;
+}
+.lilbee-placement-header .lilbee-panel-close {
+    margin-left: auto;
 }
 .lilbee-placement-state {
     font-size: 0.72em;

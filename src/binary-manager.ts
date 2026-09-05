@@ -1,5 +1,5 @@
 import { requestUrl } from "obsidian";
-import { execFile, spawn } from "child_process";
+import { execFile, spawn, type ExecFileException } from "child_process";
 import { get as httpsGet } from "https";
 import type { ClientRequest, IncomingMessage } from "http";
 import {
@@ -19,10 +19,26 @@ import {
     readdirSync,
     rmSync,
 } from "fs";
+import { homedir } from "os";
 import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
-import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type GpuTag, type ServerVariant } from "./types";
+import {
+    ARCH,
+    NVIDIA_PROBE_STATUS,
+    PLATFORM,
+    CUDA_MIN_CEILING,
+    SERVER_VARIANT,
+    type CudaTag,
+    type GpuDetection,
+    type GpuTag,
+    type NvidiaProbe,
+    type ServerVariant,
+    AMD_PROBE_STATUS,
+    ROCM_REFUSAL,
+    type AmdProbe,
+    type RocmRefusal,
+} from "./types";
 import { formatDiskSize } from "./utils";
 
 const execFileAsync = promisify(execFile);
@@ -31,6 +47,7 @@ const statfsAsync = promisify(statfs);
 /** Exported for test mocking. */
 export const node = {
     spawn,
+    homedir,
     execFile: execFileAsync,
     appendFileSync,
     existsSync,
@@ -79,14 +96,61 @@ const RATE_LIMIT_STATUSES = new Set([403, 429]);
 
 const GITHUB_RATE_LIMITED = "GitHub's rate limit was reached; release checks reset within the hour.";
 
-/** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */
-async function runNvidiaSmi(): Promise<string | null> {
-    try {
-        const { stdout } = await node.execFile("nvidia-smi", []);
-        return stdout;
-    } catch {
-        return null;
+/** `nvidia-smi` hangs on a wedged GPU; past this the probe records a timeout instead of waiting. */
+const NVIDIA_SMI_TIMEOUT_MS = 10_000;
+/** Present when the NVIDIA kernel module is loaded, whatever a sandbox hides from PATH. */
+const NVIDIA_DRIVER_VERSION_PATH = "/proc/driver/nvidia/version";
+const NVIDIA_SMI_TIMED_OUT = `nvidia-smi did not answer within ${NVIDIA_SMI_TIMEOUT_MS / 1000} s`;
+
+/** Windows installers put `nvidia-smi` here but leave it off PATH: DCH drivers use System32,
+ *  older layouts use the NVSMI directory. */
+function windowsNvidiaSmiPaths(): string[] {
+    const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+    const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+    return [
+        node.join(systemRoot, "System32", "nvidia-smi.exe"),
+        node.join(programFiles, "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe"),
+    ];
+}
+
+/** Where to look for `nvidia-smi`: PATH first, then the Windows install locations. */
+function nvidiaSmiCandidates(): string[] {
+    const candidates = ["nvidia-smi"];
+    if (process.platform === PLATFORM.WIN32) candidates.push(...windowsNvidiaSmiPaths());
+    return candidates;
+}
+
+/** One line for the journal: execFile's message carries the command's stderr on later lines. */
+function probeFailureText(e: unknown): string {
+    if (e instanceof Error && (e as ExecFileException).killed) return NVIDIA_SMI_TIMED_OUT;
+    const text = e instanceof Error ? e.message : String(e);
+    return text.replace(/\s+/g, " ").trim();
+}
+
+type NvidiaSmiRun =
+    | { stdout: string; error: null; notFound: false }
+    /** `notFound` is true when no candidate existed at all, as opposed to one that ran and failed. */
+    | { stdout: null; error: string; notFound: boolean };
+
+/** Run `nvidia-smi` and return its stdout, or the error the first lookup failed with. */
+async function runNvidiaSmi(): Promise<NvidiaSmiRun> {
+    let firstError = "";
+    let notFound = true;
+    for (const command of nvidiaSmiCandidates()) {
+        try {
+            const { stdout } = await node.execFile(command, [], { timeout: NVIDIA_SMI_TIMEOUT_MS });
+            return { stdout, error: null, notFound: false };
+        } catch (e) {
+            if (!firstError) firstError = probeFailureText(e);
+            if ((e as NodeJS.ErrnoException).code !== "ENOENT") notFound = false;
+        }
     }
+    return { stdout: null, error: firstError, notFound };
+}
+
+/** Linux only: a loaded kernel module without a reachable `nvidia-smi` means a sandbox, not a missing driver. */
+function driverPresentWithoutSmi(): boolean {
+    return process.platform === PLATFORM.LINUX && node.existsSync(NVIDIA_DRIVER_VERSION_PATH);
 }
 
 /** Parse the driver's max CUDA version from `nvidia-smi` output as major*100+minor (12.5 -> 1205). */
@@ -100,21 +164,26 @@ function parseCudaCeiling(stdout: string): number | null {
 function pickCudaTag(ceiling: number): CudaTag | null {
     if (ceiling >= 1205) return SERVER_VARIANT.CU125;
     if (ceiling >= 1204) return SERVER_VARIANT.CU124;
-    if (ceiling >= 1201) return SERVER_VARIANT.CU121;
+    if (ceiling >= CUDA_MIN_CEILING) return SERVER_VARIANT.CU121;
     return null;
 }
 
-/**
- * Detect the best CUDA build for this machine, or null to use the default build.
- * Returns null on macOS, when no NVIDIA driver is present, or on any detection failure.
- */
-export async function detectCudaTag(): Promise<CudaTag | null> {
-    if (process.platform === PLATFORM.DARWIN) return null;
-    const stdout = await runNvidiaSmi();
-    if (stdout === null) return null;
+/** Probe the NVIDIA driver, recording why the probe ended where it did. */
+async function probeNvidia(): Promise<NvidiaProbe> {
+    if (process.platform === PLATFORM.DARWIN) return { status: NVIDIA_PROBE_STATUS.SKIPPED };
+    const { stdout, error, notFound } = await runNvidiaSmi();
+    if (stdout === null) {
+        if (notFound && driverPresentWithoutSmi()) return { status: NVIDIA_PROBE_STATUS.SANDBOXED };
+        return { status: NVIDIA_PROBE_STATUS.MISSING, error };
+    }
     const ceiling = parseCudaCeiling(stdout);
-    if (ceiling === null) return null;
-    return pickCudaTag(ceiling);
+    if (ceiling === null) return { status: NVIDIA_PROBE_STATUS.UNREADABLE };
+    return { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: ceiling };
+}
+
+/** The CUDA build a probe result calls for, or null when it calls for none. */
+function cudaTagFor(probe: NvidiaProbe): CudaTag | null {
+    return probe.status === NVIDIA_PROBE_STATUS.DETECTED ? pickCudaTag(probe.cudaCeiling) : null;
 }
 
 /** The amdgpu compute device. Without it ROCm cannot run, whatever else sysfs says. */
@@ -148,39 +217,50 @@ function nodeGfxTarget(nodeName: string): string | null {
     return null;
 }
 
-/**
- * The gfx targets of this host's AMD GPUs, read from the amdgpu driver's KFD topology.
- * Empty on any platform but Linux, when the host has no AMD compute device, and on any
- * read failure. Read from the driver rather than from rocm-smi or amd-smi: those ship
- * with ROCm, which the ROCm build bundles, so the host needs only the amdgpu driver.
- */
-export function detectAmdGfxTargets(): string[] {
-    if (process.platform !== PLATFORM.LINUX) return [];
-    if (!node.existsSync(KFD_DEVICE_PATH)) return [];
+/** Present whenever the amdgpu module is loaded, even when a sandbox hides `/dev/kfd`. */
+const AMDGPU_MODULE_PATH = "/sys/module/amdgpu";
+
+/** Probe the AMD driver through the KFD topology, recording why the probe ended where it did. */
+export function probeAmd(): AmdProbe {
+    if (process.platform !== PLATFORM.LINUX) return { status: AMD_PROBE_STATUS.SKIPPED };
+    if (!node.existsSync(KFD_DEVICE_PATH)) {
+        const status = node.existsSync(AMDGPU_MODULE_PATH) ? AMD_PROBE_STATUS.SANDBOXED : AMD_PROBE_STATUS.MISSING;
+        return { status };
+    }
     let nodes: string[];
     try {
         nodes = node.readdirSync(KFD_TOPOLOGY_NODES);
     } catch {
-        return [];
+        return { status: AMD_PROBE_STATUS.UNREADABLE };
     }
     const targets = new Set<string>();
     for (const nodeName of nodes) {
         const target = nodeGfxTarget(nodeName);
         if (target) targets.add(target);
     }
-    return [...targets].sort();
+    if (targets.size === 0) return { status: AMD_PROBE_STATUS.MISSING };
+    return { status: AMD_PROBE_STATUS.DETECTED, gfxTargets: [...targets].sort() };
 }
 
 /** What this host can run, resolved once per release check. */
 interface HostGpu {
     /** The newest CUDA build the NVIDIA driver supports, or null. */
     cuda: CudaTag | null;
-    /** The gfx targets of the host's AMD GPUs; empty when there are none. */
-    amdGfxTargets: string[];
+    /** Why the probe ended where it did, carried into the journal and the diagnostics bundle. */
+    detection: GpuDetection;
 }
 
-async function detectHostGpu(): Promise<HostGpu> {
-    return { cuda: await detectCudaTag(), amdGfxTargets: detectAmdGfxTargets() };
+/** Probe both vendors and keep the reasoning. */
+export async function detectHostGpu(): Promise<HostGpu> {
+    const nvidia = await probeNvidia();
+    return {
+        cuda: cudaTagFor(nvidia),
+        detection: {
+            nvidia,
+            amd: probeAmd(),
+            detectedAt: new Date().toISOString(),
+        },
+    };
 }
 
 export function getPlatformAssetName(gpuTag?: GpuTag | null): string {
@@ -217,6 +297,8 @@ export interface ReleaseInfo {
     tag: string;
     assetUrl: string;
     variant: ServerVariant;
+    /** The GPU probe that chose *variant*. */
+    detection: GpuDetection;
     sizeBytes: number;
     /** GitHub-reported "sha256:<hex>" of the asset, verified against the download bytes. */
     digest: string | null;
@@ -251,10 +333,12 @@ async function shippedGfxTargets(manifest: GitHubAsset | undefined): Promise<Set
  * build refuses to start on a card it ships no kernels for, so a host it only partly
  * covers is better served by the default build, which runs all of them over Vulkan.
  */
-async function rocmServesHost(data: GitHubRelease, gfxTargets: string[]): Promise<boolean> {
+/** Why the release's ROCm kernel manifest cannot serve *gfxTargets*, or null when it can. */
+async function manifestRefusal(data: GitHubRelease, gfxTargets: string[]): Promise<RocmRefusal | null> {
     const manifestName = `${getPlatformAssetName(SERVER_VARIANT.ROCM)}${GFX_MANIFEST_SUFFIX}`;
     const shipped = await shippedGfxTargets(data.assets.find((a) => a.name === manifestName));
-    return shipped !== null && gfxTargets.every((target) => shipped.has(target));
+    if (shipped === null) return ROCM_REFUSAL.NO_MANIFEST;
+    return gfxTargets.every((target) => shipped.has(target)) ? null : ROCM_REFUSAL.MISSING_KERNELS;
 }
 
 /** A release that ships a build for this machine, with the build it falls back to. */
@@ -264,32 +348,38 @@ interface InstallableRelease {
     fallback: GitHubAsset;
 }
 
-/** Choose the vendor asset the host can run and the release ships; otherwise the default build. */
 async function selectAsset(
     release: InstallableRelease,
     host: HostGpu,
-): Promise<{ variant: ServerVariant; asset: GitHubAsset }> {
+): Promise<{ variant: ServerVariant; asset: GitHubAsset; amd: AmdProbe }> {
     const { data } = release;
+    const { amd } = host.detection;
     if (host.cuda) {
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(host.cuda));
-        if (cudaAsset) return { variant: host.cuda, asset: cudaAsset };
+        if (cudaAsset) return { variant: host.cuda, asset: cudaAsset, amd };
     }
-    if (host.amdGfxTargets.length > 0) {
-        const rocmAsset = data.assets.find((a) => a.name === getPlatformAssetName(SERVER_VARIANT.ROCM));
-        if (rocmAsset && (await rocmServesHost(data, host.amdGfxTargets))) {
-            return { variant: SERVER_VARIANT.ROCM, asset: rocmAsset };
-        }
-    }
-    return { variant: SERVER_VARIANT.DEFAULT, asset: release.fallback };
+    const fallback = { variant: SERVER_VARIANT.DEFAULT, asset: release.fallback };
+    if (amd.status !== AMD_PROBE_STATUS.DETECTED) return { ...fallback, amd };
+    const unsupported = (reason: RocmRefusal): AmdProbe => ({
+        status: AMD_PROBE_STATUS.UNSUPPORTED,
+        gfxTargets: amd.gfxTargets,
+        reason,
+    });
+    const rocmAsset = data.assets.find((a) => a.name === getPlatformAssetName(SERVER_VARIANT.ROCM));
+    if (!rocmAsset) return { ...fallback, amd: unsupported(ROCM_REFUSAL.NO_ASSET) };
+    const refusal = await manifestRefusal(data, amd.gfxTargets);
+    if (refusal !== null) return { ...fallback, amd: unsupported(refusal) };
+    return { variant: SERVER_VARIANT.ROCM, asset: rocmAsset, amd };
 }
 
 async function toReleaseInfo(release: InstallableRelease, host: HostGpu): Promise<ReleaseInfo> {
-    const { variant, asset } = await selectAsset(release, host);
+    const { variant, asset, amd } = await selectAsset(release, host);
     const { data } = release;
     return {
         tag: data.tag_name,
         assetUrl: asset.browser_download_url,
         variant,
+        detection: { ...host.detection, amd },
         sizeBytes: asset.size,
         digest: asset.digest,
     };

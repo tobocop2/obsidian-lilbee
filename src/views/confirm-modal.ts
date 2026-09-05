@@ -24,7 +24,7 @@ export class ConfirmModal extends Modal {
 
         contentEl.createEl("p", { text: this.message });
 
-        const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
+        const actions = contentEl.createDiv({ cls: "modal-button-container" });
         const continueBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CONTINUE, cls: "mod-cta" });
         continueBtn.addEventListener("click", () => this.decide(true));
 

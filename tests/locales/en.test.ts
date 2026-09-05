@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
-import { MODEL_TASK } from "../../src/types";
+import { MODEL_TASK, NVIDIA_PROBE_STATUS, SERVER_VARIANT } from "../../src/types";
+import type { AmdProbe, GpuDetection, NvidiaProbe } from "../../src/types";
 
 describe("MESSAGES", () => {
     describe("BUTTON_ constants", () => {
@@ -20,7 +21,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_BROWSE_FULL_CATALOG).toBe("Browse full catalog");
             expect(MESSAGES.BUTTON_BROWSE_MORE).toBe("Browse more…");
             expect(MESSAGES.BUTTON_DOWNLOAD_CONTINUE).toBe("Download & continue");
-            expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Delete selected");
+            expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Remove selected");
             expect(MESSAGES.BUTTON_CRAWL).toBe("Crawl");
             expect(MESSAGES.BUTTON_START).toBe("Start");
             expect(MESSAGES.BUTTON_STOP).toBe("Stop");
@@ -233,8 +234,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_DELETED produces correct output", () => {
-            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: deleted 5 documents");
-            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: deleted 1 documents");
+            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: removed 5 documents");
+            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 documents");
         });
 
         it("NOTICE_SAVED produces correct output", () => {
@@ -268,8 +269,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_DELETED produces correct output", () => {
-            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: deleted 5 documents");
-            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: deleted 1 documents");
+            expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: removed 5 documents");
+            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 documents");
         });
 
         it("NOTICE_SAVED produces correct output", () => {
@@ -319,6 +320,29 @@ describe("MESSAGES", () => {
         it("NOTICE_WIKI_PRUNE_DONE produces correct output", () => {
             expect(MESSAGES.NOTICE_WIKI_PRUNE_DONE(5)).toBe("lilbee: pruned 5 pages");
             expect(MESSAGES.NOTICE_WIKI_PRUNE_DONE(0)).toBe("lilbee: pruned 0 pages");
+        });
+
+        it("LABEL_DOCUMENT_CHUNKS produces correct output", () => {
+            expect(MESSAGES.LABEL_DOCUMENT_CHUNKS(10)).toBe("10 chunks");
+            expect(MESSAGES.LABEL_DOCUMENT_CHUNKS(0)).toBe("0 chunks");
+        });
+
+        it("document list summaries produce correct output", () => {
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_SHOWING(20, 45)).toBe("Showing 20 of 45.");
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(45)).toBe("Showing all 45.");
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY).toBe("The index has no documents.");
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED).toBe(
+                "Could not load the document list. Scroll to try again.",
+            );
+            expect(MESSAGES.NOTICE_DOCUMENT_NOT_IN_VAULT("a.md")).toBe("a.md is not in this vault.");
+        });
+
+        it("held-out strings name the retry command and count the overflow", () => {
+            expect(MESSAGES.LABEL_STATUS_HELD_OUT).toBe("Held out of the index");
+            expect(MESSAGES.LABEL_STATUS_HELD_OUT_MORE(12)).toBe("12 more held out.");
+            expect(MESSAGES.LABEL_STATUS_HELD_OUT_RETRY).toBe(
+                `Run "${MESSAGES.COMMAND_SYNC_RETRY_SKIPPED}" to index them again.`,
+            );
         });
 
         it("NOTICE_WIKI_SYNC produces correct output", () => {
@@ -434,6 +458,94 @@ describe("types", () => {
         expect(sorts).toContain(FILTERS.SORT.NAME);
         expect(sorts).toContain(FILTERS.SORT.SIZE_ASC);
         expect(sorts).toContain(FILTERS.SORT.SIZE_DESC);
+    });
+
+    describe("DESC_GPU_DETECTION", () => {
+        /** A detection with the given NVIDIA probe and AMD targets. */
+        function detection(nvidia: NvidiaProbe, amd: AmdProbe = { status: "missing" }): GpuDetection {
+            return { nvidia, amd, detectedAt: "2026-01-01T00:00:00.000Z" };
+        }
+
+        it("says nothing was probed on macOS", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.SKIPPED }))).toBe(
+                "lilbee ships one macOS build, so nothing is probed.",
+            );
+        });
+
+        it("carries the error nvidia-smi failed with", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "spawn nvidia-smi ENOENT" } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "nvidia-smi did not run: spawn nvidia-smi ENOENT. No AMD compute device.",
+            );
+        });
+
+        it("names the sandbox when the driver is present but nvidia-smi is out of reach", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.SANDBOXED }))).toBe(
+                "An NVIDIA driver is present, but this Obsidian cannot reach nvidia-smi, so its CUDA version is unknown. " +
+                    "Flatpak and Snap sandboxes hide it. No AMD compute device.",
+            );
+        });
+
+        it("separates a driver that did not answer from one that is absent", () => {
+            expect(MESSAGES.DESC_GPU_DETECTION(detection({ status: NVIDIA_PROBE_STATUS.UNREADABLE }))).toBe(
+                "nvidia-smi ran but reported no CUDA version. No AMD compute device.",
+            );
+        });
+
+        it("prints the CUDA ceiling the way the driver does", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1204 } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "The NVIDIA driver reports CUDA 12.4. No AMD compute device.",
+            );
+        });
+
+        it.each([
+            [{ status: "skipped" } as const, "lilbee ships a ROCm build for Linux only."],
+            [
+                { status: "sandboxed" } as const,
+                "An amdgpu driver is loaded, but this Obsidian cannot reach /dev/kfd, so the GPU is unknown. Flatpak and Snap sandboxes hide it.",
+            ],
+            [{ status: "unreadable" } as const, "The amdgpu driver is present, but its topology could not be read."],
+            [
+                { status: "unsupported", gfxTargets: ["gfx1103"], reason: "missing-kernels" } as const,
+                "AMD targets: gfx1103. The ROCm build ships no kernels for these targets, so the default build runs.",
+            ],
+            [
+                { status: "unsupported", gfxTargets: ["gfx1100"], reason: "no-asset" } as const,
+                "AMD targets: gfx1100. This release has no ROCm build, so the default build runs.",
+            ],
+            [
+                { status: "unsupported", gfxTargets: ["gfx1100"], reason: "no-manifest" } as const,
+                "AMD targets: gfx1100. The ROCm build's kernel list could not be read, so the default build runs.",
+            ],
+        ])("explains the AMD probe result %o", (amd, text) => {
+            const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "ENOENT" } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe, amd))).toBe(`nvidia-smi did not run: ENOENT. ${text}`);
+        });
+
+        it("names the floor when the driver is too old for any CUDA build", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1108 } as const;
+            expect(MESSAGES.DESC_GPU_DETECTION(detection(probe))).toBe(
+                "The NVIDIA driver reports CUDA 11.8. lilbee ships CUDA builds for 12.1 and newer, so the default build runs. No AMD compute device.",
+            );
+        });
+
+        it("names every AMD target the host reports", () => {
+            const probe = { status: NVIDIA_PROBE_STATUS.MISSING, error: "ENOENT" } as const;
+            expect(
+                MESSAGES.DESC_GPU_DETECTION(
+                    detection(probe, { status: "detected", gfxTargets: ["gfx1100", "gfx906"] }),
+                ),
+            ).toBe("nvidia-smi did not run: ENOENT. AMD targets: gfx1100, gfx906.");
+        });
+    });
+
+    describe("LABEL_SERVER_BUILD", () => {
+        it("names each build the way a user would", () => {
+            expect(MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.DEFAULT)).toBe("default");
+            expect(MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.ROCM)).toBe("ROCm");
+            expect(MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.CU124)).toBe("CUDA 12.4");
+        });
     });
 
     describe("PLACEMENT_ tooltip functions", () => {

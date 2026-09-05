@@ -3,8 +3,15 @@ import { strFromU8, unzipSync } from "fflate";
 import { buildZip, collectDiagnostics, LOG_TAIL_MAX_BYTES, renderSummary, resolveOutputDir } from "../src/diagnostics";
 import { node } from "../src/binary-manager";
 import { MESSAGES } from "../src/locales/en";
-import { DEFAULT_SETTINGS, SERVER_STATE } from "../src/types";
-import type { DiagnosticsContext } from "../src/types";
+import { REDACTED } from "../src/redact";
+import { DEFAULT_SETTINGS, NVIDIA_PROBE_STATUS, SERVER_STATE, SERVER_VARIANT, SHARED_PATH } from "../src/types";
+import type { DiagnosticsContext, GpuDetection } from "../src/types";
+
+const DETECTION: GpuDetection = {
+    nvidia: { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: 1204 },
+    amd: { status: "missing" },
+    detectedAt: "2026-01-01T00:00:00.000Z",
+};
 
 vi.mock("../src/binary-manager", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../src/binary-manager")>();
@@ -29,6 +36,8 @@ function makeContext(overrides: Partial<DiagnosticsContext> = {}): DiagnosticsCo
         journalEntries: [],
         pluginVersion: "1.2.3",
         serverVersion: "v0.4.0",
+        serverVariant: SERVER_VARIANT.CU124,
+        gpuDetection: DETECTION,
         serverState: SERVER_STATE.ERROR,
         serverUrl: "http://127.0.0.1:1234",
         lastOutput: "Traceback: boom",
@@ -166,6 +175,48 @@ describe("collectDiagnostics", () => {
     it("marks a noteless miss as missing in the summary", () => {
         const summary = renderSummary(makeContext(), [{ name: "logs/server.log", data: null, note: null }]);
         expect(summary).toContain("- logs/server.log: missing");
+    });
+
+    it("names the installed build and why it was chosen", () => {
+        const bundle = collectDiagnostics(makeContext());
+        expect(bundle.summaryMarkdown).toContain("- Server build: CUDA 12.4");
+        expect(bundle.summaryMarkdown).toContain("- GPU detection: The NVIDIA driver reports CUDA 12.4.");
+    });
+
+    it("says so when no build and no detection were ever recorded", () => {
+        const bundle = collectDiagnostics(makeContext({ serverVariant: "", gpuDetection: null }));
+        expect(bundle.summaryMarkdown).toContain("- Server build: (unknown)");
+        expect(bundle.summaryMarkdown).toContain(`- GPU detection: ${MESSAGES.DESC_GPU_DETECTION_NONE}`);
+    });
+
+    it("collects the shared root config.json with its HuggingFace token blanked", () => {
+        vi.mocked(node.existsSync).mockImplementation((path: string) => path === `/shared/${SHARED_PATH.CONFIG}`);
+        vi.mocked(node.readFileSync).mockReturnValue(
+            JSON.stringify({ lilbeeVariant: "cu124", hfToken: "hf_secret", lilbeeVersion: "v0.4.0" }),
+        );
+
+        const text = fileText(makeContext(), SHARED_PATH.CONFIG);
+        expect(text).not.toContain("hf_secret");
+        expect(JSON.parse(text)).toEqual({
+            lilbeeVariant: "cu124",
+            hfToken: REDACTED,
+            lilbeeVersion: "v0.4.0",
+        });
+    });
+
+    it("notes a missing or unreadable shared config instead of failing", () => {
+        const missing = collectDiagnostics(makeContext());
+        expect(missing.files.find((f) => f.name === SHARED_PATH.CONFIG)?.note).toBe("not found");
+
+        vi.mocked(node.existsSync).mockReturnValue(true);
+        vi.mocked(node.readFileSync).mockReturnValue("{not json");
+        const corrupt = collectDiagnostics(makeContext());
+        expect(corrupt.files.find((f) => f.name === SHARED_PATH.CONFIG)?.data).toBeNull();
+    });
+
+    it("skips the shared config when the server is not local", () => {
+        const bundle = collectDiagnostics(makeContext({ sharedRoot: null }));
+        expect(bundle.files.some((f) => f.name === SHARED_PATH.CONFIG)).toBe(false);
     });
 
     it("ignores non-log files and readdir failures", () => {

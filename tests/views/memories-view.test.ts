@@ -80,6 +80,12 @@ describe("MemoriesView metadata", () => {
 });
 
 describe("MemoriesView.onOpen", () => {
+    it("closes its leaf from the toolbar x", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        contentEl.find("lilbee-panel-close")!.trigger("click");
+        expect((view as unknown as { leaf: WorkspaceLeaf }).leaf.detach).toHaveBeenCalledTimes(1);
+    });
+
     it("renders header, add button, search input, and list", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
         expect(contentEl.classList.contains("lilbee-memories-container")).toBe(true);

@@ -130,6 +130,11 @@ describe("WikiView.onOpen", () => {
         contentEl = (view as any).contentEl as MockElement;
     });
 
+    it("closes its leaf from the toolbar x", () => {
+        contentEl.find("lilbee-panel-close")!.trigger("click");
+        expect((view as any).leaf.detach).toHaveBeenCalledTimes(1);
+    });
+
     it("adds lilbee-wiki-container class", () => {
         expect(contentEl.classList.contains("lilbee-wiki-container")).toBe(true);
     });

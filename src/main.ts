@@ -46,6 +46,7 @@ import {
     SERVER_STATE,
     SETUP_OUTCOME,
     SSE_EVENT,
+    SYNC_TRIGGER,
     TASK_STATUS,
     TASK_TYPE,
     type AgentClient,
@@ -53,6 +54,7 @@ import {
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
+    type GpuDetection,
     type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
@@ -68,12 +70,15 @@ import {
     type SyncDone,
     type SSEEvent,
     type SyncOptions,
+    type SyncTrigger,
     type TaskEntry,
     type WikiBuildResult,
     type WikiPagePayload,
     type WikiPhasePayload,
     type UninstallPlan,
     type VaultAdapter,
+    type SkippedSource,
+    MANAGED_DOCS_PREFIX,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -113,6 +118,7 @@ import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
+import { UpdateAvailableModal } from "./views/update-available-modal";
 import { StatusModal } from "./views/status-modal";
 import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
@@ -133,10 +139,6 @@ const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 const UPLOAD_BATCH_MAX_FILES = 90;
 const UPLOAD_BATCH_MAX_BYTES = 8 * BYTES_PER_MB;
 
-// Vault-relative folder where managed mode stores lilbee's documents
-// (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
-const MANAGED_DOCS_PREFIX = "lilbee/";
-
 const basename = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
 
 function formatSetupDetail(downloaded: number, total: number | null): string {
@@ -155,7 +157,13 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
+    if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
     return parts.join(", ");
+}
+
+/** Forward-slash form of a path with no trailing separator. */
+function posixPath(p: string): string {
+    return p.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
 /** Task-center label for a sync, distinguishing the recovery variants. */
@@ -236,6 +244,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         unchanged: typeof obj.unchanged === "number" ? obj.unchanged : 0,
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
+        held_out: Array.isArray(obj.held_out) ? (obj.held_out as SkippedSource[]) : [],
     };
 }
 
@@ -282,6 +291,8 @@ function downloadStatusBar(progress: DownloadProgress): string {
 
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
+    private settingTab: LilbeeSettingTab | null = null;
+    private updateRibbonIconEl: HTMLElement | null = null;
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
@@ -383,7 +394,8 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
         safeRegisterView(VIEW_TYPE_PLACEMENT, (leaf) => new PlacementView(leaf, this));
-        this.addSettingTab(new LilbeeSettingTab(this.app, this));
+        this.settingTab = new LilbeeSettingTab(this.app, this);
+        this.addSettingTab(this.settingTab);
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
         // Add/sync/crawl tasks completing is when the server's set of known
@@ -756,7 +768,8 @@ export default class LilbeePlugin extends Plugin {
         try {
             const release = await getLatestRelease(this.settings.includeDevBuilds);
             this.setSharedLilbeeVersion(release.tag);
-            this.setSharedLilbeeVariant(release.variant);
+            this.setSharedLilbeeVariant(release.variant, release.detection);
+            this.journalGpuDetection("gpu detection at install", release);
         } catch {
             /* version tracking is best-effort */
         }
@@ -960,6 +973,7 @@ export default class LilbeePlugin extends Plugin {
             ...registry.loadConfig(),
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             serverAutoUpdate: true,
             serverUninstalled: true,
         });
@@ -981,8 +995,17 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass(null);
     }
 
+    /** Journal which build the GPU probe chose and why. */
+    private journalGpuDetection(context: string, release: ReleaseInfo): void {
+        this.journal.lifecycle(
+            `${context}: ${MESSAGES.LABEL_SERVER_BUILD(release.variant)} build. ` +
+                MESSAGES.DESC_GPU_DETECTION(release.detection),
+        );
+    }
+
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
         const release = await getLatestRelease(this.settings.includeDevBuilds);
+        this.journalGpuDetection("gpu detection at update check", release);
         const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
         // A known installed variant that differs from the detected one means the
         // hardware-appropriate build changed (e.g. an NVIDIA driver was added).
@@ -1002,6 +1025,7 @@ export default class LilbeePlugin extends Plugin {
         const config = registry.loadConfig();
         if (!config.serverAutoUpdate) {
             this.journal.lifecycle("automatic server update skipped: turned off in settings");
+            await this.remindServerUpdate(config.serverUpdateReminder);
             return;
         }
         if (config.lastUpdateCheckPluginVersion === this.manifest.version) return;
@@ -1096,8 +1120,10 @@ export default class LilbeePlugin extends Plugin {
 
         // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
-        this.setSharedLilbeeVariant(release.variant);
+        this.setSharedLilbeeVariant(release.variant, release.detection);
+        this.journalGpuDetection("gpu detection at install", release);
         this.journal.lifecycle(`server binary updated to ${release.tag}`);
+        this.clearUpdateIndicator();
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -1136,6 +1162,8 @@ export default class LilbeePlugin extends Plugin {
             journalEntries: this.journal.entries,
             pluginVersion: this.manifest.version,
             serverVersion: this.getSharedLilbeeVersion(),
+            serverVariant: this.getSharedLilbeeVariant(),
+            gpuDetection: this.getSharedGpuDetection(),
             serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
             serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
             lastOutput: this.serverManager?.lastOutput ?? "",
@@ -1653,10 +1681,15 @@ export default class LilbeePlugin extends Plugin {
         return this.vaultRegistry?.loadConfig().lilbeeVariant ?? "";
     }
 
-    setSharedLilbeeVariant(variant: ServerVariant): void {
+    /** The GPU probe that chose the installed build, or null when none is recorded. */
+    getSharedGpuDetection(): GpuDetection | null {
+        return this.vaultRegistry?.loadConfig().lilbeeDetection ?? null;
+    }
+
+    setSharedLilbeeVariant(variant: ServerVariant, detection: GpuDetection): void {
         const reg = this.vaultRegistry;
         if (!reg) return;
-        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant });
+        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant, lilbeeDetection: detection });
     }
 
     isServerAutoUpdateEnabled(): boolean {
@@ -1670,6 +1703,65 @@ export default class LilbeePlugin extends Plugin {
         if (config.serverAutoUpdate === enabled) return;
         reg.saveConfig({ ...config, serverAutoUpdate: enabled });
         this.journal.lifecycle(enabled ? "automatic server updates turned on" : "automatic server updates turned off");
+    }
+
+    isServerUpdateReminderEnabled(): boolean {
+        return this.vaultRegistry?.loadConfig().serverUpdateReminder ?? true;
+    }
+
+    setServerUpdateReminder(enabled: boolean): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        const config = reg.loadConfig();
+        if (config.serverUpdateReminder === enabled) return;
+        reg.saveConfig({ ...config, serverUpdateReminder: enabled });
+        this.journal.lifecycle(enabled ? "server update reminder turned on" : "server update reminder turned off");
+    }
+
+    /** With automatic updates off, point at a newer release instead of installing it. */
+    private async remindServerUpdate(showModal: boolean): Promise<void> {
+        let result: { available: boolean; release?: ReleaseInfo };
+        try {
+            result = await this.checkForUpdate();
+        } catch {
+            return;
+        }
+        if (!result.available || !result.release) return;
+        const release = result.release;
+        this.showUpdateIndicator(release);
+        if (!showModal) return;
+        const installedVariant = this.getSharedLilbeeVariant();
+        const build =
+            installedVariant !== "" && installedVariant !== release.variant
+                ? MESSAGES.LABEL_SERVER_BUILD(release.variant)
+                : null;
+        // A modal opened before the layout exists is closed with the startup screen.
+        this.app.workspace.onLayoutReady(() => {
+            new UpdateAvailableModal(this.app, release, build, {
+                openSettings: () => this.openServerUpdateSettings(),
+                stopReminding: () => this.setServerUpdateReminder(false),
+            }).open();
+        });
+    }
+
+    private showUpdateIndicator(release: ReleaseInfo): void {
+        const label = MESSAGES.LABEL_RIBBON_UPDATE_AVAILABLE(release.tag);
+        if (this.updateRibbonIconEl) {
+            this.updateRibbonIconEl.setAttribute("aria-label", label);
+            return;
+        }
+        this.updateRibbonIconEl = this.addRibbonIcon("arrow-up-circle", label, () => this.openServerUpdateSettings());
+        this.updateRibbonIconEl.addClass("lilbee-ribbon-icon", "lilbee-ribbon-update");
+    }
+
+    private clearUpdateIndicator(): void {
+        this.updateRibbonIconEl?.remove();
+        this.updateRibbonIconEl = null;
+    }
+
+    openServerUpdateSettings(): void {
+        this.openPluginSettings();
+        this.settingTab?.scrollToServerUpdate();
     }
 
     getSharedHfToken(): string {
@@ -2115,41 +2207,32 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Read every file under each path (recursing directories) off disk as
-     *  upload payloads — for external mode, where the server can't read paths. */
+    /** Upload payloads for every file under each path, keyed by vault-relative path like collectVaultUploads. */
     private readUploadsFromDisk(paths: string[]): UploadPayload[] {
+        const vaultBase = this.getVaultBasePath();
         const out: UploadPayload[] = [];
-        const walk = (p: string): void => {
+        const walk = (p: string, relative: string): void => {
             if (node.statSync(p).isDirectory()) {
-                for (const child of node.readdirSync(p)) walk(node.join(p, child));
+                for (const child of node.readdirSync(p)) walk(node.join(p, child), `${relative}/${child}`);
             } else {
                 const buf = node.readFileSync(p);
                 out.push({
-                    name: node.basename(p),
+                    name: relative,
                     data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
                 });
             }
         };
-        for (const p of paths) walk(p);
+        for (const p of paths) walk(p, this.uploadRootName(p, vaultBase));
         return out;
     }
 
-    /**
-     * Copy each external path into ``<vault>/lilbee/imports/`` and return the
-     * new absolute paths for indexing. Paths already under the vault root
-     * are returned unchanged. On copy failure the offending file is dropped
-     * with a user-visible Notice so the rest of the batch still proceeds.
-     *
-     * Directory sources are copied recursively with ``node.cpSync`` — the
-     * native file picker's "openDirectory" mode returns folder paths, and
-     * ``copyFileSync`` on a directory throws EISDIR. Without the stat-first
-     * branch every picked folder would fall into the catch and get silently
-     * dropped, regressing folder ingestion.
-     *
-     * All path joins go through ``node.path`` so Windows ``\\`` separators
-     * round-trip correctly — a naïve string ``startsWith(vaultBase + "/")``
-     * check would miss every file on Windows and mis-copy them into imports.
-     */
+    /** Vault-relative path of a picked entry; its own name when the entry sits outside the vault. */
+    private uploadRootName(p: string, vaultBase: string): string {
+        if (!this.isUnderVault(p, vaultBase)) return node.basename(p);
+        return posixPath(p).slice(posixPath(vaultBase).length + 1);
+    }
+
+    /** Absolute vault paths for each entry: copied into ``<vault>/lilbee/imports/`` unless already under the vault. */
     private copyExternalFilesToVault(paths: string[]): string[] {
         const vaultBase = this.getVaultBasePath();
         const importsDir = node.join(vaultBase, "lilbee", "imports");
@@ -2184,15 +2267,9 @@ export default class LilbeePlugin extends Plugin {
         return results;
     }
 
-    /**
-     * True if ``source`` sits under ``vaultBase``. Normalises separators so
-     * ``C:\\vault\\foo.pdf`` correctly matches a vault base of ``C:\\vault``
-     * regardless of which slash flavour either side uses.
-     */
+    /** True if ``source`` sits under ``vaultBase``, whichever separator either side uses. */
     private isUnderVault(source: string, vaultBase: string): boolean {
-        const norm = (p: string) => p.replace(/\\/g, "/");
-        const prefix = norm(vaultBase).replace(/\/+$/, "");
-        return norm(source).startsWith(`${prefix}/`);
+        return posixPath(source).startsWith(`${posixPath(vaultBase)}/`);
     }
 
     /** Append a ``-N`` suffix until ``<dir>/<name>`` doesn't exist on disk. */
@@ -2218,14 +2295,16 @@ export default class LilbeePlugin extends Plugin {
         const name = file.name || file.path || MESSAGES.LABEL_VAULT_ROOT;
 
         const isRetry = this.failedAddPaths.has(absolutePath);
-        if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
+        // A note is keyed by its vault path, so the check searches for that, not the basename.
+        const indexKey = file instanceof TFile && file.path ? file.path : name;
+        if (!isRetry && !(await this.confirmReindexIfNeeded(indexKey))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
         if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
             // A remote server can't read this machine's paths, so send the file
             // bytes straight from the vault instead of a server-side path. The
             // read runs before runAdd's guard, so surface a failure here too.
-            let uploads: { name: string; data: ArrayBuffer }[];
+            let uploads: UploadPayload[];
             try {
                 uploads = await this.collectVaultUploads(file);
             } catch (err) {
@@ -2239,10 +2318,10 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Read every file under *file* (recursing folders) as upload payloads. */
-    private async collectVaultUploads(file: TAbstractFile): Promise<{ name: string; data: ArrayBuffer }[]> {
+    /** Upload payloads for every file under *file*, keyed by vault-relative path. */
+    private async collectVaultUploads(file: TAbstractFile): Promise<UploadPayload[]> {
         const tfiles = file instanceof TFolder ? this.filesInFolder(file) : file instanceof TFile ? [file] : [];
-        return Promise.all(tfiles.map(async (f) => ({ name: f.name, data: await this.app.vault.readBinary(f) })));
+        return Promise.all(tfiles.map(async (f) => ({ name: f.path, data: await this.app.vault.readBinary(f) })));
     }
 
     private filesInFolder(folder: TFolder): TFile[] {
@@ -2256,7 +2335,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Ingest by uploading file content (external mode); reuses runAdd's stream loop. */
     private async runUpload(
-        files: { name: string; data: ArrayBuffer }[],
+        files: UploadPayload[],
         retryKeys: string[],
         retry?: () => void | Promise<void>,
     ): Promise<void> {
@@ -2284,7 +2363,15 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         const total = files.length;
-        const merged: SyncDone = { added: [], updated: [], removed: [], unchanged: 0, failed: [], skipped: [] };
+        const merged: SyncDone = {
+            added: [],
+            updated: [],
+            removed: [],
+            unchanged: 0,
+            failed: [],
+            skipped: [],
+            held_out: [],
+        };
         let done = 0;
         for (const batch of batches) {
             for await (const event of this.api.uploadFiles(batch, signal)) {
@@ -2296,6 +2383,7 @@ export default class LilbeePlugin extends Plugin {
                         merged.removed.push(...parsed.removed);
                         merged.failed.push(...parsed.failed);
                         merged.skipped.push(...parsed.skipped);
+                        merged.held_out.push(...parsed.held_out);
                         merged.unchanged += parsed.unchanged;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {
@@ -2626,7 +2714,7 @@ export default class LilbeePlugin extends Plugin {
             if (this.wikiSync?.isWikiPath(file.path)) return;
             // Skip paths the server itself writes into the vault — they're
             // already known sources, not work to sync.
-            if (file.path.startsWith("lilbee/")) return;
+            if (file.path.startsWith(MANAGED_DOCS_PREFIX)) return;
             this.schedulePendingSyncHint();
         };
         const vault = this.app.vault;
@@ -2671,10 +2759,7 @@ export default class LilbeePlugin extends Plugin {
             .filter((f) => f.path.startsWith(MANAGED_DOCS_PREFIX) && !this.wikiSync?.isWikiPath(f.path));
         const known = new Set<string>();
         try {
-            // Page through the documents endpoint so we count every known
-            // source, not just the first page. Match on basename: crawled
-            // sources keep a relative path (_web/.../index.md) while added
-            // files use a basename, so the basename is the common key.
+            // Sources are relative paths; the basename is the key shared with vault files.
             let offset = 0;
             const limit = 100;
             while (true) {
@@ -2865,7 +2950,7 @@ export default class LilbeePlugin extends Plugin {
                         const d = event.data as { pages_crawled?: number };
                         this.taskQueue.complete(taskId);
                         new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount));
-                        void this.triggerSync();
+                        void this.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
                         return;
                     }
                     case SSE_EVENT.CRAWL_ERROR:
@@ -2893,13 +2978,13 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async triggerSync(options?: SyncOptions): Promise<void> {
+    async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
-        // Re-entry guard: if a sync is already active or queued, this trigger
-        // is a no-op. Without it, repeated clicks (sync hint, command palette,
-        // crawler-finished auto-trigger) stack up — and cancelling the active
-        // task just promotes the next queued sync, making cancel feel broken.
-        if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) return;
+        // One sync at a time; only a user trigger reports a pending one.
+        if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
+            if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
+            return;
+        }
         const taskId = this.taskQueue.enqueue(syncTaskLabel(options), TASK_TYPE.SYNC);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);

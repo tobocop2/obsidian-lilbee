@@ -346,6 +346,22 @@ describe("SearchModal", () => {
             expect(plugin.settings.searchChunkType).toBe("all");
         });
 
+        it("falls back searchChunkType from raw to all when wikiEnabled is false", () => {
+            plugin.settings.wikiEnabled = false;
+            plugin.settings.searchChunkType = "raw";
+            const modal = new SearchModal(app, plugin);
+            modal.open();
+            expect(plugin.settings.searchChunkType).toBe("all");
+        });
+
+        it("leaves a narrowed searchChunkType alone when wikiEnabled is true", () => {
+            plugin.settings.wikiEnabled = true;
+            plugin.settings.searchChunkType = "raw";
+            const modal = new SearchModal(app, plugin);
+            modal.open();
+            expect(plugin.settings.searchChunkType).toBe("raw");
+        });
+
         it("clicking a mode button with active query re-triggers search", async () => {
             (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
             const modal = new SearchModal(app, plugin);

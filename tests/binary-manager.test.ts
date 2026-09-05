@@ -10,8 +10,8 @@ import {
     listReleases,
     isDevBuild,
     checkForUpdate,
-    detectCudaTag,
-    detectAmdGfxTargets,
+    probeAmd,
+    detectHostGpu,
     BinaryManager,
 } from "../src/binary-manager";
 
@@ -81,6 +81,20 @@ function stubEnoughSpace() {
 /** Mock nvidia-smi as absent (no NVIDIA driver). */
 function stubNoNvidia() {
     return vi.spyOn(node, "execFile").mockRejectedValue(new Error("nvidia-smi not found"));
+}
+
+/** The detection a host records when nvidia-smi is absent. */
+function noNvidiaDetection(amd: AmdProbe = { status: "missing" }) {
+    return {
+        nvidia: { status: "missing", error: "nvidia-smi not found" },
+        amd,
+        detectedAt: expect.any(String),
+    };
+}
+
+/** The detection a host records when the driver names a CUDA ceiling. */
+function cudaDetection(cudaCeiling: number) {
+    return { nvidia: { status: "detected", cudaCeiling }, amd: { status: "missing" }, detectedAt: expect.any(String) };
 }
 
 /** Mock the amdgpu KFD topology: one node per gfx_target_version, plus a CPU node reporting 0. */
@@ -159,30 +173,30 @@ describe("getPlatformAssetName", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  detectCudaTag                                                     */
+/*  detectHostGpu: the CUDA build                                     */
 /* ------------------------------------------------------------------ */
 
-describe("detectCudaTag", () => {
+describe("detectHostGpu cuda", () => {
     let restore: () => void;
     afterEach(() => restore?.());
 
     it("returns null on macOS without probing for a GPU", async () => {
         restore = stubPlatform("darwin", "arm64");
         const exec = vi.spyOn(node, "execFile");
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
         expect(exec).not.toHaveBeenCalled();
     });
 
     it("returns null when nvidia-smi is absent", async () => {
         restore = stubPlatform("linux", "x64");
         stubNoNvidia();
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
     });
 
     it("returns null when the CUDA version can't be parsed", async () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "no version line here", stderr: "" });
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
     });
 
     it.each([
@@ -193,44 +207,222 @@ describe("detectCudaTag", () => {
     ])("maps driver line %s to %s", async (line, tag) => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: `header | ${line} | rest`, stderr: "" });
-        expect(await detectCudaTag()).toBe(tag);
+        expect((await detectHostGpu()).cuda).toBe(tag);
     });
 
     it("returns null when the driver is too old for any shipped CUDA build", async () => {
         restore = stubPlatform("win32", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 11.8", stderr: "" });
-        expect(await detectCudaTag()).toBeNull();
+        expect((await detectHostGpu()).cuda).toBeNull();
     });
 });
 
 /* ------------------------------------------------------------------ */
-/*  detectAmdGfxTargets                                               */
+/*  nvidia-smi lookup on Windows                                      */
 /* ------------------------------------------------------------------ */
 
-describe("detectAmdGfxTargets", () => {
+describe("nvidia-smi lookup on Windows", () => {
+    let restore: () => void;
+    afterEach(() => {
+        restore?.();
+        vi.unstubAllEnvs();
+    });
+
+    // Built with node.join so the expectation matches the separator of whichever OS runs the suite.
+    const SYSTEM32 = node.join("C:\\Windows", "System32", "nvidia-smi.exe");
+    const NVSMI = node.join("C:\\Program Files", "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe");
+    const EXEC_OPTS = expect.objectContaining({ timeout: expect.any(Number) });
+
+    /** Fail every command but *found*, which answers with a driver line. */
+    function stubOnly(found: string) {
+        return vi.spyOn(node, "execFile").mockImplementation((async (command: string) => {
+            if (command !== found) throw new Error(`spawn ${command} ENOENT`);
+            return { stdout: "CUDA Version: 12.4", stderr: "" };
+        }) as unknown as typeof node.execFile);
+    }
+
+    it("finds the DCH driver under System32 when nvidia-smi is off PATH", async () => {
+        restore = stubPlatform("win32", "x64");
+        vi.stubEnv("SystemRoot", "C:\\Windows");
+        const exec = stubOnly(SYSTEM32);
+
+        expect((await detectHostGpu()).cuda).toBe("cu124");
+        expect(exec).toHaveBeenCalledWith("nvidia-smi", [], EXEC_OPTS);
+        expect(exec).toHaveBeenCalledWith(SYSTEM32, [], EXEC_OPTS);
+    });
+
+    it("falls back to the older NVSMI directory", async () => {
+        restore = stubPlatform("win32", "x64");
+        vi.stubEnv("SystemRoot", "C:\\Windows");
+        vi.stubEnv("ProgramFiles", "C:\\Program Files");
+        stubOnly(NVSMI);
+
+        expect((await detectHostGpu()).cuda).toBe("cu124");
+    });
+
+    it("uses the default Windows locations when the environment names none", async () => {
+        restore = stubPlatform("win32", "x64");
+        vi.stubEnv("SystemRoot", undefined);
+        vi.stubEnv("ProgramFiles", undefined);
+        const exec = stubOnly(SYSTEM32);
+
+        expect((await detectHostGpu()).cuda).toBe("cu124");
+        expect(exec).toHaveBeenCalledWith(SYSTEM32, [], EXEC_OPTS);
+    });
+
+    it("reports the PATH error once every location has failed", async () => {
+        restore = stubPlatform("win32", "x64");
+        const exec = stubOnly("never-matches");
+
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "spawn nvidia-smi ENOENT" });
+        expect(exec).toHaveBeenCalledTimes(3);
+    });
+
+    it("tries PATH only on Linux", async () => {
+        restore = stubPlatform("linux", "x64");
+        const exec = stubOnly("never-matches");
+
+        expect((await detectHostGpu()).cuda).toBeNull();
+        expect(exec).toHaveBeenCalledTimes(1);
+    });
+});
+
+/* ------------------------------------------------------------------ */
+/*  detectHostGpu                                                     */
+/* ------------------------------------------------------------------ */
+
+describe("detectHostGpu", () => {
+    let restore: () => void;
+    afterEach(() => restore?.());
+
+    it("records that macOS is never probed", async () => {
+        restore = stubPlatform("darwin", "arm64");
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "skipped" });
+        expect(detection.amd).toEqual({ status: "skipped" });
+        expect(Date.parse(detection.detectedAt)).not.toBeNaN();
+    });
+
+    it("keeps the error text when nvidia-smi does not run", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "nvidia-smi not found" });
+    });
+
+    it("keeps a non-Error rejection as its own text", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockRejectedValue("EACCES");
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "EACCES" });
+    });
+
+    it("folds a multi-line driver error onto one line", async () => {
+        restore = stubPlatform("linux", "x64");
+        const mismatch = new Error(
+            "Command failed: nvidia-smi\nFailed to initialize NVML: Driver/library version mismatch\n",
+        );
+        vi.spyOn(node, "execFile").mockRejectedValue(mismatch);
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({
+            status: "missing",
+            error: "Command failed: nvidia-smi Failed to initialize NVML: Driver/library version mismatch",
+        });
+    });
+
+    it("records a timeout when nvidia-smi hangs past the deadline", async () => {
+        restore = stubPlatform("linux", "x64");
+        const timedOut = Object.assign(new Error("Command failed: nvidia-smi"), { killed: true, signal: "SIGTERM" });
+        const exec = vi.spyOn(node, "execFile").mockRejectedValue(timedOut);
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "nvidia-smi did not answer within 10 s" });
+        expect(exec).toHaveBeenCalledWith("nvidia-smi", [], expect.objectContaining({ timeout: 10_000 }));
+    });
+
+    it("records a sandboxed driver when nvidia-smi is off PATH but the kernel module is loaded", async () => {
+        restore = stubPlatform("linux", "x64");
+        const notFound = Object.assign(new Error("spawn nvidia-smi ENOENT"), { code: "ENOENT" });
+        vi.spyOn(node, "execFile").mockRejectedValue(notFound);
+        vi.spyOn(node, "existsSync").mockImplementation((path: string) => path === "/proc/driver/nvidia/version");
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "sandboxed" });
+    });
+
+    it("records a missing driver when nvidia-smi is off PATH and no kernel module is loaded", async () => {
+        restore = stubPlatform("linux", "x64");
+        const notFound = Object.assign(new Error("spawn nvidia-smi ENOENT"), { code: "ENOENT" });
+        vi.spyOn(node, "execFile").mockRejectedValue(notFound);
+        stubNoAmd();
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "spawn nvidia-smi ENOENT" });
+    });
+
+    it("keeps a driver error over the sandbox reason when nvidia-smi ran and failed", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockRejectedValue(new Error("Command failed: nvidia-smi"));
+        const exists = vi.spyOn(node, "existsSync").mockReturnValue(true);
+        const { detection } = await detectHostGpu();
+        expect(detection.nvidia).toEqual({ status: "missing", error: "Command failed: nvidia-smi" });
+        expect(exists).not.toHaveBeenCalledWith("/proc/driver/nvidia/version");
+    });
+
+    it("records that nvidia-smi ran but named no CUDA version", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "no version line here", stderr: "" });
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "unreadable" });
+    });
+
+    it("records the CUDA ceiling the driver reports, even below any shipped build", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 11.8", stderr: "" });
+        const { cuda, detection } = await detectHostGpu();
+        expect(cuda).toBeNull();
+        expect(detection.nvidia).toEqual({ status: "detected", cudaCeiling: 1108 });
+    });
+
+    it("records the AMD gfx targets alongside the NVIDIA probe", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000, 90006]);
+        const { detection } = await detectHostGpu();
+        expect(detection.amd).toEqual({ status: "detected", gfxTargets: ["gfx1100", "gfx906"] });
+    });
+});
+
+/* ------------------------------------------------------------------ */
+/*  probeAmd                                               */
+/* ------------------------------------------------------------------ */
+
+describe("probeAmd", () => {
     let restore: () => void;
     afterEach(() => restore?.());
 
     it("returns nothing on macOS without touching the filesystem", () => {
         restore = stubPlatform("darwin", "arm64");
         const exists = vi.spyOn(node, "existsSync");
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "skipped" });
         expect(exists).not.toHaveBeenCalled();
     });
 
-    it("returns nothing when the host exposes no compute device", () => {
+    it("records a missing device when the host exposes no compute device", () => {
         restore = stubPlatform("linux", "x64");
         // A readable topology naming a real card, with /dev/kfd absent: an empty
         // result can then only come from that gate, not from unreadable sysfs.
         stubKfdTopology([110000]);
         stubNoAmd();
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "missing" });
     });
 
     it("names the gfx target the driver reports", () => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([110000]);
-        expect(detectAmdGfxTargets()).toEqual(["gfx1100"]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: ["gfx1100"] });
     });
 
     it.each([
@@ -242,19 +434,19 @@ describe("detectAmdGfxTargets", () => {
     ])("prints target version %i as %s", (version, name) => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([version]);
-        expect(detectAmdGfxTargets()).toEqual([name]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: [name] });
     });
 
     it("reports every card on a multi-GPU host, without duplicates", () => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([110000, 90006, 110000]);
-        expect(detectAmdGfxTargets()).toEqual(["gfx1100", "gfx906"]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: ["gfx1100", "gfx906"] });
     });
 
-    it("ignores CPU nodes, which report no target", () => {
+    it("records a missing device when only CPU nodes report", () => {
         restore = stubPlatform("linux", "x64");
         stubKfdTopology([]);
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "missing" });
     });
 
     it("skips a node whose properties cannot be read", () => {
@@ -267,16 +459,22 @@ describe("detectAmdGfxTargets", () => {
             return readable(path);
         });
 
-        expect(detectAmdGfxTargets()).toEqual(["gfx1100"]);
+        expect(probeAmd()).toEqual({ status: "detected", gfxTargets: ["gfx1100"] });
     });
 
-    it("returns nothing when the topology cannot be read", () => {
+    it("records an unreadable topology", () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "existsSync").mockReturnValue(true);
         vi.spyOn(node, "readdirSync").mockImplementation(() => {
             throw new Error("EACCES");
         });
-        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(probeAmd()).toEqual({ status: "unreadable" });
+    });
+
+    it("records a sandbox when the amdgpu module is loaded but /dev/kfd is hidden", () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "existsSync").mockImplementation((path: string) => path === "/sys/module/amdgpu");
+        expect(probeAmd()).toEqual({ status: "sandboxed" });
     });
 });
 
@@ -324,6 +522,7 @@ describe("getLatestRelease", () => {
             tag: "v1.0.0",
             assetUrl: "https://e/v1.0.0",
             variant: "default",
+            detection: noNvidiaDetection(),
             sizeBytes: 1234,
             digest: "sha256:aaa",
         });
@@ -359,6 +558,7 @@ describe("getLatestRelease", () => {
             tag: "v1.0.0",
             assetUrl: "https://e/cu125",
             variant: "cu125",
+            detection: cudaDetection(1205),
             sizeBytes: 20,
             digest: "sha256:cu125",
         });
@@ -389,6 +589,7 @@ describe("getLatestRelease", () => {
             tag: "v1.0.0",
             assetUrl: "https://e/cpu",
             variant: "default",
+            detection: cudaDetection(1205),
             sizeBytes: 10,
             digest: "sha256:cpu",
         });
@@ -442,6 +643,7 @@ describe("getLatestRelease", () => {
             tag: "v1.0.0",
             assetUrl: "https://e/rocm",
             variant: "rocm",
+            detection: noNvidiaDetection({ status: "detected", gfxTargets: ["gfx1100"] }),
             sizeBytes: 20,
             digest: "sha256:rocm",
         });
@@ -456,6 +658,11 @@ describe("getLatestRelease", () => {
         const release = await getLatestRelease(false);
         expect(release.variant).toBe("default");
         expect(release.assetUrl).toBe("https://e/default");
+        expect(release.detection.amd).toEqual({
+            status: "unsupported",
+            gfxTargets: ["gfx906"],
+            reason: "missing-kernels",
+        });
     });
 
     it("keeps the default build when only one of two cards is covered", async () => {
@@ -472,8 +679,21 @@ describe("getLatestRelease", () => {
         stubNoNvidia();
         stubKfdTopology([110000]);
         stubReleasesAndManifest([rocmRelease("v1.0.0", null)], null);
+        const release = await getLatestRelease(false);
+        expect(release.variant).toBe("default");
+        expect(release.detection.amd).toMatchObject({ status: "unsupported", reason: "no-manifest" });
+    });
 
-        expect((await getLatestRelease(false)).variant).toBe("default");
+    it("records that the release ships no ROCm build at all", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        const { assets } = rocmRelease("v1.0.0", null);
+        stubReleasesAndManifest([{ tag_name: "v1.0.0", assets: assets.slice(0, 1) }], null);
+
+        const release = await getLatestRelease(false);
+        expect(release.variant).toBe("default");
+        expect(release.detection.amd).toEqual({ status: "unsupported", gfxTargets: ["gfx1100"], reason: "no-asset" });
     });
 
     it("keeps the default build when the manifest cannot be fetched", async () => {
@@ -1365,6 +1585,7 @@ describe("listReleases", () => {
             tag: "v1.1.0",
             assetUrl: "https://e/v1.1.0",
             variant: "default",
+            detection: noNvidiaDetection(),
             sizeBytes: 10,
             digest: null,
         });

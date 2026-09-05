@@ -1,4 +1,16 @@
-import { AGENT_CLIENT, MODEL_TASK, SERVER_VARIANT, type ServerVariant, type WorkerRole } from "../types";
+import {
+    AGENT_CLIENT,
+    AMD_PROBE_STATUS,
+    type AmdProbe,
+    CUDA_MIN_CEILING,
+    type GpuDetection,
+    MODEL_TASK,
+    NVIDIA_PROBE_STATUS,
+    type RocmRefusal,
+    SERVER_VARIANT,
+    type ServerVariant,
+    type WorkerRole,
+} from "../types";
 
 // Natural-language noun for each worker role, so tooltips read "embedding
 // worker" rather than the internal "embed".
@@ -9,7 +21,35 @@ const ROLE_NOUN: Record<WorkerRole, string> = {
     rerank: "reranking",
 };
 const roleNoun = (role: WorkerRole): string => ROLE_NOUN[role];
+/** A CUDA ceiling as the driver prints it: 1204 -> "12.4". */
+const cudaVersionLabel = (ceiling: number): string => `${Math.floor(ceiling / 100)}.${ceiling % 100}`;
 const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
+
+const RETRY_SKIPPED_COMMAND = "Retry skipped documents";
+
+const ROCM_REFUSAL_TEXT: Record<RocmRefusal, string> = {
+    "no-asset": "This release has no ROCm build, so the default build runs.",
+    "no-manifest": "The ROCm build's kernel list could not be read, so the default build runs.",
+    "missing-kernels": "The ROCm build ships no kernels for these targets, so the default build runs.",
+};
+
+/** The AMD half of the detection sentence. */
+function amdDetectionText(amd: AmdProbe): string {
+    switch (amd.status) {
+        case AMD_PROBE_STATUS.SKIPPED:
+            return "lilbee ships a ROCm build for Linux only.";
+        case AMD_PROBE_STATUS.MISSING:
+            return "No AMD compute device.";
+        case AMD_PROBE_STATUS.SANDBOXED:
+            return "An amdgpu driver is loaded, but this Obsidian cannot reach /dev/kfd, so the GPU is unknown. Flatpak and Snap sandboxes hide it.";
+        case AMD_PROBE_STATUS.UNREADABLE:
+            return "The amdgpu driver is present, but its topology could not be read.";
+        case AMD_PROBE_STATUS.DETECTED:
+            return `AMD targets: ${amd.gfxTargets.join(", ")}.`;
+        case AMD_PROBE_STATUS.UNSUPPORTED:
+            return `AMD targets: ${amd.gfxTargets.join(", ")}. ${ROCM_REFUSAL_TEXT[amd.reason]}`;
+    }
+}
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
@@ -46,7 +86,7 @@ export const MESSAGES = {
     BUTTON_BROWSE_FULL_CATALOG: "Browse full catalog",
     BUTTON_BROWSE_MORE: "Browse more…",
     BUTTON_DOWNLOAD_CONTINUE: "Download & continue",
-    BUTTON_DELETE_SELECTED: "Delete selected",
+    BUTTON_DELETE_SELECTED: "Remove selected",
     BUTTON_CRAWL: "Crawl",
     BUTTON_START: "Start",
     BUTTON_STOP: "Stop",
@@ -115,6 +155,7 @@ export const MESSAGES = {
     LABEL_SERVER_VERSION: "Server version",
     LABEL_INCLUDE_DEV_BUILDS: "Include dev builds",
     LABEL_SERVER_AUTO_UPDATE: "Automatically update the server",
+    LABEL_SERVER_UPDATE_REMINDER: "Remind me about server updates",
     LABEL_UNINSTALL: "Uninstall",
     LABEL_UNINSTALL_SERVER: "Uninstall server",
     LABEL_INSTALL_SERVER: "Install server",
@@ -187,6 +228,7 @@ export const MESSAGES = {
     LABEL_INGEST_HELP: "How documents are split, OCR'd and prepared before they enter the index.",
     LABEL_CHUNK_SIZE: "Chunk size (tokens)",
     LABEL_CHUNK_OVERLAP: "Chunk overlap (tokens)",
+    LABEL_MAX_CHUNKS_PER_FILE: "Max chunks per file",
     LABEL_TESSERACT_TIMEOUT: "Tesseract per-page timeout (s)",
     LABEL_VISION_LOAD_BUDGET: "Vision OCR pool budget (s)",
     LABEL_RETRIEVAL_ADVANCED: "Retrieval (advanced)",
@@ -294,6 +336,7 @@ export const MESSAGES = {
         "These settings affect how your documents are processed. Only change if you know what you're doing.",
     LABEL_CLOSE_GLYPH: "\u00D7",
     LABEL_TASK_CENTER: "Task Center",
+    LABEL_CLOSE_VIEW: (view: string): string => `Close ${view}`,
     LABEL_TASK_CAP_PILL: "{active}/{cap} running",
     LABEL_TASK_COUNTERS: "{active} running · {queued} queued · {done} done",
     LABEL_ACTIVE_TASKS: "ACTIVE",
@@ -331,6 +374,8 @@ export const MESSAGES = {
     LABEL_CHAT_VIEW: "lilbee Chat",
     LABEL_TASKS_VIEW: "lilbee Tasks",
     LABEL_RIBBON_OPEN_CHAT: "Open lilbee chat",
+    LABEL_RIBBON_UPDATE_AVAILABLE: (version: string) =>
+        `lilbee server ${version} is available. Open the update settings.`,
     LABEL_STATUSBAR_OPEN_SETTINGS: "Open lilbee settings",
     ERROR_STREAM_IDLE: "server stopped sending events — check that lilbee is running",
     LABEL_OUR_PICKS: "Our picks",
@@ -399,12 +444,31 @@ export const MESSAGES = {
         return `CUDA ${variant.slice(2, 4)}.${variant.slice(4)}`;
     },
     DESC_SERVER_BUILD: (build: string) => ` Running the ${build} build.`,
+    /** Why the GPU probe chose the build it did. */
+    DESC_GPU_DETECTION: (detection: GpuDetection): string => {
+        const { nvidia } = detection;
+        if (nvidia.status === NVIDIA_PROBE_STATUS.SKIPPED) return "lilbee ships one macOS build, so nothing is probed.";
+        const amd = amdDetectionText(detection.amd);
+        if (nvidia.status === NVIDIA_PROBE_STATUS.MISSING) return `nvidia-smi did not run: ${nvidia.error}. ${amd}`;
+        if (nvidia.status === NVIDIA_PROBE_STATUS.SANDBOXED)
+            return `An NVIDIA driver is present, but this Obsidian cannot reach nvidia-smi, so its CUDA version is unknown. Flatpak and Snap sandboxes hide it. ${amd}`;
+        if (nvidia.status === NVIDIA_PROBE_STATUS.UNREADABLE)
+            return `nvidia-smi ran but reported no CUDA version. ${amd}`;
+        const floor =
+            nvidia.cudaCeiling < CUDA_MIN_CEILING
+                ? ` lilbee ships CUDA builds for ${cudaVersionLabel(CUDA_MIN_CEILING)} and newer, so the default build runs.`
+                : "";
+        return `The NVIDIA driver reports CUDA ${cudaVersionLabel(nvidia.cudaCeiling)}.${floor} ${amd}`;
+    },
+    DESC_GPU_DETECTION_NONE: "(none recorded)",
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
         `${tag} installed. The release list could not be read from GitHub: ${reason}`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>
         `A newer dev build (${tag}) is out. Turn on "Include dev builds" to try it.`,
     DESC_SERVER_AUTO_UPDATE:
         "Install the latest server release when the plugin updates. Turned off automatically when you install an older version, so an explicit downgrade sticks.",
+    DESC_SERVER_UPDATE_REMINDER:
+        "When automatic updates are off, show a reminder on launch while a newer server release is available. The ribbon shows an update icon either way.",
     DESC_INCLUDE_DEV_BUILDS:
         "Offer in-development builds in the version list and track them for updates. They ship the newest features " +
         "but get less testing than a stable release.",
@@ -438,6 +502,7 @@ export const MESSAGES = {
     LABEL_UNINSTALL_BINARY: "Server executable",
     LABEL_UNINSTALL_MODELS: "Downloaded models",
     LABEL_UNINSTALL_INDEX: "Search index for this vault",
+    LABEL_UNINSTALL_CACHE: "Unpacked server files",
     LABEL_UNINSTALL_KEEP: "Your notes and attachments",
     LABEL_UNINSTALL_KEEP_VALUE: "untouched",
     LABEL_UNINSTALL_DELETE_TAG: "Delete",
@@ -507,6 +572,8 @@ export const MESSAGES = {
     DESC_CRAWL_RETRY_MAX_ATTEMPTS: "Retry count per URL before giving up.",
     DESC_CHUNK_SIZE: "Document chunk size in tokens (changes invalidate the index)",
     DESC_CHUNK_OVERLAP: "Tokens of overlap between adjacent chunks (preserves context across boundaries)",
+    DESC_MAX_CHUNKS_PER_FILE:
+        "Most chunks one file can add to the index. A file over the limit is skipped and reported. 0 means no limit. Raise it for a long document at a small chunk size.",
     DESC_EMBEDDING_MODEL: "The AI model used to understand your documents. Changing requires re-indexing.",
     DESC_LLM_PROVIDER: "Auto picks the best available. Use External to connect to OpenAI, Claude, or other services.",
     DESC_LLM_PROVIDER_AUTO: "Auto (recommended)",
@@ -541,6 +608,7 @@ export const MESSAGES = {
     TITLE_SEARCH: "Search knowledge base",
     TITLE_MODEL_CATALOG: "Model Catalog",
     TITLE_DOCUMENTS: "Documents",
+    LABEL_DOCUMENT_CHUNKS: (count: number): string => `${count} chunks`,
     TITLE_SESSIONS: "Sessions",
 
     LABEL_OPEN_SESSIONS: "Saved conversations",
@@ -658,6 +726,16 @@ export const MESSAGES = {
     NOTICE_SERVER_SWITCHING_BUILD: (build: string) => `lilbee: switching to the ${build} build for your GPU...`,
     NOTICE_SERVER_SWITCHED_BUILD: (build: string) => `lilbee server now runs the ${build} build`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
+    UPDATE_MODAL_TITLE: "A newer lilbee server is available",
+    UPDATE_MODAL_BODY: (version: string, build: string | null) =>
+        build
+            ? `${version} is available, and the ${build} build matches this machine better than the installed one. Automatic updates are off, so the server stays on its current version until you update it.`
+            : `${version} is available. Automatic updates are off, so the server stays on its current version until you update it.`,
+    UPDATE_MODAL_HOW_TO_DISABLE:
+        'To stop this reminder, turn off "Remind me about server updates" in the lilbee settings. To install updates without asking, turn on "Automatically update the server".',
+    BUTTON_OPEN_UPDATE_SETTINGS: "Open update settings",
+    BUTTON_NOT_NOW: "Not now",
+    BUTTON_STOP_REMINDING: "Stop reminding me",
     NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
         `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
@@ -707,6 +785,8 @@ export const MESSAGES = {
     NOTICE_SESSION_TOKEN_INVALID_MANAGED:
         "lilbee: managed server rejected its own token — restart the server from Settings → Switch to managed server, or open Status for logs",
     NOTICE_QUEUE_FULL: "lilbee: too many tasks queued — wait for some to finish",
+    NOTICE_SYNC_IN_PROGRESS:
+        "lilbee: a sync is already running or queued. Wait for it to finish, or cancel it in the Task Center.",
     LABEL_DATASET_FILTER: "lilbee dataset",
     LABEL_DATASET_IMPORT_TASK: "Importing dataset",
     STATUS_DATASET_IMPORTING: "Re-embedding pages…",
@@ -741,7 +821,7 @@ export const MESSAGES = {
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
-    NOTICE_DELETED: (count: number) => `lilbee: deleted ${count} documents`,
+    NOTICE_DELETED: (count: number) => `lilbee: removed ${count} documents`,
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
@@ -756,7 +836,7 @@ export const MESSAGES = {
         "This operation is already in progress on the server. Canceling will hide it from the task center, but it may still complete. Continue?",
     NOTICE_CONFIRM_REMOVE: (model: string) => `Remove ${model}? This deletes the model file from disk.`,
     NOTICE_CONFIRM_DELETE_DOCS: (count: number) =>
-        `Delete ${count} document(s) from index and disk? This cannot be undone.`,
+        `Remove ${count} document(s) from the index? The files on disk stay where they are.`,
 
     COMMAND_SEARCH: "Search knowledge base",
     COMMAND_CHAT: "Open chat",
@@ -767,7 +847,7 @@ export const MESSAGES = {
     COMMAND_ADD_FILE: "Add current file",
     COMMAND_ADD_FOLDER: "Add current folder",
     COMMAND_SYNC: "Sync vault",
-    COMMAND_SYNC_RETRY_SKIPPED: "Retry skipped documents",
+    COMMAND_SYNC_RETRY_SKIPPED: RETRY_SKIPPED_COMMAND,
     COMMAND_SYNC_REBUILD: "Rebuild index",
     COMMAND_EXPORT_DATASET: "Export dataset",
     COMMAND_IMPORT_DATASET: "Import dataset",
@@ -782,6 +862,16 @@ export const MESSAGES = {
     TITLE_STATUS: "lilbee Status",
     LABEL_STATUS_DOCUMENTS: "Documents",
     LABEL_STATUS_CHUNKS: "Chunks",
+    LABEL_STATUS_DOCUMENTS_EMPTY: "The index has no documents.",
+    LABEL_STATUS_DOCUMENTS_SHOWING: (shown: number, total: number): string => `Showing ${shown} of ${total}.`,
+    LABEL_STATUS_DOCUMENTS_COMPLETE: (total: number): string => `Showing all ${total}.`,
+    LABEL_STATUS_HELD_OUT: "Held out of the index",
+    LABEL_STATUS_HELD_OUT_MORE: (count: number): string => `${count} more held out.`,
+    LABEL_STATUS_HELD_OUT_RETRY: `Run "${RETRY_SKIPPED_COMMAND}" to index them again.`,
+    LABEL_STATUS_DOCUMENTS_FAILED: "Could not load the document list. Scroll to try again.",
+    NOTICE_DOCUMENT_NOT_IN_VAULT: (name: string): string => `${name} is not in this vault.`,
+    NOTICE_DOCUMENT_IN_ARCHIVE: (name: string, archive: string): string =>
+        `${name} is inside ${archive}. Showing the archive in the file explorer.`,
     LABEL_STATUS_CHAT_MODEL: "Chat model",
     LABEL_STATUS_OCR: "OCR",
     STATUS_VALUE_OCR_AUTO: "Auto",

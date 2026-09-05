@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 const { rmSync, existsSync, readdirSync, statSync } = vi.hoisted(() => ({
     rmSync: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock("../src/binary-manager", () => ({
         readdirSync,
         statSync,
         join: (...parts: string[]) => parts.join("/"),
+        homedir: () => "/home/u",
     },
 }));
 
@@ -41,8 +42,21 @@ function mountFiles(files: Record<string, number>): void {
     }));
 }
 
+function stubPlatform(platform: string): () => void {
+    const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { value: platform, configurable: true });
+    return () => Object.defineProperty(process, "platform", original);
+}
+
+let restorePlatform: () => void = () => {};
+
 beforeEach(() => {
     vi.clearAllMocks();
+    restorePlatform = stubPlatform("linux");
+});
+
+afterEach(() => {
+    restorePlatform();
 });
 
 describe("planUninstall", () => {
@@ -60,8 +74,48 @@ describe("planUninstall", () => {
             { kind: UNINSTALL_TARGET.BINARY, path: "/root/bin", bytes: 400 },
             { kind: UNINSTALL_TARGET.MODELS, path: "/root/models", bytes: 1024 },
             { kind: UNINSTALL_TARGET.INDEX, path: "/root/vaults/abc", bytes: 76 },
+            { kind: UNINSTALL_TARGET.CACHE, path: "/home/u/.cache/lilbee", bytes: 0 },
         ]);
         expect(plan.totalBytes).toBe(1500);
+    });
+
+    it.each([
+        ["linux", "/home/u/.cache/lilbee"],
+        ["darwin", "/home/u/Library/Caches/lilbee"],
+    ])("targets the server's unpack cache on %s", (platform, cachePath) => {
+        restorePlatform();
+        restorePlatform = stubPlatform(platform);
+        mountFiles({ [`${cachePath}/0.6.90/lilbee.bin`]: 300 });
+
+        const plan = planUninstall("/root", "/root/vaults/abc");
+
+        expect(plan.targets).toContainEqual({ kind: UNINSTALL_TARGET.CACHE, path: cachePath, bytes: 300 });
+    });
+
+    it("targets only the unpack directories beside bin and models on Windows", () => {
+        restorePlatform();
+        restorePlatform = stubPlatform("win32");
+        mountFiles({
+            "/root/bin/lilbee.exe": 400,
+            "/root/0.6.90.432-windows-x86_64/.lilbee-bootstrap-manifest": 1,
+            "/root/0.6.90.432-windows-x86_64/lilbee.dll": 500,
+            "/root/models/a.gguf": 10,
+        });
+
+        const plan = planUninstall("/root", "/root/vaults/abc");
+
+        const cache = plan.targets.filter((t) => t.kind === UNINSTALL_TARGET.CACHE);
+        expect(cache).toEqual([{ kind: UNINSTALL_TARGET.CACHE, path: "/root/0.6.90.432-windows-x86_64", bytes: 501 }]);
+    });
+
+    it("plans no unpack directory when the shared root is missing on Windows", () => {
+        restorePlatform();
+        restorePlatform = stubPlatform("win32");
+        mountFiles({});
+
+        expect(planUninstall("/root", "/root/vaults/abc").targets.map((t) => t.kind)).not.toContain(
+            UNINSTALL_TARGET.CACHE,
+        );
     });
 
     it("sizes a missing path as zero rather than failing", () => {
@@ -92,6 +146,7 @@ describe("executeUninstall", () => {
             ["/root/bin", { recursive: true, force: true }],
             ["/root/models", { recursive: true, force: true }],
             ["/root/vaults/abc", { recursive: true, force: true }],
+            ["/home/u/.cache/lilbee", { recursive: true, force: true }],
         ]);
     });
 });

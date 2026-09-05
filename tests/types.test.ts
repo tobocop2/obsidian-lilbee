@@ -65,19 +65,17 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
     });
 
-    it("has searchChunkType defaulting to raw", () => {
-        expect(DEFAULT_SETTINGS.searchChunkType).toBe("raw");
+    it("has searchChunkType defaulting to all", () => {
+        expect(DEFAULT_SETTINGS.searchChunkType).toBe("all");
     });
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
         const expected = [
-            "adaptiveThreshold",
             "agentIntegration",
             "includeDevBuilds",
             "reasoningDefaulted",
             "manualToken",
-            "maxDistance",
             "searchChunkType",
             "serverMode",
             "serverUrl",
@@ -89,8 +87,6 @@ describe("DEFAULT_SETTINGS", () => {
             "ragSystemPrompt",
             "topK",
             "wikiEnabled",
-            "wikiFaithfulnessThreshold",
-            "wikiPruneRaw",
             "wikiSyncToVault",
             "wikiVaultFolder",
         ].sort();
@@ -99,6 +95,13 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("sharedRoot defaults to empty (use platform default)", () => {
         expect(DEFAULT_SETTINGS.sharedRoot).toBe("");
+    });
+
+    it("no longer carries the settings the server owns", () => {
+        const retired = ["maxDistance", "adaptiveThreshold", "wikiPruneRaw", "wikiFaithfulnessThreshold"];
+        for (const key of retired) {
+            expect(key in DEFAULT_SETTINGS).toBe(false);
+        }
     });
 });
 
@@ -235,14 +238,19 @@ describe("ModelsResponse interface", () => {
 });
 
 describe("StatusResponse interface", () => {
-    it("holds config, sources, and total_chunks", () => {
+    it("holds config, document_count, sources, and total_chunks", () => {
         const s: StatusResponse = {
             config: { model: "llama3" },
+            document_count: 1,
             sources: [{ filename: "a.md", chunk_count: 3 }],
             total_chunks: 3,
+            skipped: [{ filename: "scan.pdf", reason: "no text extracted" }],
+            skipped_total: 1,
         };
+        expect(s.document_count).toBe(1);
         expect(s.total_chunks).toBe(3);
         expect(s.sources[0].filename).toBe("a.md");
+        expect(s.skipped?.[0].reason).toBe("no text extracted");
     });
 });
 
@@ -254,8 +262,11 @@ describe("SyncDone interface", () => {
             removed: ["b.md"],
             unchanged: 10,
             failed: [],
+            skipped: [],
+            held_out: [{ filename: "scan.pdf", reason: "no text extracted" }],
         };
         expect(d.added).toContain("a.md");
+        expect(d.held_out[0].filename).toBe("scan.pdf");
         expect(d.unchanged).toBe(10);
     });
 });
@@ -288,8 +299,6 @@ describe("LilbeeSettings interface", () => {
     it("accepts a fully-specified settings object", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
-            maxDistance: 0.9,
-            adaptiveThreshold: false,
             topK: 3,
             serverMode: "managed",
             ragSystemPrompt: "",

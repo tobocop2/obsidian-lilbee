@@ -7,6 +7,7 @@ const TARGET_LABELS: Record<UninstallTargetKind, string> = {
     [UNINSTALL_TARGET.BINARY]: MESSAGES.LABEL_UNINSTALL_BINARY,
     [UNINSTALL_TARGET.MODELS]: MESSAGES.LABEL_UNINSTALL_MODELS,
     [UNINSTALL_TARGET.INDEX]: MESSAGES.LABEL_UNINSTALL_INDEX,
+    [UNINSTALL_TARGET.CACHE]: MESSAGES.LABEL_UNINSTALL_CACHE,
 };
 
 /** Confirms a managed-server uninstall by naming and sizing everything it deletes. */
@@ -49,7 +50,7 @@ export class UninstallModal extends Modal {
         );
         keep.addClass("is-keep");
 
-        const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
+        const actions = contentEl.createDiv({ cls: "modal-button-container" });
         const cancelBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CANCEL });
         cancelBtn.addEventListener("click", () => this.decide(false));
 

@@ -370,6 +370,11 @@ describe("ChatView.onOpen — DOM structure", () => {
         await view.onOpen();
     });
 
+    it("closes its leaf from the toolbar x", () => {
+        container.find("lilbee-panel-close")!.trigger("click");
+        expect((view as any).leaf.detach).toHaveBeenCalledTimes(1);
+    });
+
     it("empties and adds class to the content container", () => {
         expect(container.classList.contains("lilbee-chat-container")).toBe(true);
     });
@@ -3262,6 +3267,28 @@ describe("ChatView.createToolbar — search mode buttons", () => {
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         expect(plugin.settings.searchChunkType).toBe("all");
+        await view.onClose();
+    });
+
+    it("falls back searchChunkType from raw to all when wikiEnabled is false", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        expect(plugin.settings.searchChunkType).toBe("all");
+        await view.onClose();
+    });
+
+    it("leaves a narrowed searchChunkType alone when wikiEnabled is true", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = true;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        expect(plugin.settings.searchChunkType).toBe("raw");
         await view.onClose();
     });
 });

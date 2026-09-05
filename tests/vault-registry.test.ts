@@ -146,10 +146,12 @@ describe("VaultRegistry.loadConfig", () => {
         expect(reg.loadConfig()).toEqual({
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 
@@ -160,10 +162,12 @@ describe("VaultRegistry.loadConfig", () => {
         expect(new VaultRegistry("/r").loadConfig()).toEqual({
             lilbeeVersion: "v0.5.0",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 
@@ -174,10 +178,12 @@ describe("VaultRegistry.loadConfig", () => {
         expect(new VaultRegistry("/r").loadConfig()).toEqual({
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 });
@@ -194,6 +200,7 @@ describe("VaultRegistry.saveConfig", () => {
             hfToken: "tok",
             lastUpdateCheckPluginVersion: "",
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
         expect(fs.exists("/r/config.json")).toBe(true);
         expect(fs.exists("/r/config.json.tmp")).toBe(false);
@@ -203,6 +210,7 @@ describe("VaultRegistry.saveConfig", () => {
             hfToken: "tok",
             lastUpdateCheckPluginVersion: "",
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
     });
 
@@ -212,10 +220,12 @@ describe("VaultRegistry.saveConfig", () => {
         new VaultRegistry("/r").saveConfig({
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
             serverUninstalled: false,
+            serverUpdateReminder: true,
         });
         expect(fs.dirs.has("/r")).toBe(true);
     });
