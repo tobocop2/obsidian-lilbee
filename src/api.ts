@@ -270,7 +270,7 @@ export class LilbeeClient {
                 const fetchInit: RequestInit = {
                     ...init,
                     headers: {
-                        ...((init?.headers as Record<string, string> | undefined) ?? {}),
+                        ...(init?.headers ?? {}),
                         ...this.authHeaders(),
                     },
                 };

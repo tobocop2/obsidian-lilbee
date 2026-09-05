@@ -253,35 +253,27 @@ describe("buildZip", () => {
 
 describe("resolveOutputDir", () => {
     it("returns ~/Downloads when it exists", () => {
-        vi.stubEnv("HOME", "/Users/alice");
+        vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
         vi.mocked(node.existsSync).mockReturnValue(true);
         expect(resolveOutputDir("/fallback")).toBe("/Users/alice/Downloads");
     });
 
     it("falls back when Downloads is missing", () => {
-        vi.stubEnv("HOME", "/Users/alice");
+        vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
         vi.mocked(node.existsSync).mockReturnValue(false);
         expect(resolveOutputDir("/fallback")).toBe("/fallback");
     });
 
     it("falls back when existsSync throws", () => {
-        vi.stubEnv("HOME", "/Users/alice");
+        vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
         vi.mocked(node.existsSync).mockImplementation(() => {
             throw new Error("EPERM");
         });
         expect(resolveOutputDir("/fallback")).toBe("/fallback");
     });
 
-    it("falls back when no home dir is set", () => {
-        vi.stubEnv("HOME", "");
-        vi.stubEnv("USERPROFILE", "");
+    it("falls back when the home dir is unknown", () => {
+        vi.spyOn(node, "homedir").mockReturnValue("");
         expect(resolveOutputDir("/fallback")).toBe("/fallback");
-    });
-
-    it("uses USERPROFILE when HOME is unset", () => {
-        vi.stubEnv("HOME", undefined);
-        vi.stubEnv("USERPROFILE", "C:/Users/alice");
-        vi.mocked(node.existsSync).mockReturnValue(true);
-        expect(resolveOutputDir("/fallback")).toBe("C:/Users/alice/Downloads");
     });
 });

@@ -70,8 +70,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.3",
-    "lilbee": "^0.6.99",
-    "node-fetch": "^3.3.2"
+    "lilbee": "^0.6.99"
   },
   "overrides": {
     "brace-expansion@<1.1.18": "^1.1.18",

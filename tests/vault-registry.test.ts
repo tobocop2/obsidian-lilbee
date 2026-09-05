@@ -73,16 +73,12 @@ describe("resolveSharedRoot", () => {
         expect(result).toMatch(/lilbee/);
     });
 
-    it("falls back to /tmp/lilbee when both HOME and USERPROFILE are missing", () => {
-        const origHome = process.env.HOME;
-        const origUser = process.env.USERPROFILE;
-        delete process.env.HOME;
-        delete process.env.USERPROFILE;
+    it("falls back to /tmp/lilbee when the home dir is unknown", () => {
+        const spy = vi.spyOn(node, "homedir").mockReturnValue("");
         try {
             expect(resolveSharedRoot("")).toBe("/tmp/lilbee");
         } finally {
-            if (origHome !== undefined) process.env.HOME = origHome;
-            if (origUser !== undefined) process.env.USERPROFILE = origUser;
+            spy.mockRestore();
         }
     });
 });

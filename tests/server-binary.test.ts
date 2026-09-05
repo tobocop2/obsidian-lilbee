@@ -12,8 +12,7 @@ import {
     migrateFlatBinary,
 } from "../src/server-binary";
 
-const { fetchStub, lilbee } = vi.hoisted(() => ({
-    fetchStub: vi.fn(),
+const { lilbee } = vi.hoisted(() => ({
     lilbee: {
         detectHost: vi.fn(),
         ensureBinary: vi.fn(),
@@ -23,7 +22,6 @@ const { fetchStub, lilbee } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock("node-fetch", () => ({ default: fetchStub }));
 vi.mock("lilbee", async (importOriginal) => ({
     ...(await importOriginal<typeof import("lilbee")>()),
     ...lilbee,
@@ -70,22 +68,22 @@ afterEach(() => {
 });
 
 describe("release queries", () => {
-    it("lists releases for the detected host over node-fetch", async () => {
+    it("lists releases for the detected host", async () => {
         lilbee.listReleases.mockResolvedValue([RELEASE]);
 
         const releases = await listReleases(true);
 
         expect(releases).toEqual([RELEASE]);
-        expect(lilbee.listReleases).toHaveBeenCalledWith({ includeDev: true, host: HOST, fetch: fetchStub });
+        expect(lilbee.listReleases).toHaveBeenCalledWith({ includeDev: true, host: HOST });
     });
 
-    it("resolves the latest release for the detected host over node-fetch", async () => {
+    it("resolves the latest release for the detected host", async () => {
         lilbee.latestRelease.mockResolvedValue(RELEASE);
 
         const release = await getLatestRelease(false);
 
         expect(release).toBe(RELEASE);
-        expect(lilbee.latestRelease).toHaveBeenCalledWith({ includeDev: false, host: HOST, fetch: fetchStub });
+        expect(lilbee.latestRelease).toHaveBeenCalledWith({ includeDev: false, host: HOST });
     });
 
     it("re-exports the package's dev-build and cancel helpers", () => {
@@ -217,7 +215,7 @@ describe("ServerBinary.ensure", () => {
         },
     );
 
-    it("passes the request through with the bin dir, the detected host, node-fetch, and a digest requirement", async () => {
+    it("passes the request through with the bin dir, the detected host, and a digest requirement", async () => {
         lilbee.ensureBinary.mockResolvedValue({ ...cached, source: "cache" });
         const onProgress = vi.fn();
         const signal = new AbortController().signal;
@@ -239,7 +237,6 @@ describe("ServerBinary.ensure", () => {
             signal,
             cacheDir: BIN_DIR,
             host: HOST,
-            fetch: fetchStub,
             requireDigest: true,
         });
     });
