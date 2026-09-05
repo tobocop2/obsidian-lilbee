@@ -10,7 +10,7 @@ import {
     type SourceContent,
 } from "./types";
 import { MESSAGES } from "./locales/en";
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { electronDialog } from "./utils/file-dialog";
 import { extractServerErrorDetail, extractSseErrorMessage } from "./utils";
 

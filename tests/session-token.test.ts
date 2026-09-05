@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import {
     findLocalLilbeeRoot,
     getDefaultLilbeeDataRoot,

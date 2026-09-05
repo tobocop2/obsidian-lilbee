@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { dirSizeBytes, reportForVault } from "../src/storage-stats";
 
 function makeFs() {

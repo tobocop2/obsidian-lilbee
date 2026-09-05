@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import type { ReleaseInfo } from "../binary-manager";
+import type { ReleaseInfo } from "../server-binary";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose } from "../utils";
 

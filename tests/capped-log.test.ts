@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { appendCapped } from "../src/utils/capped-log";
 
-vi.mock("../src/binary-manager", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/binary-manager")>();
+vi.mock("../src/node", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/node")>();
     return {
-        ...actual,
         node: {
             ...actual.node,
             existsSync: vi.fn().mockReturnValue(true),

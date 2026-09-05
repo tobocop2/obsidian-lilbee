@@ -8,12 +8,14 @@ import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import { AGENT_LINKS, MESSAGES } from "../src/locales/en";
 
-vi.mock("../src/binary-manager", () => ({
+vi.mock("../src/server-binary", () => ({
     listReleases: vi.fn(async () => []),
     isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
-    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+    isDownloadCanceled: () => false,
     DownloadCanceledError: class DownloadCanceledError extends Error {},
-    node: { requestUrl: vi.fn() },
+}));
+vi.mock("../src/node", () => ({
+    node: {},
 }));
 
 const mockModelPickerOpen = vi.fn();

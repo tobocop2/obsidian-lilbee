@@ -1,13 +1,7 @@
 import { App, Modal, setIcon } from "obsidian";
 import { MESSAGES } from "../locales/en";
-import { MANAGED_CONSENT_RESULT, type ManagedConsentResult, type ServerVariant } from "../types";
-import {
-    GITHUB_REPO,
-    LILBEE_GITHUB_REPO_URL,
-    getLatestRelease,
-    assetNameForVariant,
-    type ReleaseInfo,
-} from "../binary-manager";
+import { LILBEE_GITHUB_REPO, LILBEE_REPO_URL, MANAGED_CONSENT_RESULT, type ManagedConsentResult } from "../types";
+import { getLatestRelease, type ReleaseInfo } from "../server-binary";
 
 /** Modal that asks the user to consent to a managed-mode lilbee server download, with GitHub provenance. */
 export class ManagedConsentModal extends Modal {
@@ -101,8 +95,8 @@ export class ManagedConsentModal extends Modal {
         this.renderProvLabel();
 
         const repoLine = this.provBody.createDiv({ cls: "lilbee-managed-consent-prov-repo" });
-        const repoLink = repoLine.createEl("a", { text: `github.com/${GITHUB_REPO}` });
-        repoLink.setAttribute("href", LILBEE_GITHUB_REPO_URL);
+        const repoLink = repoLine.createEl("a", { text: `github.com/${LILBEE_GITHUB_REPO}` });
+        repoLink.setAttribute("href", LILBEE_REPO_URL);
         repoLink.setAttribute("target", "_blank");
         repoLine.createSpan({
             cls: "lilbee-managed-consent-prov-at",
@@ -112,18 +106,18 @@ export class ManagedConsentModal extends Modal {
         const asset = this.provBody.createDiv({ cls: "lilbee-managed-consent-prov-asset" });
         asset.createSpan({
             cls: "lilbee-managed-consent-prov-asset-name",
-            text: safeAssetName(release.variant),
+            text: release.assetName,
         });
         asset.createSpan({
             cls: "lilbee-managed-consent-prov-asset-size",
-            text: ` · ${formatMb(release.sizeBytes)} · ${MESSAGES.MANAGED_CONSENT_PROV_ONE_TIME}`,
+            text: ` · ${formatMb(release.size)} · ${MESSAGES.MANAGED_CONSENT_PROV_ONE_TIME}`,
         });
 
         const notes = this.provBody.createEl("a", {
             cls: "lilbee-managed-consent-prov-notes",
             text: MESSAGES.MANAGED_CONSENT_PROV_RELEASE_NOTES,
         });
-        notes.setAttribute("href", `${LILBEE_GITHUB_REPO_URL}/releases/tag/${release.tag}`);
+        notes.setAttribute("href", `${LILBEE_REPO_URL}/releases/tag/${release.tag}`);
         notes.setAttribute("target", "_blank");
     }
 
@@ -131,8 +125,8 @@ export class ManagedConsentModal extends Modal {
         this.provBody.empty();
         this.renderProvLabel();
         const repoLine = this.provBody.createDiv({ cls: "lilbee-managed-consent-prov-repo" });
-        const repoLink = repoLine.createEl("a", { text: `github.com/${GITHUB_REPO}` });
-        repoLink.setAttribute("href", LILBEE_GITHUB_REPO_URL);
+        const repoLink = repoLine.createEl("a", { text: `github.com/${LILBEE_GITHUB_REPO}` });
+        repoLink.setAttribute("href", LILBEE_REPO_URL);
         repoLink.setAttribute("target", "_blank");
         this.provBody.createDiv({
             cls: "lilbee-managed-consent-prov-failed",
@@ -183,15 +177,6 @@ export class ManagedConsentModal extends Modal {
             text: MESSAGES.MANAGED_CONSENT_BTN_DOWNLOAD,
         });
         dl.addEventListener("click", () => this.resolveAndClose({ kind: MANAGED_CONSENT_RESULT.DOWNLOAD }));
-    }
-}
-
-/** The file this install downloads. Named from the resolved build, so the name matches the size. */
-function safeAssetName(variant: ServerVariant): string {
-    try {
-        return assetNameForVariant(variant);
-    } catch {
-        return "lilbee";
     }
 }
 

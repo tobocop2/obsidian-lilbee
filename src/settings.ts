@@ -1,8 +1,8 @@
 import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import { LilbeeClient } from "./api";
-import { DownloadCanceledError, listReleases, isDevBuild, LILBEE_GITHUB_REPO_URL } from "./binary-manager";
-import type { ReleaseInfo } from "./binary-manager";
+import { isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
+import type { ReleaseInfo } from "./server-binary";
 
 /** Community IRC channel for dev-build feedback. */
 const LIBERA_LILBEE_URL = "https://web.libera.chat/#lilbee";
@@ -18,6 +18,7 @@ import {
     ERROR_NAME,
     HOSTED_SOURCES,
     KV_CACHE_TYPE,
+    LILBEE_REPO_URL,
     MEMORY_CONFIG_KEY,
     MODEL_TASK,
     SEARCH_CHUNK_TYPE,
@@ -696,7 +697,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const feedback = containerEl.createDiv({ cls: "lilbee-bug-feedback" });
         feedback.createSpan({ text: MESSAGES.BUG_FEEDBACK_PREFIX });
         const gh = feedback.createEl("a", { text: MESSAGES.BUG_FEEDBACK_GITHUB });
-        gh.setAttribute("href", `${LILBEE_GITHUB_REPO_URL}/issues`);
+        gh.setAttribute("href", `${LILBEE_REPO_URL}/issues`);
         gh.setAttribute("target", "_blank");
         feedback.createSpan({ text: " or " });
         const irc = feedback.createEl("a", { text: MESSAGES.BUG_FEEDBACK_IRC });
@@ -783,7 +784,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const release = releases.find((r) => r.tag === selectedTag);
             /* v8 ignore next -- the dropdown only ever offers tags from `releases` */
             if (!release) return;
-            setting.setDesc(MESSAGES.DESC_INSTALL_SERVER(formatDiskSize(release.sizeBytes)));
+            setting.setDesc(MESSAGES.DESC_INSTALL_SERVER(formatDiskSize(release.size)));
         };
 
         setting.addDropdown((dd) => {
@@ -831,13 +832,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
         btn.setDisabled(true);
         btn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
-        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.size)));
         try {
             await this.plugin.installServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_INSTALLED(release.tag));
             this.render();
         } catch (err) {
-            if (err instanceof DownloadCanceledError) {
+            // Unloading aborted it, and this tab is gone with the plugin.
+            if (this.plugin.isUnloaded()) return;
+            if (isDownloadCanceled(err)) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
             } else {
                 new Notice(errorMessage(err, MESSAGES.ERROR_INSTALL_FAILED));
@@ -877,14 +880,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
         actionBtn.setDisabled(true);
         actionBtn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
-        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.size)));
         try {
             await this.plugin.updateServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
             this.render();
             return true;
         } catch (err) {
-            if (err instanceof DownloadCanceledError) {
+            // Unloading aborted it, and this tab is gone with the plugin.
+            if (this.plugin.isUnloaded()) return false;
+            if (isDownloadCanceled(err)) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
             } else {
                 // errorMessage carries the server's reason, e.g. insufficient disk space.

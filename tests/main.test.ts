@@ -187,7 +187,18 @@ vi.mock("../src/views/confirm-modal", () => ({
     ConfirmModal: vi.fn(),
 }));
 
-const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
+/** What the ServerBinary mock reports as installed and returns from ensure. */
+const INSTALLED = {
+    path: "/fake/bin/lilbee",
+    release: "v0.5.0",
+    assetName: "lilbee-linux-x86_64",
+    variant: "default",
+    source: "cache",
+};
+const mockEnsure = vi.fn().mockResolvedValue(INSTALLED);
+const mockInstalled = vi.fn().mockReturnValue(INSTALLED);
+/** A ServerBinary stand-in for calling ensureBinaryWithUi directly. */
+const fakeBinary = { installed: mockInstalled, ensure: mockEnsure };
 const mockUpdateModalOpen = vi.fn();
 const mockUpdateModal = vi.fn();
 vi.mock("../src/views/update-available-modal", () => ({
@@ -196,40 +207,35 @@ vi.mock("../src/views/update-available-modal", () => ({
         this.open = mockUpdateModalOpen;
     },
 }));
-const mockBinaryExists = vi.fn().mockReturnValue(true);
-const mockDownload = vi.fn().mockResolvedValue(undefined);
 const mockGatekeeperOpen = vi.fn();
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
 let mockServerOpts: any = null;
 
-vi.mock("../src/binary-manager", () => ({
-    BinaryManager: vi.fn().mockImplementation(function () {
-        return {
-            ensureBinary: mockEnsureBinary,
-            binaryPath: "/fake/bin/lilbee",
-            binaryExists: mockBinaryExists,
-            download: mockDownload,
-        };
+vi.mock("../src/server-binary", () => ({
+    ServerBinary: vi.fn().mockImplementation(function () {
+        return { installed: mockInstalled, ensure: mockEnsure };
     }),
+    migrateFlatBinary: vi.fn().mockResolvedValue(null),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
     listReleases: vi.fn(async () => []),
     isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
+    isDownloadCanceled: (err: unknown) => err instanceof Error && err.name === "AbortError",
     DownloadCanceledError: class DownloadCanceledError extends Error {
         constructor() {
             super("The lilbee server download was cancelled.");
-            this.name = "DownloadCanceledError";
+            this.name = "AbortError";
         }
     },
-    GITHUB_REPO: "tobocop2/lilbee",
-    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+}));
+
+vi.mock("../src/node", () => ({
     node: {
         spawn: vi.fn(),
         execFile: vi.fn(),
         existsSync: vi.fn(),
         mkdirSync: vi.fn(),
-        chmodSync: vi.fn(),
         writeFileSync: vi.fn(),
         readFileSync: vi.fn(),
         unlinkSync: vi.fn(),
@@ -257,7 +263,6 @@ vi.mock("../src/binary-manager", () => ({
             update: () => ({ digest: () => "abcdef0123456789abcdef0123456789abcdef0123456789" }),
         }),
         processKill: vi.fn(),
-        requestUrl: vi.fn(),
     },
 }));
 
@@ -357,7 +362,7 @@ describe("LilbeePlugin", () => {
                 },
             } as unknown as ConfirmModal;
         });
-        mockBinaryExists.mockReturnValue(true);
+        mockInstalled.mockReturnValue(INSTALLED);
         mockConsentResult = { kind: "download" };
     });
 
@@ -937,10 +942,10 @@ describe("LilbeePlugin", () => {
             // kick off the binary download, not the plugin load.
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "managed", setupCompleted: false });
-            mockEnsureBinary.mockClear();
+            mockEnsure.mockClear();
             await plugin.onload();
             await flush();
-            expect(mockEnsureBinary).not.toHaveBeenCalled();
+            expect(mockEnsure).not.toHaveBeenCalled();
         });
 
         it("skips external-mode API wiring when setupCompleted is false", async () => {
@@ -2711,7 +2716,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("print('hi')"));
             const runUploadSpy = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
 
@@ -2729,7 +2734,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
                 throw new Error("EACCES");
             });
@@ -2743,7 +2748,7 @@ describe("LilbeePlugin", () => {
 
         it("readUploadsFromDisk recurses picked directories and keys files by their path under the pick", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const statSync = node.statSync as ReturnType<typeof vi.fn>;
             const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
             statSync.mockImplementation((p: string) => ({ isDirectory: () => p.endsWith("pkg"), dev: 1, size: 1 }));
@@ -2760,7 +2765,7 @@ describe("LilbeePlugin", () => {
 
         it("readUploadsFromDisk gives same-named files in nested directories distinct keys", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const statSync = node.statSync as ReturnType<typeof vi.fn>;
             const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
             const tree: Record<string, string[]> = {
@@ -2783,7 +2788,7 @@ describe("LilbeePlugin", () => {
 
         it("readUploadsFromDisk keys a picked vault folder the same way collectVaultUploads does", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const statSync = node.statSync as ReturnType<typeof vi.fn>;
             const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
             const tree: Record<string, string[]> = { "/test/vault/notes/sub": ["a.md"] };
@@ -2805,7 +2810,7 @@ describe("LilbeePlugin", () => {
             (plugin.app.vault.adapter.getBasePath as ReturnType<typeof vi.fn>).mockReturnValue(
                 "C:\\Users\\me\\vault\\",
             );
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const statSync = node.statSync as ReturnType<typeof vi.fn>;
             const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
             statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 1 }));
@@ -3050,7 +3055,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("passes through sources already under the vault root without copying", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3070,7 +3075,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("drops files that fail to copy and proceeds with the rest", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3093,7 +3098,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns without indexing when every external file fails to copy", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3109,7 +3114,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("appends a -N suffix when the target import filename already exists", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3132,7 +3137,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("falls back to a timestamp suffix when 999 sequential collisions are exhausted", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3157,7 +3162,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("appends -N to extensionless filenames without adding a spurious dot", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3180,7 +3185,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("surfaces a Notice and returns early when the imports dir can't be created", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3198,7 +3203,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("detects Windows-style vault-local paths so disk picks on the same drive don't double-copy", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3226,7 +3231,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("recursively copies picked directories into imports/", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3259,7 +3264,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("handles a mixed batch of file and directory sources", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -3288,7 +3293,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("surfaces a Notice when a directory copy fails and keeps the rest of the batch", async () => {
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -5086,7 +5091,7 @@ describe("LilbeePlugin", () => {
 
     describe("ensureManagedConsentThenStart() gate", () => {
         it("skips the modal and starts directly when the binary already exists", async () => {
-            mockBinaryExists.mockReturnValue(true);
+            mockInstalled.mockReturnValue(INSTALLED);
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             mockServerStart.mockClear();
@@ -5100,7 +5105,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("opens the modal when the binary is missing; download outcome starts the server", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             mockConsentResult = { kind: "download" };
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -5119,7 +5124,7 @@ describe("LilbeePlugin", () => {
             const openSpy = vi.fn();
             vi.stubGlobal("window", windowStub({ open: openSpy }));
             try {
-                mockBinaryExists.mockReturnValue(false);
+                mockInstalled.mockReturnValue(null);
                 mockConsentResult = { kind: "external" };
                 const plugin = await createPlugin({ serverMode: "managed" });
                 await plugin.onload();
@@ -5141,7 +5146,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             mockConsentResult = { kind: "external" };
             const plugin = await createPlugin({ serverMode: "managed" });
             const settingsSpy = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
@@ -5153,7 +5158,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("cancel outcome fires a Notice and leaves managed mode without starting", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             mockConsentResult = { kind: "cancel" };
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -5167,7 +5172,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns canceled when there is no vault registry", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).vaultRegistry = null;
@@ -5180,7 +5185,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("startManagedServer never opens the consent modal (gate owns that)", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             mockConsentOpen.mockClear();
@@ -5192,19 +5197,18 @@ describe("LilbeePlugin", () => {
     });
 
     describe("managed server mode", () => {
-        it("onload in managed mode creates binaryManager and serverManager", async () => {
+        it("onload in managed mode ensures the binary and creates the serverManager", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            expect(plugin.binaryManager).not.toBeNull();
             expect(plugin.serverManager).not.toBeNull();
-            expect(mockEnsureBinary).toHaveBeenCalled();
+            expect(mockEnsure).toHaveBeenCalled();
             expect(mockServerStart).toHaveBeenCalled();
         });
 
         it("managed mode shows download error Notice when ensureBinary fails", async () => {
-            mockEnsureBinary.mockRejectedValueOnce(new Error("network timeout"));
+            mockEnsure.mockRejectedValueOnce(new Error("network timeout"));
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -5215,7 +5219,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("managed mode shows stringified error when ensureBinary throws non-Error", async () => {
-            mockEnsureBinary.mockRejectedValueOnce("string error");
+            mockEnsure.mockRejectedValueOnce("string error");
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -5228,9 +5232,9 @@ describe("LilbeePlugin", () => {
         it("managed mode opens the Gatekeeper help modal when clearing quarantine fails", async () => {
             mockGatekeeperOpen.mockClear();
             // Simulate the download succeeding but xattr failing: the callback fires.
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev, _onProgress, onQuarantineFailed) => {
+            mockEnsure.mockImplementationOnce(async ({ onQuarantineFailed }: any) => {
                 onQuarantineFailed?.();
-                return "/fake/bin/lilbee";
+                return INSTALLED;
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -5333,8 +5337,8 @@ describe("LilbeePlugin", () => {
         });
 
         it("downloading state sets lilbee-status-downloading class", async () => {
-            mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async () => "/fake/bin/lilbee");
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockResolvedValueOnce({ ...INSTALLED, source: "download" });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -5710,21 +5714,21 @@ describe("LilbeePlugin", () => {
             });
         });
 
-        it("ensureBinary progress callback updates status bar", async () => {
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading 50%");
-                return "/fake/bin/lilbee";
+        it("ensure progress callback updates status bar", async () => {
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 1, total: 2 });
+                return INSTALLED;
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            expect(mockEnsureBinary).toHaveBeenCalled();
+            expect(mockEnsure).toHaveBeenCalled();
         });
 
         it("shows the download percentage in the status bar and the notice", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
@@ -5732,15 +5736,12 @@ describe("LilbeePlugin", () => {
 
             // Re-run the download UI with a progress-carrying callback; onload's own
             // call already consumed the default mock.
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading...", "https://example.com/dl", {
-                    receivedBytes: 128_000_000,
-                    totalBytes: 256_000_000,
-                });
-                return "/fake/bin/lilbee";
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 128_000_000, total: 256_000_000 });
+                return INSTALLED;
             });
             const phases: Array<{ message: string; percent?: number }> = [];
-            await (plugin as any).ensureBinaryWithUi((e: any) => phases.push(e));
+            await (plugin as any).ensureBinaryWithUi(fakeBinary, (e: any) => phases.push(e));
 
             expect(phases).toContainEqual(
                 expect.objectContaining({ message: "Downloading... 50% (128 MB of 256 MB)", percent: 50 }),
@@ -5751,11 +5752,11 @@ describe("LilbeePlugin", () => {
         });
 
         it("raises no progress toast while the binary downloads", async () => {
-            mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 1, totalBytes: 4 });
-                cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 4, totalBytes: 4 });
-                return "/fake/bin/lilbee";
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 1, total: 4 });
+                onProgress?.({ done: 4, total: 4 });
+                return INSTALLED;
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -5767,7 +5768,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("does not show download Notice when binary already exists", async () => {
-            mockBinaryExists.mockReturnValueOnce(true);
+            mockInstalled.mockReturnValueOnce(INSTALLED);
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -5778,9 +5779,9 @@ describe("LilbeePlugin", () => {
         });
 
         it("raises no progress toast when the download fails", async () => {
-            mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 1, totalBytes: 4 });
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 1, total: 4 });
                 throw new Error("network down");
             });
 
@@ -5793,10 +5794,10 @@ describe("LilbeePlugin", () => {
         });
 
         it("startManagedServer onProgress fires downloading/starting/ready during first boot", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading archive...", "https://example.com/bin");
-                return "/fake/bin/lilbee";
+            mockInstalled.mockReturnValueOnce(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 1, total: null });
+                return { ...INSTALLED, source: "download" };
             });
             mockServerStart.mockResolvedValueOnce(undefined);
 
@@ -5816,8 +5817,8 @@ describe("LilbeePlugin", () => {
         });
 
         it("startManagedServer aborted by unload mid-download never spawns a server", async () => {
-            let releaseBinary!: (path: string) => void;
-            mockEnsureBinary.mockImplementationOnce(() => new Promise((r) => (releaseBinary = r)));
+            let releaseBinary!: (result: unknown) => void;
+            mockEnsure.mockImplementationOnce(() => new Promise((r) => (releaseBinary = r)));
 
             const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
             plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
@@ -5831,7 +5832,7 @@ describe("LilbeePlugin", () => {
             await flush();
             // The plugin unloads (e.g. a reload) while the binary download is in flight.
             plugin.onunload();
-            releaseBinary("/fake/bin/lilbee");
+            releaseBinary(INSTALLED);
             await startPromise;
             await flush();
 
@@ -5839,9 +5840,51 @@ describe("LilbeePlugin", () => {
             expect(mockServerStart).not.toHaveBeenCalled();
         });
 
+        it("reports whether it has unloaded, so UI that outlives it can stop reporting", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            expect(plugin.isUnloaded()).toBe(false);
+            plugin.onunload();
+            expect(plugin.isUnloaded()).toBe(true);
+        });
+
+        it("onunload aborts an in-flight download and stays silent about it", async () => {
+            const { DownloadCanceledError } = await import("../src/server-binary");
+            let seenSignal: AbortSignal | undefined;
+            mockInstalled.mockReturnValue(null);
+            // Plays the package: the transfer rejects with its cancel error once the signal aborts.
+            mockEnsure.mockImplementationOnce(
+                ({ signal }: any) =>
+                    new Promise((_, reject) => {
+                        seenSignal = signal;
+                        signal.addEventListener("abort", () => reject(new DownloadCanceledError()));
+                    }),
+            );
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+            const statusSpy = vi.spyOn(plugin as any, "updateStatusBar");
+            const events: Array<{ phase: string }> = [];
+
+            const started = plugin.startManagedServer((event: any) => events.push(event));
+            await flush();
+            expect(plugin.isDownloadingServer()).toBe(true);
+            Notice.clear();
+            statusSpy.mockClear();
+            plugin.onunload();
+            await started;
+
+            expect(seenSignal?.aborted).toBe(true);
+            expect(plugin.isDownloadingServer()).toBe(false);
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+            expect(statusSpy).not.toHaveBeenCalled();
+            expect(events.map((e) => e.phase)).not.toContain("error");
+        });
+
         it("startManagedServer onProgress emits 'error' phase when ensureBinary rejects", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
-            mockEnsureBinary.mockRejectedValueOnce(new Error("boom"));
+            mockInstalled.mockReturnValueOnce(null);
+            mockEnsure.mockRejectedValueOnce(new Error("boom"));
 
             const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
             plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
@@ -5854,7 +5897,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("startManagedServer onProgress emits 'error' phase when serverManager.start rejects", async () => {
-            mockBinaryExists.mockReturnValueOnce(true);
+            mockInstalled.mockReturnValueOnce(INSTALLED);
             mockServerStart.mockRejectedValueOnce(new Error("port-in-use"));
 
             const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
@@ -5868,8 +5911,8 @@ describe("LilbeePlugin", () => {
         });
 
         it("startManagedServer no-ops when already starting", async () => {
-            let resolveEnsure!: (v: string) => void;
-            mockEnsureBinary.mockImplementationOnce(
+            let resolveEnsure!: (v: unknown) => void;
+            mockEnsure.mockImplementationOnce(
                 () =>
                     new Promise((r) => {
                         resolveEnsure = r;
@@ -5881,18 +5924,18 @@ describe("LilbeePlugin", () => {
             // First call is in progress (blocked on ensureBinary)
 
             // Second call should no-op
-            mockEnsureBinary.mockResolvedValueOnce("/fake/bin/lilbee");
+            mockEnsure.mockResolvedValueOnce(INSTALLED);
             await plugin.startManagedServer();
 
-            // Let the first call get past the pre-spawn scan to the blocked ensureBinary
+            // Let the first call get past the pre-spawn scan to the blocked ensure
             await flush();
 
             // Unblock the first call
-            resolveEnsure("/fake/bin/lilbee");
+            resolveEnsure(INSTALLED);
             await flush();
 
             // ensureBinary was only called once (the first time)
-            expect(mockEnsureBinary).toHaveBeenCalledTimes(1);
+            expect(mockEnsure).toHaveBeenCalledTimes(1);
         });
 
         it("handleServerStateChange ready repoints api to the current server URL", async () => {
@@ -5935,7 +5978,7 @@ describe("LilbeePlugin", () => {
             expect(stateChange).toBeDefined();
 
             const expectedTokenPath = `${mockServerOpts.dataDir}/data/server.json`;
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.existsSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => p === expectedTokenPath);
             (node.readFileSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) =>
                 p === expectedTokenPath ? JSON.stringify({ token: "fresh-token-after-restart" }) : "",
@@ -6013,7 +6056,7 @@ describe("LilbeePlugin", () => {
                 origUpdate(text, dot);
             };
 
-            mockBinaryExists.mockReturnValueOnce(false);
+            mockInstalled.mockReturnValueOnce(null);
             await (plugin as any).startManagedServer();
 
             expect(statusTexts.some((t) => t.includes("downloading"))).toBe(true);
@@ -6035,15 +6078,14 @@ describe("LilbeePlugin", () => {
             expect(statusTexts.some((t) => t.includes("downloading"))).toBe(false);
         });
 
-        it("saves version on fresh download when shared lilbeeVersion is empty", async () => {
-            mockBinaryExists.mockReturnValue(false);
-            const { getLatestRelease } = await import("../src/binary-manager");
-            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
-                tag: "v0.5.1",
-                assetUrl: "https://example.com",
+        it("records the release, the build, and the probe of a fresh download", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockResolvedValueOnce({
+                ...INSTALLED,
+                release: "v0.5.1",
                 variant: "cu124",
+                source: "download",
                 detection: GPU_DETECTION,
-                sizeBytes: 100,
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -6061,21 +6103,171 @@ describe("LilbeePlugin", () => {
             );
         });
 
-        it("does not overwrite existing shared lilbeeVersion on fresh download", async () => {
-            mockBinaryExists.mockReturnValue(false);
+        it("leaves the record alone when the binary was already installed", async () => {
+            mockEnsure.mockResolvedValueOnce({ ...INSTALLED, source: "cache" });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+            const variantSpy = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
             vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
             await plugin.onload();
             await flush();
 
             expect(setSpy).not.toHaveBeenCalled();
+            expect(variantSpy).not.toHaveBeenCalled();
+        });
+
+        it("still starts the server when the downloaded version cannot be recorded", async () => {
+            mockEnsure.mockResolvedValueOnce({ ...INSTALLED, source: "download" });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {
+                throw new Error("EACCES");
+            });
+            await plugin.onload();
+            await flush();
+
+            expect(mockServerStart).toHaveBeenCalled();
+            expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                "could not record the downloaded server version: EACCES",
+            );
+        });
+
+        describe("flat pre-launcher install", () => {
+            async function migrateMock() {
+                const { migrateFlatBinary } = await import("../src/server-binary");
+                const migrate = migrateFlatBinary as ReturnType<typeof vi.fn>;
+                migrate.mockClear();
+                migrate.mockResolvedValue(null);
+                return migrate;
+            }
+
+            it("is moved once while settings load, before anything checks what is installed", async () => {
+                const migrate = await migrateMock();
+                mockInstalled.mockClear();
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
+                vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("cu124");
+                await plugin.onload();
+                await flush();
+                plugin.isServerInstalled();
+
+                expect(migrate).toHaveBeenCalledTimes(1);
+                expect(migrate).toHaveBeenCalledWith(expect.stringMatching(/\/bin$/), "v0.4.0", "cu124");
+                expect(migrate.mock.invocationCallOrder[0]).toBeLessThan(mockInstalled.mock.invocationCallOrder[0]);
+            });
+
+            it("records the release and build a probed binary was filed under", async () => {
+                const migrate = await migrateMock();
+                migrate.mockResolvedValue({ release: "v0.6.90b432", variant: "default" });
+                const plugin = await createPlugin({ serverMode: "external" });
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("");
+                const setVersion = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+                const setVariant = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
+
+                await plugin.loadSettings();
+
+                expect(setVersion).toHaveBeenCalledWith("v0.6.90b432");
+                expect(setVariant).toHaveBeenCalledWith("default", null);
+            });
+
+            it("leaves an existing record alone when the recorded version drove the move", async () => {
+                const migrate = await migrateMock();
+                migrate.mockResolvedValue({ release: "v0.4.0", variant: "cu124" });
+                const plugin = await createPlugin({ serverMode: "external" });
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
+                const setVersion = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+
+                await plugin.loadSettings();
+
+                expect(setVersion).not.toHaveBeenCalled();
+            });
+
+            it("still loads when the move fails, and journals why", async () => {
+                const migrate = await migrateMock();
+                migrate.mockRejectedValue(new Error("EPERM"));
+                const plugin = await createPlugin({ serverMode: "external" });
+
+                await plugin.loadSettings();
+
+                expect(plugin.vaultRegistry).not.toBeNull();
+                expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                    "could not move the installed server into the release layout: EPERM",
+                );
+            });
+        });
+
+        it("shows the release lookup phase before the first progress event when nothing is installed", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 128, total: 256 });
+                return { ...INSTALLED, source: "download" };
+            });
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const statusTexts: string[] = [];
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
+                statusTexts.push(text);
+                origUpdate(text, dot);
+            };
+            const messages: string[] = [];
+
+            await plugin.startManagedServer((event: any) => messages.push(event.message));
+
+            const fetching = statusTexts.indexOf(`lilbee: ${MESSAGES.STATUS_FETCHING_RELEASE}`);
+            const progress = statusTexts.indexOf(MESSAGES.STATUS_DOWNLOADING_PERCENT(50));
+            expect(fetching).toBeGreaterThan(statusTexts.indexOf(MESSAGES.STATUS_DOWNLOADING));
+            expect(progress).toBeGreaterThan(fetching);
+            expect(messages.indexOf(MESSAGES.STATUS_FETCHING_RELEASE)).toBeLessThan(
+                messages.findIndex((m) => m.startsWith("Downloading... 50%")),
+            );
+        });
+
+        it("shows the bare download phase for the zero-byte event that opens the transfer", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 0, total: 256 });
+                onProgress?.({ done: 128, total: 256 });
+                return { ...INSTALLED, source: "download" };
+            });
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const statusTexts: string[] = [];
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
+                statusTexts.push(text);
+                origUpdate(text, dot);
+            };
+            const events: Array<{ message: string; percent?: number }> = [];
+
+            await plugin.startManagedServer((event: any) => events.push(event));
+
+            const bare = statusTexts.indexOf(`lilbee: ${MESSAGES.STATUS_DOWNLOAD_STARTING}`);
+            expect(bare).toBeGreaterThan(statusTexts.indexOf(`lilbee: ${MESSAGES.STATUS_FETCHING_RELEASE}`));
+            expect(statusTexts.indexOf(MESSAGES.STATUS_DOWNLOADING_PERCENT(50))).toBeGreaterThan(bare);
+            expect(statusTexts).not.toContain(MESSAGES.STATUS_DOWNLOADING_PERCENT(0));
+            expect(events).toContainEqual({
+                phase: "downloading",
+                message: MESSAGES.STATUS_DOWNLOAD_STARTING,
+                percent: undefined,
+            });
+            expect(events.some((e) => e.message.startsWith("Downloading... 0%"))).toBe(false);
+        });
+
+        it("skips the release lookup phase when a binary is installed", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const messages: string[] = [];
+
+            await plugin.startManagedServer((event: any) => messages.push(event.message));
+
+            expect(messages).not.toContain(MESSAGES.STATUS_FETCHING_RELEASE);
         });
 
         it("does not create serverManager when ensureBinary fails", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
-            mockEnsureBinary.mockRejectedValueOnce(new Error("fail"));
+            mockEnsure.mockRejectedValueOnce(new Error("fail"));
             await plugin.onload();
             await flush();
 
@@ -6084,7 +6276,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("sets status bar to error when ensureBinary fails", async () => {
-            mockEnsureBinary.mockRejectedValueOnce(new Error("fail"));
+            mockEnsure.mockRejectedValueOnce(new Error("fail"));
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -6121,7 +6313,6 @@ describe("LilbeePlugin", () => {
 
             expect(mockServerStop).toHaveBeenCalled();
             expect(plugin.serverManager).toBeNull();
-            expect(plugin.binaryManager).toBeNull();
         });
 
         it("external → managed: starts managed server", async () => {
@@ -6129,6 +6320,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             expect(plugin.serverManager).toBeNull();
+            mockEnsure.mockClear();
 
             plugin.settings.serverMode = "managed";
             await plugin.saveSettings();
@@ -6136,7 +6328,7 @@ describe("LilbeePlugin", () => {
             // startManagedServer is called via void (fire-and-forget)
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(plugin.binaryManager).not.toBeNull();
+            expect(mockEnsure).toHaveBeenCalled();
         });
 
         it("2rf: managed → external sets status to 'ready [external]', not 'stopped'", async () => {
@@ -6285,7 +6477,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("x"));
 
             // External mode uploads bytes, so the token error comes off the upload stream.
@@ -6438,10 +6630,10 @@ describe("LilbeePlugin", () => {
 
     describe("checkForUpdate", () => {
         it("returns available: true when update exists", async () => {
-            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.2.0",
-                assetUrl: "https://example.com",
+                url: "https://example.com",
                 variant: "default",
                 detection: GPU_DETECTION,
             });
@@ -6458,10 +6650,10 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns available: false when up to date", async () => {
-            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.1.0",
-                assetUrl: "https://example.com",
+                url: "https://example.com",
                 variant: "default",
                 detection: GPU_DETECTION,
             });
@@ -6477,13 +6669,13 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns available: true when the installed build variant differs from the detected one", async () => {
-            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.1.0",
-                assetUrl: "https://example.com",
+                url: "https://example.com",
                 variant: "cu125",
                 detection: GPU_DETECTION,
-                sizeBytes: 100,
+                size: 100,
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false); // same version
 
@@ -6499,7 +6691,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("journals which build the probe chose and why, at every update check", async () => {
-            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.1.0",
                 assetUrl: "https://example.com",
@@ -6521,13 +6713,13 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns available: false when version and known variant both match", async () => {
-            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.1.0",
-                assetUrl: "https://example.com",
+                url: "https://example.com",
                 variant: "cu125",
                 detection: GPU_DETECTION,
-                sizeBytes: 100,
+                size: 100,
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
@@ -6542,11 +6734,93 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("release queries go through the adapter, never GitHub directly", () => {
+        const RELEASE = {
+            tag: "v0.2.0",
+            url: "u",
+            variant: "default",
+            detection: GPU_DETECTION,
+            size: 1,
+            digest: null,
+        };
+        let fetchSpy: ReturnType<typeof vi.fn>;
+
+        beforeEach(() => {
+            fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 599, json: async () => ({}) });
+            vi.stubGlobal("fetch", fetchSpy);
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        /** Every URL the renderer's fetch saw; the release APIs must not be among them. */
+        const fetchedGithub = () => fetchSpy.mock.calls.some(([url]) => String(url).includes("github"));
+
+        it("checkForUpdate asks the adapter", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(RELEASE);
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            const result = await plugin.checkForUpdate();
+
+            expect(result.release).toBe(RELEASE);
+            expect(getLatestRelease).toHaveBeenCalledWith(plugin.settings.includeDevBuilds);
+            expect(fetchedGithub()).toBe(false);
+        });
+
+        it("the once-per-plugin-version auto-update asks the adapter", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/server-binary");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(RELEASE);
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "v0.1.0",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: "",
+                serverAutoUpdate: true,
+            });
+            vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const update = vi.spyOn(plugin, "updateServer").mockResolvedValue(undefined);
+            await plugin.onload();
+            await flush();
+
+            expect(getLatestRelease).toHaveBeenCalled();
+            expect(update).toHaveBeenCalledWith(RELEASE);
+            expect(fetchedGithub()).toBe(false);
+        });
+
+        it("the external-server-outdated warning asks the adapter", async () => {
+            const { ok } = await import("../src/result");
+            const { getLatestRelease } = await import("../src/server-binary");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({ ...RELEASE, tag: "v0.6.74" });
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok", version: "0.6.60" }));
+            await plugin.onload();
+            await flush();
+
+            expect(getLatestRelease).toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(true);
+            expect(fetchedGithub()).toBe(false);
+        });
+    });
+
     describe("external server outdated warning", () => {
-        const RELEASE = { tag: "v0.6.74", assetUrl: "u", variant: "default", sizeBytes: 1, digest: null };
+        const RELEASE = {
+            tag: "v0.6.74",
+            url: "u",
+            variant: "default",
+            detection: GPU_DETECTION,
+            size: 1,
+            digest: null,
+        };
 
         async function setupExternal(version: string, release: unknown = RELEASE) {
-            const { getLatestRelease } = await import("../src/binary-manager");
+            const { ok } = await import("../src/result");
+            const { getLatestRelease } = await import("../src/server-binary");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(release);
             const plugin = await createPlugin({ serverMode: "external" });
             plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok", version }));
@@ -6588,7 +6862,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("stays quiet when the release lookup fails or reports no tag", async () => {
-            const { getLatestRelease } = await import("../src/binary-manager");
+            const { getLatestRelease } = await import("../src/server-binary");
             const plugin = await setupExternal("0.6.60");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
             await (plugin as any).warnExternalServerOutdated();
@@ -6613,7 +6887,14 @@ describe("LilbeePlugin", () => {
             vi.restoreAllMocks();
         });
 
-        const RELEASE = { tag: "v0.2.0", assetUrl: "u", variant: "default", sizeBytes: 1, digest: null };
+        const RELEASE = {
+            tag: "v0.2.0",
+            url: "u",
+            variant: "default",
+            detection: GPU_DETECTION,
+            size: 1,
+            digest: null,
+        };
 
         const seedSharedConfig = (lastChecked: string) => {
             vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
@@ -6668,6 +6949,25 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(RELEASE.tag));
+        });
+
+        it("stays quiet when the plugin unloads while the automatic update downloads", async () => {
+            const { DownloadCanceledError } = await import("../src/server-binary");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: RELEASE });
+            let cancel!: () => void;
+            vi.spyOn(plugin, "updateServer").mockImplementation(
+                () => new Promise((_, reject) => (cancel = () => reject(new DownloadCanceledError()))),
+            );
+            seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            plugin.onunload();
+            cancel();
+            await flush();
+
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED);
         });
 
         it("skips the check when this plugin version already checked", async () => {
@@ -7645,33 +7945,42 @@ describe("LilbeePlugin", () => {
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
             const variantSpy = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
             vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.2.9");
+            mockEnsure.mockResolvedValueOnce({
+                ...INSTALLED,
+                release: "v0.3.0",
+                variant: "cu125",
+                source: "download",
+                detection: GPU_DETECTION,
+            });
 
             const progress: string[] = [];
             await plugin.updateServer(
                 {
                     tag: "v0.3.0",
-                    assetUrl: "https://example.com/v0.3.0",
+                    dev: false,
+                    assetName: "lilbee-linux-x86_64-cu125",
+                    url: "https://example.com/v0.3.0",
                     variant: "cu125",
                     detection: GPU_DETECTION,
-                    sizeBytes: 256,
-                    digest: "sha256:test",
+                    size: 256,
+                    digest: "test",
                 },
                 (msg) => progress.push(msg),
             );
 
             expect(mockServerStop).toHaveBeenCalled();
-            expect(mockDownload).toHaveBeenCalledWith(
-                "https://example.com/v0.3.0",
-                256,
-                "sha256:test",
-                expect.any(Function),
-                expect.any(Function),
-                expect.any(AbortSignal),
+            // The picker's Reinstall must download again even when the tag is already installed.
+            expect(mockEnsure).toHaveBeenCalledWith(
+                expect.objectContaining({ release: "v0.3.0", force: true, signal: expect.any(AbortSignal) }),
             );
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
             expect(variantSpy).toHaveBeenCalledWith("cu125", GPU_DETECTION);
             expect(progress).toContain("Stopping server...");
-            expect(progress).toContain("Downloading...");
+            // The release is already known here, so the bare download phase follows the stop, as before.
+            expect(progress.indexOf(MESSAGES.STATUS_DOWNLOAD_STARTING)).toBeGreaterThan(
+                progress.indexOf("Stopping server..."),
+            );
+            expect(progress).not.toContain(MESSAGES.STATUS_FETCHING_RELEASE);
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
             const journal = plugin.journal.entries.map((e) => e.message);
@@ -7686,29 +7995,41 @@ describe("LilbeePlugin", () => {
         it("turns download bytes into a percentage and a human line", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
-            mockDownload.mockImplementationOnce(
-                async (_url: string, _size: number, _digest: string, onProgress: any) => {
-                    onProgress("Downloading...");
-                    onProgress("Downloading...", "https://e/dl", {
-                        receivedBytes: 128_000_000,
-                        totalBytes: 256_000_000,
-                    });
-                },
-            );
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress({ done: 128_000_000, total: 256_000_000 });
+                return INSTALLED;
+            });
 
             const seen: Array<[string, number | undefined]> = [];
             await plugin.updateServer(
-                {
-                    tag: "v1",
-                    assetUrl: "https://e/dl",
-                    variant: "default",
-                    detection: GPU_DETECTION,
-                    sizeBytes: 1,
-                    digest: null,
-                } as any,
+                { tag: "v1", url: "https://e/dl", variant: "default", size: 1, digest: null } as any,
                 (msg, percent) => seen.push([msg, percent]),
             );
 
+            expect(seen).toContainEqual(["Downloading... 50% (128 MB of 256 MB)", 50]);
+        });
+
+        it("keeps the Settings bar indeterminate on the zero-byte event that opens the transfer", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress({ done: 0, total: 256_000_000 });
+                onProgress({ done: 128_000_000, total: 256_000_000 });
+                return INSTALLED;
+            });
+
+            const seen: Array<[string, number | undefined]> = [];
+            await plugin.updateServer(
+                { tag: "v1", url: "https://e/dl", variant: "default", size: 1, digest: null } as any,
+                (msg, percent) => seen.push([msg, percent]),
+            );
+
+            // Once before ensure (the release is known), once for the transfer opening.
+            expect(seen.filter(([msg]) => msg === MESSAGES.STATUS_DOWNLOAD_STARTING)).toEqual([
+                [MESSAGES.STATUS_DOWNLOAD_STARTING, undefined],
+                [MESSAGES.STATUS_DOWNLOAD_STARTING, undefined],
+            ]);
+            expect(seen.some(([msg]) => msg.startsWith("Downloading... 0%"))).toBe(false);
             expect(seen).toContainEqual(["Downloading... 50% (128 MB of 256 MB)", 50]);
         });
 
@@ -7716,22 +8037,14 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("");
-            mockDownload.mockImplementationOnce(
-                async (_url: string, _size: number, _digest: string, onProgress: any) => {
-                    onProgress("Downloading...", "https://e/dl", { receivedBytes: 5_000_000, totalBytes: null });
-                },
-            );
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress({ done: 5_000_000, total: null });
+                return INSTALLED;
+            });
 
             const seen: Array<[string, number | undefined]> = [];
             await plugin.updateServer(
-                {
-                    tag: "v1",
-                    assetUrl: "https://e/dl",
-                    variant: "default",
-                    detection: GPU_DETECTION,
-                    sizeBytes: 1,
-                    digest: null,
-                } as any,
+                { tag: "v1", url: "https://e/dl", variant: "default", size: 1, digest: null } as any,
                 (msg, percent) => seen.push([msg, percent]),
             );
 
@@ -7740,59 +8053,57 @@ describe("LilbeePlugin", () => {
         });
 
         it("falls back to a plain downloading label when the size is unknown", async () => {
-            mockBinaryExists.mockReturnValue(false);
+            mockInstalled.mockReturnValue(null);
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading...", undefined, { receivedBytes: 5, totalBytes: null });
-                return "/fake/bin/lilbee";
+            mockEnsure.mockImplementationOnce(async ({ onProgress }: any) => {
+                onProgress?.({ done: 5, total: null });
+                return INSTALLED;
             });
-            await (plugin as any).ensureBinaryWithUi();
+            await (plugin as any).ensureBinaryWithUi(fakeBinary);
 
             expect((plugin as any).statusBarEl?.textContent).toContain("lilbee: downloading...");
         });
 
         it("opens the Gatekeeper help modal when an update can't clear quarantine", async () => {
-            mockGatekeeperOpen.mockClear();
-            mockDownload.mockImplementationOnce(async (_url, _size, _digest, _onProgress, onQuarantineFailed) => {
-                onQuarantineFailed?.();
-            });
-
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
+            mockGatekeeperOpen.mockClear();
+            mockEnsure.mockImplementationOnce(async ({ onQuarantineFailed }: any) => {
+                onQuarantineFailed?.();
+                return INSTALLED;
+            });
 
             await plugin.updateServer({
                 tag: "v0.3.0",
-                assetUrl: "https://example.com/v0.3.0",
+                url: "https://example.com/v0.3.0",
                 variant: "default",
                 detection: GPU_DETECTION,
-                sizeBytes: 100,
-                digest: "sha256:test",
-            });
+                size: 100,
+                digest: "test",
+            } as any);
 
             expect(mockGatekeeperOpen).toHaveBeenCalled();
         });
 
-        it("creates binaryManager if not present", async () => {
+        it("downloads into the shared bin dir without a managed start first", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             await flush();
-
-            expect(plugin.binaryManager).toBeNull();
+            mockEnsure.mockClear();
 
             await plugin.updateServer({
                 tag: "v0.3.0",
-                assetUrl: "https://example.com",
+                url: "https://example.com",
                 variant: "default",
                 detection: GPU_DETECTION,
-                sizeBytes: 100,
-            });
+                size: 100,
+            } as any);
 
-            expect(plugin.binaryManager).not.toBeNull();
-            expect(mockDownload).toHaveBeenCalled();
+            expect(mockEnsure).toHaveBeenCalledWith(expect.objectContaining({ release: "v0.3.0" }));
         });
 
         it("skips restart in external mode", async () => {
@@ -7800,15 +8111,16 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+            mockEnsure.mockResolvedValueOnce({ ...INSTALLED, release: "v0.3.0", source: "download" });
 
             mockServerStart.mockClear();
             await plugin.updateServer({
                 tag: "v0.3.0",
-                assetUrl: "https://example.com",
+                url: "https://example.com",
                 variant: "default",
                 detection: GPU_DETECTION,
-                sizeBytes: 100,
-            });
+                size: 100,
+            } as any);
 
             expect(mockServerStart).not.toHaveBeenCalled();
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
@@ -8182,7 +8494,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const { node } = await import("../src/binary-manager");
+            const { node } = await import("../src/node");
             (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("x"));
             async function* withError() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };

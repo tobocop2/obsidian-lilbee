@@ -2,7 +2,7 @@
  * Read-only filesystem helpers used by the Settings storage report.
  * Walks are synchronous because the Settings UI already blocks while it renders.
  */
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { sharedBinDir, sharedModelsDir } from "./vault-registry";
 
 export interface StorageReport {

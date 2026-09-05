@@ -1,6 +1,6 @@
 import { Notice } from "obsidian";
 import { shell } from "electron";
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { buildZip, collectDiagnostics, resolveOutputDir } from "./diagnostics";
 import { MESSAGES } from "./locales/en";
 import type { DiagnosticsContext } from "./types";

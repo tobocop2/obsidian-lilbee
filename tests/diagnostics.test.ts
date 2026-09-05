@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { buildZip, collectDiagnostics, LOG_TAIL_MAX_BYTES, renderSummary, resolveOutputDir } from "../src/diagnostics";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { MESSAGES } from "../src/locales/en";
 import { REDACTED } from "../src/redact";
 import { DEFAULT_SETTINGS, NVIDIA_PROBE_STATUS, SERVER_STATE, SERVER_VARIANT, SHARED_PATH } from "../src/types";
@@ -13,10 +13,9 @@ const DETECTION: GpuDetection = {
     detectedAt: "2026-01-01T00:00:00.000Z",
 };
 
-vi.mock("../src/binary-manager", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/binary-manager")>();
+vi.mock("../src/node", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/node")>();
     return {
-        ...actual,
         node: {
             ...actual.node,
             existsSync: vi.fn().mockReturnValue(false),

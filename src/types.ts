@@ -1,3 +1,5 @@
+import type { DownloadProgress, EnsureResult, LauncherErrorCode, Variant } from "lilbee";
+
 export interface Excerpt {
     content: string;
     page_start: number | null;
@@ -417,7 +419,6 @@ export const MANAGED_PHASE = {
 export interface ManagedServerProgress {
     phase: ManagedServerProgressPhase;
     message: string;
-    url?: string;
     /** 0-100 while the server binary downloads; absent when the size is unknown. */
     percent?: number;
 }
@@ -1328,27 +1329,57 @@ export const PLATFORM = {
     WIN32: "win32",
 } as const;
 
-export const ARCH = {
-    ARM64: "arm64",
-    X64: "x64",
-} as const;
-
-/** The CUDA build tags lilbee ships, newest first. */
-export type CudaTag = "cu121" | "cu124" | "cu125";
-/** The ROCm build tag lilbee ships. Linux x86_64 only. */
-export type RocmTag = "rocm";
-/** A vendor build tag, as it appears in the release asset name. */
-export type GpuTag = CudaTag | RocmTag;
-/** Which lilbee server build is installed: the default (Vulkan/CPU) build or a vendor build. */
-export type ServerVariant = "default" | GpuTag;
+/** Which lilbee server build is installed: the default (Vulkan/CPU) build, a vendor build, or a compat build for CPUs without AVX2. */
+export type ServerVariant = Variant;
 export const SERVER_VARIANT = {
     DEFAULT: "default",
     CU121: "cu121",
     CU124: "cu124",
     CU125: "cu125",
     ROCM: "rocm",
+    COMPAT: "compat",
+    COMPAT_CU124: "compat-cu124",
+    COMPAT_ROCM: "compat-rocm",
 } as const satisfies Record<string, ServerVariant>;
 
+/** What the plugin asks of the server binary: which build to make available and how to report on it. */
+export interface EnsureRequest {
+    includeDev: boolean;
+    /** An exact release tag to install; default: the installed binary, else the latest release. */
+    release?: string;
+    /** Download even when the release is already installed. */
+    force?: boolean;
+    onProgress?: (progress: DownloadProgress) => void;
+    /** macOS: the quarantine attribute could not be cleared, so Gatekeeper will block the binary. */
+    onQuarantineFailed?: () => void;
+    signal?: AbortSignal;
+}
+
+/** Where an ensured server binary came from. */
+export const ENSURE_SOURCE = {
+    CACHE: "cache",
+    DOWNLOAD: "download",
+} as const satisfies Record<string, EnsureResult["source"]>;
+
+/** Why the launcher failed a release query or a download. */
+export const LAUNCHER_ERROR_CODE = {
+    RATE_LIMITED: "rate-limited",
+    HTTP: "http",
+    NO_RELEASE: "no-release",
+    NO_SPACE: "no-space",
+    STALLED: "stalled",
+    NO_DIGEST: "no-digest",
+    DIGEST_MISMATCH: "digest-mismatch",
+} as const satisfies Record<string, LauncherErrorCode>;
+
+/** The release and build a flat pre-launcher install was moved under. */
+export interface MigratedBinary {
+    release: string;
+    variant: ServerVariant;
+}
+
+/** GitHub "owner/repo" of the lilbee server. */
+export const LILBEE_GITHUB_REPO = "tobocop2/lilbee";
 /** Lowest CUDA driver ceiling (major*100 + minor) that any lilbee CUDA build supports. */
 export const CUDA_MIN_CEILING = 1201;
 
@@ -1416,7 +1447,7 @@ export interface GpuDetection {
 }
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
-export const LILBEE_REPO_URL = "https://github.com/tobocop2/lilbee";
+export const LILBEE_REPO_URL = `https://github.com/${LILBEE_GITHUB_REPO}`;
 
 /** Progress value for a job whose length cannot be known: the Task Centre draws
  * an indeterminate bar instead of a percentage. Use it when the work reports no

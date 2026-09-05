@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { Notice, TFile } from "obsidian";
 import { datasetErrorMessage, exportDatasetToDisk, importDatasetFromDisk } from "../src/dataset-io";
 import { electronDialog } from "../src/utils/file-dialog";
-import { node } from "../src/binary-manager";
+import { node } from "../src/node";
 import { MESSAGES } from "../src/locales/en";
 import type { App } from "obsidian";
 import type { LilbeeClient } from "../src/api";
@@ -12,7 +12,7 @@ vi.mock("../src/utils/file-dialog", () => ({
     electronDialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
 }));
 
-vi.mock("../src/binary-manager", () => ({
+vi.mock("../src/node", () => ({
     node: { writeFileSync: vi.fn(), readFileSync: vi.fn() },
 }));
 

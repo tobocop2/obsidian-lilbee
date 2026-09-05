@@ -2,16 +2,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { App, Notice } from "obsidian";
 import type { MockElement } from "./__mocks__/obsidian";
 
-vi.mock("../src/binary-manager", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/binary-manager")>();
+vi.mock("../src/server-binary", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/server-binary")>();
     return {
         ...actual,
         getLatestRelease: vi.fn(),
-        assetNameForVariant: vi.fn(actual.assetNameForVariant),
     };
 });
 
-import * as binMgr from "../src/binary-manager";
+import * as binMgr from "../src/server-binary";
 import { ManagedConsentModal } from "../src/views/managed-consent-modal";
 import { MANAGED_CONSENT_RESULT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
@@ -42,9 +41,10 @@ describe("ManagedConsentModal", () => {
     it("renders header, both cards, and footer buttons", () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0.6.66",
-            assetUrl: "https://x/lilbee",
+            url: "https://x/lilbee",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: 412_000_000,
+            size: 412_000_000,
         });
         const { root } = openModal();
         expect(root.find("lilbee-managed-consent-title")?.textContent).toBe(MESSAGES.MANAGED_CONSENT_TITLE);
@@ -65,15 +65,16 @@ describe("ManagedConsentModal", () => {
         expect(root.find("lilbee-managed-consent-prov-pending")?.textContent).toBe(
             MESSAGES.MANAGED_CONSENT_PROV_PENDING,
         );
-        resolveFn({ tag: "v0", assetUrl: "", variant: "default", sizeBytes: 0 });
+        resolveFn({ tag: "v0", url: "", assetName: "lilbee-linux-x86_64", variant: "default", size: 0 });
     });
 
     it("renders resolved Source block with tag, asset name, size, and notes link", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0.6.66",
-            assetUrl: "https://x/lilbee",
+            url: "https://x/lilbee",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: 412_000_000,
+            size: 412_000_000,
         });
         const { root } = openModal();
         await flush();
@@ -90,6 +91,27 @@ describe("ManagedConsentModal", () => {
         expect(notes!.attributes["href"]).toContain("/releases/tag/v0.6.66");
     });
 
+    it("reads provenance through the adapter, never GitHub directly", async () => {
+        const fetchSpy = vi.fn();
+        vi.stubGlobal("fetch", fetchSpy);
+        try {
+            mockedGetLatestRelease.mockResolvedValue({
+                tag: "v0.6.66",
+                url: "https://x/lilbee",
+                assetName: "lilbee-linux-x86_64",
+                variant: "default",
+                size: 412_000_000,
+            });
+            openModal();
+            await flush();
+
+            expect(mockedGetLatestRelease).toHaveBeenCalledWith(false);
+            expect(fetchSpy).not.toHaveBeenCalled();
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it("degrades to repo-only when getLatestRelease fails", async () => {
         mockedGetLatestRelease.mockRejectedValue(new Error("offline"));
         const { root } = openModal();
@@ -101,9 +123,10 @@ describe("ManagedConsentModal", () => {
     it("Download button resolves with { kind: 'download' } once", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0",
-            assetUrl: "",
+            url: "",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: 0,
+            size: 0,
         });
         const { promise, root } = openModal();
         const btn = root.find("lilbee-managed-consent-btn-download")!;
@@ -116,9 +139,10 @@ describe("ManagedConsentModal", () => {
     it("External card click resolves with { kind: 'external' }", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0",
-            assetUrl: "",
+            url: "",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: 0,
+            size: 0,
         });
         const { promise, root } = openModal();
         root.find("lilbee-managed-consent-card-external")!.trigger("click");
@@ -128,9 +152,10 @@ describe("ManagedConsentModal", () => {
     it("Cancel button resolves with { kind: 'cancel' }", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0",
-            assetUrl: "",
+            url: "",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: 0,
+            size: 0,
         });
         const { promise, root } = openModal();
         root.find("lilbee-managed-consent-btn-cancel")!.trigger("click");
@@ -140,9 +165,10 @@ describe("ManagedConsentModal", () => {
     it("onClose without explicit choice resolves with { kind: 'cancel' }", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0",
-            assetUrl: "",
+            url: "",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: 0,
+            size: 0,
         });
         const { modal, promise } = openModal();
         modal.close();
@@ -154,49 +180,33 @@ describe("ManagedConsentModal", () => {
         mockedGetLatestRelease.mockReturnValue(new Promise((r) => (resolveFn = r)));
         const { promise, root } = openModal();
         root.find("lilbee-managed-consent-btn-download")!.trigger("click");
-        resolveFn({ tag: "v0", assetUrl: "", variant: "default", sizeBytes: 0 });
+        resolveFn({ tag: "v0", url: "", assetName: "lilbee-linux-x86_64", variant: "default", size: 0 });
         await flush();
         await expect(promise).resolves.toEqual({ kind: MANAGED_CONSENT_RESULT.DOWNLOAD });
     });
 
-    it("falls back to 'lilbee' when the platform has no asset name", async () => {
-        const mockedAssetFn = binMgr.assetNameForVariant as unknown as MockedReleaseFn;
-        mockedAssetFn.mockImplementationOnce(() => {
-            throw new Error("Unsupported platform");
-        });
+    it("names the asset of the resolved build, so the name and the size agree", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0",
-            assetUrl: "",
-            variant: "default",
-            sizeBytes: 100_000_000,
-        });
-        const { root } = openModal();
-        await flush();
-        expect(root.find("lilbee-managed-consent-prov-asset-name")?.textContent).toBe("lilbee");
-    });
-
-    it("names the ROCm asset when the release resolves to the ROCm build", async () => {
-        const mockedAssetFn = binMgr.assetNameForVariant as unknown as MockedReleaseFn;
-        mockedGetLatestRelease.mockResolvedValue({
-            tag: "v0",
-            assetUrl: "",
+            url: "",
+            assetName: "lilbee-linux-x86_64-rocm",
             variant: "rocm",
-            sizeBytes: 897_000_000,
+            size: 897_000_000,
         });
         const { root } = openModal();
         await flush();
 
-        // The name and the size both come from the resolved build, so they agree.
-        expect(mockedAssetFn).toHaveBeenCalledWith("rocm");
+        expect(root.find("lilbee-managed-consent-prov-asset-name")?.textContent).toBe("lilbee-linux-x86_64-rocm");
         expect(root.find("lilbee-managed-consent-prov-asset-size")?.textContent).toContain("~855 MB");
     });
 
     it("renders '?' when the release reports a negative or missing size", async () => {
         mockedGetLatestRelease.mockResolvedValue({
             tag: "v0",
-            assetUrl: "",
+            url: "",
+            assetName: "lilbee-linux-x86_64",
             variant: "default",
-            sizeBytes: -1,
+            size: -1,
         });
         const { root } = openModal();
         await flush();

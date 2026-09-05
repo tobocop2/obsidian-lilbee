@@ -1,5 +1,5 @@
 import { zipSync } from "fflate";
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { formatJournalEntry } from "./error-journal";
 import { MESSAGES } from "./locales/en";
 import { redactConfigKeys, redactSecrets, redactSettings } from "./redact";

@@ -2,7 +2,7 @@
  * Removal of everything managed mode put on disk: the server binary, the
  * shared model cache, and one vault's index. Never touches the Obsidian vault.
  */
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { dirSizeBytes } from "./storage-stats";
 import { sharedBinDir, sharedModelsDir } from "./vault-registry";
 import {

@@ -2,7 +2,7 @@
  * Shared-root layout + per-vault registry + cross-process lock.
  * One lilbee binary, one HF cache, many vault data-dirs, one active vault at a time.
  */
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { getDefaultLilbeeDataRoot } from "./session-token";
 import { DEFAULT_SHARED_CONFIG, SHARED_PATH, type SharedConfig, type VaultRegistryEntry } from "./types";
 

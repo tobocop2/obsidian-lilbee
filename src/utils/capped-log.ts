@@ -1,4 +1,4 @@
-import { node } from "../binary-manager";
+import { node } from "../node";
 
 /** Append to a log file, first trimming it to its newest `maxBytes` tail. Never throws. */
 export function appendCapped(path: string, chunk: string, maxBytes: number): void {

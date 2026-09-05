@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { App } from "obsidian";
 import { MESSAGES } from "../../src/locales/en";
 import { UpdateAvailableModal } from "../../src/views/update-available-modal";
-import type { ReleaseInfo } from "../../src/binary-manager";
+import type { ReleaseInfo } from "../../src/server-binary";
 import type { MockElement } from "../__mocks__/obsidian";
 
 const release = { tag: "v9.9.9", variant: "default" } as ReleaseInfo;

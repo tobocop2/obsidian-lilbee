@@ -2,7 +2,7 @@ import type { ChildProcess } from "child_process";
 import type { Readable } from "stream";
 import type { ServerState } from "./types";
 import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE, bearerHeaders } from "./types";
-import { node } from "./binary-manager";
+import { node } from "./node";
 import { appendCapped } from "./utils/capped-log";
 
 /** Human-readable cause for a child that went away: signal beats exit code. */
