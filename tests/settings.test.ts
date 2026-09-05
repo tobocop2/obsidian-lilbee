@@ -3,7 +3,15 @@ import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
 import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
-import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SERVER_VARIANT, SSE_EVENT, TABLE_MODEL } from "../src/types";
+import {
+    DEFAULT_SETTINGS,
+    MEMORY_CONFIG_KEY,
+    MODEL_TASK,
+    SERVER_VARIANT,
+    SSE_EVENT,
+    TABLE_MODEL,
+    TASK_TYPE,
+} from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ServerStartingError } from "../src/api";
 import { ok, err } from "../src/result";
@@ -131,6 +139,7 @@ function makePlugin(
     let sharedVersion = ver ?? "";
     let sharedHfToken = hf ?? "";
     const sessionToken = tok ?? null;
+    const taskQueue = new TaskQueue();
     const api = {
         listModels: vi.fn(),
         setChatModel: vi.fn(),
@@ -179,7 +188,8 @@ function makePlugin(
         activeModel: "",
         wikiEnabled: overrides.wikiEnabled !== undefined ? settings.wikiEnabled : true,
         wikiSync: null,
-        taskQueue: new TaskQueue(),
+        taskQueue,
+        enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
         getSharedLilbeeVersion: () => sharedVersion,
         getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
         isUnloaded: () => false,
@@ -2372,9 +2382,9 @@ describe("LilbeeSettingTab", () => {
             return { tab, captured };
         }
 
-        it("pullAndSetChat surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+        it("pullAndSetChat surfaces NOTICE_QUEUE_FULL when enqueuePull returns null", async () => {
             const plugin = makePlugin();
-            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.enqueuePull = vi.fn(() => null) as any;
             const { captured } = pickerSetup(plugin);
             Notice.clear();
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
@@ -5479,9 +5489,9 @@ describe("managed mode settings", () => {
             expect(Object.keys(options[0])).toEqual([""]);
         });
 
-        it("pull flow surfaces queue-full notice when enqueue fails", async () => {
+        it("pull flow surfaces queue-full notice when enqueuePull fails", async () => {
             const plugin = makePlugin();
-            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.enqueuePull = vi.fn(() => null) as any;
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
@@ -6333,9 +6343,9 @@ describe("managed mode settings", () => {
             expect(Object.keys(options[0])).toEqual([""]);
         });
 
-        it("pull flow surfaces queue-full notice when enqueue fails", async () => {
+        it("pull flow surfaces queue-full notice when enqueuePull fails", async () => {
             const plugin = makePlugin();
-            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.enqueuePull = vi.fn(() => null) as any;
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({

@@ -3,7 +3,7 @@ import { windowStub } from "../window-stub";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
-import { CATALOG_TAB, SSE_EVENT } from "../../src/types";
+import { CATALOG_TAB, SSE_EVENT, TASK_TYPE } from "../../src/types";
 import type { CatalogEntry, CatalogResponse, CatalogTab } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
 import { ok, err } from "../../src/result";
@@ -62,6 +62,7 @@ function makeCatalogResponse(
 }
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
+    const taskQueue = new TaskQueue();
     return {
         api: {
             catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse([]))),
@@ -78,7 +79,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
         refreshOpenChatRails: vi.fn(),
-        taskQueue: new TaskQueue(),
+        taskQueue,
+        enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
         ...overrides,
     };
 }
@@ -1242,10 +1244,10 @@ describe("CatalogModal", () => {
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
         });
 
-        it("shows NOTICE_QUEUE_FULL when enqueue returns null (per-type cap)", async () => {
+        it("shows NOTICE_QUEUE_FULL when enqueuePull returns null (per-type cap)", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
-            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.enqueuePull = vi.fn(() => null) as any;
             plugin.api.pullModel = vi.fn();
             const modal = await openModal(plugin);
             const content = contentEl(modal);

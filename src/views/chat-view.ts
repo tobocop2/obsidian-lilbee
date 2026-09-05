@@ -19,7 +19,6 @@ import {
     SEARCH_CHUNK_TYPE,
     SESSION_ROLE,
     SSE_EVENT,
-    TASK_TYPE,
     ERROR_NAME,
 } from "../types";
 import type {
@@ -820,7 +819,7 @@ export class ChatView extends ItemView {
     }
 
     private async autoPullAndSet(entry: CatalogEntry): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.enqueuePull(`Pull ${entry.display_name}`);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;

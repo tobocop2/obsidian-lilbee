@@ -1438,6 +1438,31 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("enqueuePull()", () => {
+        it("enqueues a pull task and opens the Task Center", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const activateSpy = vi.spyOn(plugin as any, "activateTaskView").mockResolvedValue(undefined);
+
+            const taskId = plugin.enqueuePull("Pull org/model");
+
+            expect(taskId).not.toBeNull();
+            expect(plugin.taskQueue.active?.name).toBe("Pull org/model");
+            expect(plugin.taskQueue.active?.type).toBe("pull");
+            expect(activateSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("returns null and leaves the Task Center alone when the pull queue is full", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const activateSpy = vi.spyOn(plugin as any, "activateTaskView").mockResolvedValue(undefined);
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+
+            expect(plugin.enqueuePull("Pull org/model")).toBeNull();
+            expect(activateSpy).not.toHaveBeenCalled();
+        });
+    });
+
     describe("triggerSync()", () => {
         it("updates status bar during sync and flashes done on completion", async () => {
             const plugin = await createPlugin();
