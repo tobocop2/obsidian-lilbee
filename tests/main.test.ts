@@ -6788,6 +6788,23 @@ describe("LilbeePlugin", () => {
             );
         });
 
+        it("opens the reminder only once the layout is ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: newer as any });
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue(offConfig(true));
+            let ready: (() => void) | null = null;
+            (plugin.app.workspace.onLayoutReady as ReturnType<typeof vi.fn>).mockImplementation((cb: () => void) => {
+                ready = cb;
+            });
+            mockUpdateModalOpen.mockClear();
+
+            await (plugin as any).autoUpdateServerBinary();
+            expect(mockUpdateModalOpen).not.toHaveBeenCalled();
+            ready!();
+            expect(mockUpdateModalOpen).toHaveBeenCalledTimes(1);
+        });
+
         it("names the build in the reminder when the detected build differs from the installed one", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();

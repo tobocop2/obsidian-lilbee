@@ -1735,10 +1735,13 @@ export default class LilbeePlugin extends Plugin {
             installedVariant !== "" && installedVariant !== release.variant
                 ? MESSAGES.LABEL_SERVER_BUILD(release.variant)
                 : null;
-        new UpdateAvailableModal(this.app, release, build, {
-            openSettings: () => this.openServerUpdateSettings(),
-            stopReminding: () => this.setServerUpdateReminder(false),
-        }).open();
+        // A modal opened before the layout exists is closed with the startup screen.
+        this.app.workspace.onLayoutReady(() => {
+            new UpdateAvailableModal(this.app, release, build, {
+                openSettings: () => this.openServerUpdateSettings(),
+                stopReminding: () => this.setServerUpdateReminder(false),
+            }).open();
+        });
     }
 
     private showUpdateIndicator(release: ReleaseInfo): void {

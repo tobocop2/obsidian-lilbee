@@ -2532,7 +2532,8 @@ describe("managed mode settings", () => {
         expect(plugin.setServerUpdateReminder).toHaveBeenCalledWith(false);
     });
 
-    it("scrollToServerUpdate brings the version row into view", () => {
+    it("scrollToServerUpdate centres and marks the version row, again after the release list lands", async () => {
+        vi.useFakeTimers();
         mockListReleases.mockResolvedValue(RELEASES);
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
         mockChatPicker(plugin);
@@ -2540,12 +2541,23 @@ describe("managed mode settings", () => {
         const scroll = vi.spyOn(MockElement.prototype, "scrollIntoView");
 
         tab.scrollToServerUpdate();
+        vi.runAllTimers();
         expect(scroll).not.toHaveBeenCalled();
         tab.display();
-        tab.scrollToServerUpdate();
+        vi.runAllTimers();
+        expect(scroll).toHaveBeenCalledWith({ block: "center" });
+        const row = tab.containerEl.findAll("lilbee-setting-focus");
+        expect(row.length).toBe(1);
+        await vi.runAllTimersAsync();
+        expect(scroll.mock.calls.length).toBeGreaterThanOrEqual(2);
 
-        expect(scroll).toHaveBeenCalledWith({ block: "start" });
+        tab.hide();
+        expect(tab.containerEl.findAll("lilbee-setting-focus").length).toBe(0);
+        tab.display();
+        vi.runAllTimers();
+        expect(scroll.mock.calls.length).toBe(scroll.mock.calls.length);
         scroll.mockRestore();
+        vi.useRealTimers();
     });
 
     it("the dev-builds toggle persists the setting and re-renders", async () => {

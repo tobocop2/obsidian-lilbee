@@ -108,8 +108,13 @@ interface UpdateProgressEls {
     cancel: HTMLElement;
 }
 
+/** Marks the setting a navigation landed on; the theme colours the flash. */
+const SETTING_FOCUS_CLASS = "lilbee-setting-focus";
+
 export class LilbeeSettingTab extends PluginSettingTab {
     private versionSettingEl: HTMLElement | null = null;
+    /** Set by the update ribbon icon and the reminder: keep the version row in view across re-renders. */
+    private focusServerUpdate = false;
     plugin: LilbeePlugin;
     /** Total bytes of the shared install, set by the storage report each render. */
     private storageTotalBytes = 0;
@@ -146,6 +151,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     display(): void {
         this.render();
+        this.revealServerUpdate();
     }
 
     render(): void {
@@ -532,9 +538,25 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
-    /** Bring the server version row into view; the update ribbon icon and reminder land here. */
+    /** Bring the server version row into view and mark it; the update ribbon icon and reminder land here. */
     scrollToServerUpdate(): void {
-        this.versionSettingEl?.scrollIntoView({ block: "start" });
+        this.focusServerUpdate = true;
+        this.revealServerUpdate();
+    }
+
+    /** Runs after a render and after the release list lands, so the row is measured before it scrolls. */
+    private revealServerUpdate(): void {
+        const row = this.versionSettingEl;
+        if (!this.focusServerUpdate || !row) return;
+        window.setTimeout(() => {
+            row.scrollIntoView({ block: "center" });
+            row.addClass(SETTING_FOCUS_CLASS);
+        }, 0);
+    }
+
+    hide(): void {
+        this.focusServerUpdate = false;
+        this.versionSettingEl?.removeClass(SETTING_FOCUS_CLASS);
     }
 
     /**
@@ -612,6 +634,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
+            this.revealServerUpdate();
             if (loaded.releases === null) {
                 setting.setDesc(
                     installed
