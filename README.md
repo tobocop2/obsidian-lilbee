@@ -405,7 +405,7 @@ The plugin is just as happy talking to a server you run yourself. That unlocks t
 - a GPU box in the cloud
 - one server shared by several tools
 
-**Run your own server (external mode).** [Install lilbee](https://github.com/tobocop2/lilbee#install), run `lilbee serve` yourself and point the plugin at its URL in Settings → Server mode → External. How you keep it running is up to you: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#running-as-a-service) and the [HTTP server docs](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#http-server) for the per-platform recipes.
+**Run your own server (external mode).** Install lilbee by following the [official install instructions](https://github.com/tobocop2/lilbee#install), run `lilbee serve` yourself and point the plugin at its URL in Settings → Server mode → External. How you keep it running is up to you: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#running-as-a-service) and the [HTTP server docs](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#http-server) for the per-platform recipes.
 
 **How authentication works.** On first start, `lilbee serve` generates a random session token and writes it to `server.json` in its data directory, readable only by your user. Every request that can change anything must present that token as an `Authorization: Bearer` header. On the same machine, clients prove they're you by reading the file, which is what the plugin's managed mode does automatically.
 
