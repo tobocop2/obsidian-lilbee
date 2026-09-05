@@ -1,4 +1,4 @@
-import { Notice, type App, type Modal } from "obsidian";
+import { Notice, type App, type Modal, type TFile } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
 import { SERVER_MODE } from "./types";
@@ -469,4 +469,17 @@ export function noticeServerUnreachableIfApplicable(err: unknown): boolean {
 export function configString(cfg: Record<string, unknown>, key: string): string {
     const v = cfg[key];
     return typeof v === "string" ? v : "";
+}
+
+/**
+ * Select *file* in Obsidian's file explorer. The explorer view's `revealInFolder`
+ * is undocumented, so it is shape-checked; false means the explorer is not open.
+ */
+export function revealInFileExplorer(app: App, file: TFile): boolean {
+    const leaf = app.workspace.getLeavesOfType("file-explorer")[0];
+    const view = leaf?.view as unknown as { revealInFolder?: (file: TFile) => void } | undefined;
+    if (!leaf || typeof view?.revealInFolder !== "function") return false;
+    void app.workspace.revealLeaf(leaf);
+    view.revealInFolder(file);
+    return true;
 }

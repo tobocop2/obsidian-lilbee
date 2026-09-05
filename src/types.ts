@@ -113,6 +113,7 @@ export interface ConfigResponse {
     vision_load_budget_s?: number;
     chunk_size?: number;
     chunk_overlap?: number;
+    max_chunks_per_file?: number;
     tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;
@@ -241,6 +242,9 @@ export const MODEL_COMPAT = {
 
 export type DiscoverRail = "for_you" | "your_collection" | "fresh";
 
+/** Vault folder that holds the managed documents when content is stored in the vault. */
+export const MANAGED_DOCS_PREFIX = "lilbee/";
+
 export const DISCOVER_RAIL = {
     FOR_YOU: "for_you",
     YOUR_COLLECTION: "your_collection",
@@ -249,6 +253,10 @@ export const DISCOVER_RAIL = {
 
 export interface StatusResponse {
     config: Record<string, string>;
+    document_count: number;
+    /** Held-out files, capped by the server; `skipped_total` is the real count. */
+    skipped?: SkippedSource[];
+    skipped_total?: number;
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
     wiki?: {
@@ -259,6 +267,12 @@ export interface StatusResponse {
     };
 }
 
+/** A file a skip marker holds out of the index, with the reason the server recorded. */
+export interface SkippedSource {
+    filename: string;
+    reason: string;
+}
+
 export interface SyncDone {
     added: string[];
     updated: string[];
@@ -266,6 +280,7 @@ export interface SyncDone {
     unchanged: number;
     failed: string[];
     skipped: string[];
+    held_out: SkippedSource[];
 }
 
 /** Recovery options for a sync. Both default off (a plain incremental sync). */
@@ -275,6 +290,14 @@ export interface SyncOptions {
     /** Clear skip markers so files skipped on a previous sync are retried. */
     retrySkipped?: boolean;
 }
+
+/** Who asked for a sync. Only a user-initiated one reports that a sync is already pending. */
+export type SyncTrigger = "user" | "automatic";
+
+export const SYNC_TRIGGER = {
+    USER: "user",
+    AUTOMATIC: "automatic",
+} as const satisfies Record<string, SyncTrigger>;
 
 export interface GenerationOptions {
     temperature?: number;
@@ -568,15 +591,11 @@ export const AGENT_MIN_CONTEXT_TOKENS = 20_000;
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
-    maxDistance: number;
-    adaptiveThreshold: boolean;
     serverMode: ServerMode;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
     setupCompleted: boolean;
     wikiEnabled: boolean;
-    wikiPruneRaw: boolean;
-    wikiFaithfulnessThreshold: number;
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
@@ -612,16 +631,12 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     // Match the server's default retrieval depth (core config top_k = 12) so the
     // plugin and a bare `lilbee serve` behave identically out of the box.
     topK: 12,
-    maxDistance: 0.9,
-    adaptiveThreshold: false,
     serverMode: "managed",
     ragSystemPrompt: "",
     generalSystemPrompt: "",
     setupCompleted: false,
     wikiEnabled: false,
-    wikiPruneRaw: false,
-    wikiFaithfulnessThreshold: 0.7,
-    searchChunkType: "raw",
+    searchChunkType: SEARCH_CHUNK_TYPE.ALL,
     // On, but only reached once the wiki itself is enabled (which is opt-in).
     // A wiki you cannot open in the vault is most of the point missing: these
     // pages carry [[wikilinks]], so as vault notes they get Obsidian's graph,
@@ -646,6 +661,8 @@ export interface SharedConfig {
     lilbeeVersion: string;
     /** Which server build is installed. Empty when unknown (e.g. installed before variant tracking). */
     lilbeeVariant: ServerVariant | "";
+    /** The GPU probe that chose `lilbeeVariant`. Null when the install predates detection tracking. */
+    lilbeeDetection: GpuDetection | null;
     hfToken: string;
     /** Plugin version that last ran the automatic server-update check. */
     lastUpdateCheckPluginVersion: string;
@@ -653,24 +670,29 @@ export interface SharedConfig {
     serverAutoUpdate: boolean;
     /** The user removed the managed server; never download it again until they ask. */
     serverUninstalled: boolean;
+    /** Show a reminder on launch while a newer server release exists and automatic updates are off. */
+    serverUpdateReminder: boolean;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVersion: "",
     lilbeeVariant: "",
+    lilbeeDetection: null,
     hfToken: "",
     lastUpdateCheckPluginVersion: "",
     serverAutoUpdate: true,
     serverUninstalled: false,
+    serverUpdateReminder: true,
 };
 
 /** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
-export type UninstallTargetKind = "binary" | "models" | "index";
+export type UninstallTargetKind = "binary" | "models" | "index" | "cache";
 
 export const UNINSTALL_TARGET = {
     BINARY: "binary",
     MODELS: "models",
     INDEX: "index",
+    CACHE: "cache",
 } as const satisfies Record<string, UninstallTargetKind>;
 
 export interface UninstallTarget {
@@ -756,6 +778,10 @@ export interface DiagnosticsContext {
     journalEntries: readonly JournalEntry[];
     pluginVersion: string;
     serverVersion: string;
+    /** Which server build is installed. Empty when nothing has recorded one. */
+    serverVariant: ServerVariant | "";
+    /** The GPU probe that chose the installed build, or null when none was recorded. */
+    gpuDetection: GpuDetection | null;
     serverState: ServerState;
     serverUrl: string;
     lastOutput: string;
@@ -1354,6 +1380,72 @@ export interface MigratedBinary {
 
 /** GitHub "owner/repo" of the lilbee server. */
 export const LILBEE_GITHUB_REPO = "tobocop2/lilbee";
+/** Lowest CUDA driver ceiling (major*100 + minor) that any lilbee CUDA build supports. */
+export const CUDA_MIN_CEILING = 1201;
+
+/** How the `nvidia-smi` probe ended. */
+export type NvidiaProbeStatus = "skipped" | "missing" | "sandboxed" | "unreadable" | "detected";
+export const NVIDIA_PROBE_STATUS = {
+    /** macOS: lilbee ships one build there, so nothing is probed. */
+    SKIPPED: "skipped",
+    /** `nvidia-smi` is absent or exited non-zero at every location tried. */
+    MISSING: "missing",
+    /** Linux: the kernel module is loaded but no `nvidia-smi` is reachable (Flatpak, Snap). */
+    SANDBOXED: "sandboxed",
+    /** `nvidia-smi` ran but its output names no CUDA version. */
+    UNREADABLE: "unreadable",
+    /** The driver named the newest CUDA version it supports. */
+    DETECTED: "detected",
+} as const satisfies Record<string, NvidiaProbeStatus>;
+
+/** What the `nvidia-smi` probe found, and why it ended there. */
+export type NvidiaProbe =
+    | { status: "skipped" }
+    | { status: "missing"; error: string }
+    | { status: "sandboxed" }
+    | { status: "unreadable" }
+    /** The driver's maximum CUDA version as major*100+minor (12.4 -> 1204). */
+    | { status: "detected"; cudaCeiling: number };
+
+/** Why the plugin picked the server build it did. Recorded at every install and update check. */
+export type AmdProbeStatus = "skipped" | "missing" | "sandboxed" | "unreadable" | "detected" | "unsupported";
+export const AMD_PROBE_STATUS = {
+    /** lilbee ships a ROCm build for Linux only, so other platforms probe nothing. */
+    SKIPPED: "skipped",
+    /** No amdgpu module and no compute device. */
+    MISSING: "missing",
+    /** The amdgpu module is loaded but `/dev/kfd` is not visible (Flatpak, Snap). */
+    SANDBOXED: "sandboxed",
+    /** `/dev/kfd` is present but its topology could not be read. */
+    UNREADABLE: "unreadable",
+    /** The driver named the gfx targets and the ROCm build serves them. */
+    DETECTED: "detected",
+    /** The driver named the gfx targets but the release's ROCm build cannot serve them. */
+    UNSUPPORTED: "unsupported",
+} as const satisfies Record<string, AmdProbeStatus>;
+
+export type RocmRefusal = "no-asset" | "no-manifest" | "missing-kernels";
+export const ROCM_REFUSAL = {
+    NO_ASSET: "no-asset",
+    NO_MANIFEST: "no-manifest",
+    MISSING_KERNELS: "missing-kernels",
+} as const satisfies Record<string, RocmRefusal>;
+
+export type AmdProbe =
+    | { status: "skipped" }
+    | { status: "missing" }
+    | { status: "sandboxed" }
+    | { status: "unreadable" }
+    | { status: "detected"; gfxTargets: string[] }
+    | { status: "unsupported"; gfxTargets: string[]; reason: RocmRefusal };
+
+export interface GpuDetection {
+    nvidia: NvidiaProbe;
+    amd: AmdProbe;
+    /** When the probe ran, ISO 8601. */
+    detectedAt: string;
+}
+
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
 export const LILBEE_REPO_URL = `https://github.com/${LILBEE_GITHUB_REPO}`;
 

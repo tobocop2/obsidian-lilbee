@@ -200,7 +200,7 @@ describe("ServerBinary.ensure", () => {
 
         const result = await new ServerBinary(BIN_DIR).ensure({ includeDev: true });
 
-        expect(result).toEqual({ ...cached, source: "cache" });
+        expect(result).toEqual({ ...cached, source: "cache", detection: null });
         expect(lilbee.detectHost).not.toHaveBeenCalled();
         expect(lilbee.ensureBinary).not.toHaveBeenCalled();
     });
@@ -230,7 +230,7 @@ describe("ServerBinary.ensure", () => {
             signal,
         });
 
-        expect(result).toEqual({ ...cached, source: "cache" });
+        expect(result).toEqual({ ...cached, source: "cache", detection: null });
         expect(lilbee.ensureBinary).toHaveBeenCalledWith({
             includeDev: true,
             release: "v1",
@@ -302,6 +302,44 @@ describe("ServerBinary.ensure", () => {
 
         expect(execFile).not.toHaveBeenCalled();
         restore();
+    });
+});
+
+describe("ServerBinary.ensure detection report", () => {
+    const DETECTION = {
+        nvidia: { status: "detected", cudaCeiling: 1204 },
+        amd: { status: "unsupported", gfxTargets: ["gfx1100"], reason: "missing-kernels" },
+        cpu: { status: "detected", avx2: true },
+        detectedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    it("records the probe that chose a downloaded build, without the CPU probe", async () => {
+        lilbee.ensureBinary.mockResolvedValue({ ...cached, source: "download", detection: DETECTION });
+
+        const result = await new ServerBinary(BIN_DIR).ensure({ includeDev: false });
+
+        expect(result.detection).toEqual({
+            nvidia: DETECTION.nvidia,
+            amd: DETECTION.amd,
+            detectedAt: DETECTION.detectedAt,
+        });
+    });
+
+    it("records null when the package resolved nothing", async () => {
+        lilbee.ensureBinary.mockResolvedValue({ ...cached, source: "cache" });
+
+        const result = await new ServerBinary(BIN_DIR).ensure({ includeDev: false, force: true });
+
+        expect(result).toEqual({ ...cached, source: "cache", detection: null });
+    });
+
+    it("records null for the installed-binary short circuit, where nothing is probed", async () => {
+        lilbee.installedBinary.mockReturnValue(cached);
+
+        const result = await new ServerBinary(BIN_DIR).ensure({ includeDev: false });
+
+        expect(result.detection).toBeNull();
+        expect(lilbee.detectHost).not.toHaveBeenCalled();
     });
 });
 

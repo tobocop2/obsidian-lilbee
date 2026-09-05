@@ -1,8 +1,9 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, TFile } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelShowResponse, StatusResponse } from "../types";
+import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from "../types";
+import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, noticeForResultError } from "../utils";
+import { bindEscapeToClose, noticeForResultError, revealInFileExplorer } from "../utils";
 
 export class StatusModal extends Modal {
     private plugin: LilbeePlugin;
@@ -31,6 +32,7 @@ export class StatusModal extends Modal {
             }
             const status = statusResult.value;
             this.renderDocuments(contentEl, status);
+            this.renderHeldOut(contentEl, status);
             await this.renderModels(contentEl, status);
             this.renderWiki(contentEl, status);
         } catch {
@@ -39,13 +41,87 @@ export class StatusModal extends Modal {
         }
     }
 
+    /** The first document page loads in the background: a slow documents call must not delay the sections below. */
     private renderDocuments(container: HTMLElement, status: StatusResponse): void {
         const section = container.createEl("details", { attr: { open: "" } });
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_DOCUMENTS });
 
         const table = section.createEl("table", { cls: "lilbee-status-table" });
-        this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.sources.length));
+        this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.document_count));
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
+
+        const listEl = section.createDiv({ cls: "lilbee-status-documents" });
+        const summary = section.createDiv({ cls: "lilbee-status-documents-summary" });
+        const list = new DocumentList(
+            listEl,
+            (limit, offset) => this.plugin.api.listDocuments(undefined, limit, offset),
+            {
+                onOpen: (doc) => this.openDocument(doc.filename),
+                onPage: (loaded) => summary.setText(documentSummaryText(list, loaded)),
+            },
+        );
+        list.bindScroll(listEl);
+        void list.loadMore();
+    }
+
+    /** Opens the note behind an indexed document, which lives under the managed folder when content is stored in the vault. */
+    private openDocument(filename: string): void {
+        const { workspace } = this.app;
+        const file = this.vaultFile(filename);
+        if (file) {
+            this.close();
+            void workspace.getLeaf(false).openFile(file);
+            return;
+        }
+        // A member of an archive is named archive/member; the archive is the vault file.
+        // Opening it would hand the archive to the OS, so select it in the explorer instead.
+        const archive = this.enclosingArchive(filename);
+        if (!archive) {
+            new Notice(MESSAGES.NOTICE_DOCUMENT_NOT_IN_VAULT(filename));
+            return;
+        }
+        new Notice(MESSAGES.NOTICE_DOCUMENT_IN_ARCHIVE(filename, archive.file.name));
+        this.close();
+        revealInFileExplorer(this.app, archive.file);
+    }
+
+    private vaultFile(sourceName: string): TFile | null {
+        const { vault } = this.app;
+        return (
+            [`${MANAGED_DOCS_PREFIX}${sourceName}`, sourceName]
+                .map((path) => vault.getAbstractFileByPath(path))
+                .find((entry): entry is TFile => entry instanceof TFile) ?? null
+        );
+    }
+
+    private enclosingArchive(sourceName: string): { file: TFile } | null {
+        const segments = sourceName.split("/");
+        for (let end = segments.length - 1; end > 0; end -= 1) {
+            const file = this.vaultFile(segments.slice(0, end).join("/"));
+            if (file) return { file };
+        }
+        return null;
+    }
+
+    private renderHeldOut(container: HTMLElement, status: StatusResponse): void {
+        const skipped = status.skipped ?? [];
+        if (skipped.length === 0) return;
+        const section = container.createEl("details", { cls: "lilbee-status-held-out", attr: { open: "" } });
+        section.createEl("summary", { text: MESSAGES.LABEL_STATUS_HELD_OUT });
+        for (const source of skipped) {
+            const row = section.createDiv({ cls: "lilbee-status-held-out-row" });
+            const nameEl = row.createDiv({ cls: "lilbee-status-held-out-name", text: source.filename });
+            nameEl.setAttribute("title", source.filename);
+            row.createDiv({ cls: "lilbee-status-held-out-reason", text: source.reason });
+        }
+        const hidden = (status.skipped_total ?? skipped.length) - skipped.length;
+        if (hidden > 0) {
+            section.createDiv({
+                cls: "lilbee-status-held-out-more",
+                text: MESSAGES.LABEL_STATUS_HELD_OUT_MORE(hidden),
+            });
+        }
+        section.createDiv({ cls: "lilbee-status-held-out-retry", text: MESSAGES.LABEL_STATUS_HELD_OUT_RETRY });
     }
 
     private async renderModels(container: HTMLElement, status: StatusResponse): Promise<void> {
@@ -133,6 +209,13 @@ export class StatusModal extends Modal {
         cell.setText(shortModelLabel(model));
         cell.setAttribute("title", model);
     }
+}
+
+function documentSummaryText(list: DocumentList, loaded: boolean): string {
+    if (!loaded) return MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED;
+    if (list.loaded === 0) return MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY;
+    if (list.hasMore) return MESSAGES.LABEL_STATUS_DOCUMENTS_SHOWING(list.loaded, list.total);
+    return MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(list.total);
 }
 
 function shortModelLabel(model: string): string {

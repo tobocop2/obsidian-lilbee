@@ -1,6 +1,7 @@
 import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MEMORY_CONFIG_KEY, MEMORY_KIND, type MemoryItem } from "../types";
+import { addCloseButton } from "../components/close-button";
 import { MESSAGES } from "../locales/en";
 import { errorMessage } from "../utils";
 import { ConfirmModal } from "./confirm-modal";
@@ -38,8 +39,10 @@ export class MemoriesView extends ItemView {
 
         const header = contentEl.createDiv({ cls: "lilbee-memories-header" });
         header.createEl("h2", { text: MESSAGES.LABEL_MEMORIES_TITLE });
-        const addBtn = header.createEl("button", { text: MESSAGES.BUTTON_ADD_MEMORY, cls: "lilbee-memories-add" });
+        const actions = header.createDiv({ cls: "lilbee-toolbar-group" });
+        const addBtn = actions.createEl("button", { text: MESSAGES.BUTTON_ADD_MEMORY, cls: "lilbee-memories-add" });
         addBtn.addEventListener("click", () => new RememberModal(this.app, this.plugin).open());
+        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_MEMORIES_VIEW));
 
         const searchEl = contentEl.createEl("input", { cls: "lilbee-memories-search" });
         searchEl.type = "text";

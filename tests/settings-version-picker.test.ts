@@ -2,7 +2,8 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
-import { DEFAULT_SETTINGS, SERVER_MODE, SERVER_VARIANT } from "../src/types";
+import { DEFAULT_SETTINGS, NVIDIA_PROBE_STATUS, SERVER_MODE, SERVER_VARIANT } from "../src/types";
+import type { GpuDetection } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import type LilbeePlugin from "../src/main";
 
@@ -12,7 +13,18 @@ vi.mock("node-fetch", () => ({ default: fetchStub }));
 // The real release listing runs; only the GPU probe is pinned so no host command is spawned.
 vi.mock("lilbee", async (importOriginal) => ({
     ...(await importOriginal<typeof import("lilbee")>()),
-    detectHost: vi.fn(async () => ({ platform: "linux", arch: "x64", variant: "default", amdGfxTargets: [] })),
+    detectHost: vi.fn(async () => ({
+        platform: "linux",
+        arch: "x64",
+        variant: "default",
+        amdGfxTargets: [],
+        detection: {
+            nvidia: { status: "missing", error: "spawn nvidia-smi ENOENT" },
+            amd: { status: "missing" },
+            cpu: { status: "detected", avx2: true },
+            detectedAt: "2026-01-01T00:00:00.000Z",
+        },
+    })),
 }));
 
 /** A GitHub API answer: `json` for a 200, or the status alone for an error. */
@@ -136,6 +148,7 @@ describe("server version picker with the real release list", () => {
             settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds },
             getSharedLilbeeVersion: () => STABLE_RUN[0],
             getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
+            getSharedGpuDetection: () => null,
         } as unknown as LilbeePlugin;
         return new LilbeeSettingTab(new App(), plugin);
     }
@@ -161,6 +174,7 @@ describe("server version picker with the real release list", () => {
             settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds: false },
             getSharedLilbeeVersion: () => STABLE_RUN[0],
             getSharedLilbeeVariant: () => SERVER_VARIANT.ROCM,
+            getSharedGpuDetection: () => null,
         } as unknown as LilbeePlugin;
         const tab = new LilbeeSettingTab(new App(), plugin);
         (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
@@ -169,11 +183,31 @@ describe("server version picker with the real release list", () => {
         expect(descs[descs.length - 1]).toContain("Running the ROCm build.");
     });
 
+    it("says why that build was chosen, so a default build on an NVIDIA box explains itself", async () => {
+        const plugin = {
+            settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds: false },
+            getSharedLilbeeVersion: () => STABLE_RUN[0],
+            getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
+            getSharedGpuDetection: (): GpuDetection => ({
+                nvidia: { status: NVIDIA_PROBE_STATUS.MISSING, error: "spawn nvidia-smi ENOENT" },
+                amd: { status: "missing" },
+                detectedAt: "2026-01-01T00:00:00.000Z",
+            }),
+        } as unknown as LilbeePlugin;
+        const tab = new LilbeeSettingTab(new App(), plugin);
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(descs[descs.length - 1]).toContain("Running the default build.");
+        expect(descs[descs.length - 1]).toContain("nvidia-smi did not run: spawn nvidia-smi ENOENT.");
+    });
+
     it("says nothing about the build when the install predates build tracking", async () => {
         const plugin = {
             settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds: false },
             getSharedLilbeeVersion: () => STABLE_RUN[0],
             getSharedLilbeeVariant: () => "",
+            getSharedGpuDetection: () => null,
         } as unknown as LilbeePlugin;
         const tab = new LilbeeSettingTab(new App(), plugin);
         (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);

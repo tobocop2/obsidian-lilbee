@@ -10,8 +10,9 @@ import {
     latestRelease,
     listReleases as listPackageReleases,
     type DownloadProgress,
-    type EnsureResult,
+    type EnsureResult as LauncherEnsureResult,
     type FetchLike,
+    type GpuDetection as LauncherDetection,
     type Host,
     type InstalledBinary,
     type LauncherError,
@@ -25,13 +26,21 @@ import {
     PLATFORM,
     SERVER_VARIANT,
     type EnsureRequest,
+    type GpuDetection,
     type MigratedBinary,
     type ServerVariant,
 } from "./types";
 import { formatDiskSize } from "./utils";
 
 export type ReleaseInfo = ResolvedRelease;
-export type { DownloadProgress, EnsureResult, InstalledBinary };
+export type { DownloadProgress, InstalledBinary };
+
+/** An installed binary and, when this call resolved a release, the probe that chose its build. */
+export interface EnsureResult extends InstalledBinary {
+    source: LauncherEnsureResult["source"];
+    /** Null on a cache hit: nothing was probed. */
+    detection: GpuDetection | null;
+}
 export { DownloadCanceledError, isDevBuild, isDownloadCanceled };
 
 // Node's https, not the renderer's fetch: GitHub's asset redirect fails CORS in the renderer.
@@ -58,6 +67,13 @@ function withKnownGpu(host: Host): Host {
 
 async function releaseHost(): Promise<Host> {
     return withKnownGpu(await detectHost());
+}
+
+/** The plugin's record of a probe: the package's report without its CPU probe. */
+function recordedDetection(detection: LauncherDetection | undefined): GpuDetection | null {
+    if (detection === undefined) return null;
+    const { nvidia, amd, detectedAt } = detection;
+    return { nvidia, amd, detectedAt };
 }
 
 function asLauncherError(err: unknown): LauncherError | null {
@@ -184,14 +200,14 @@ export class ServerBinary {
         const { onQuarantineFailed, ...options } = request;
         if (!options.release && !options.force) {
             const installed = this.installed();
-            if (installed !== null) return { ...installed, source: ENSURE_SOURCE.CACHE };
+            if (installed !== null) return { ...installed, source: ENSURE_SOURCE.CACHE, detection: null };
         }
-        const result = await withPluginWording(
+        const { detection, ...result } = await withPluginWording(
             ensureBinary({ ...options, cacheDir: this.binDir, host: await releaseHost(), fetch, requireDigest: true }),
         );
         if (result.source === ENSURE_SOURCE.DOWNLOAD && process.platform === PLATFORM.DARWIN) {
             await clearQuarantine(result.path, onQuarantineFailed);
         }
-        return result;
+        return { ...result, detection: recordedDetection(detection) };
     }
 }

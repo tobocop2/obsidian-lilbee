@@ -109,7 +109,13 @@ interface UpdateProgressEls {
     cancel: HTMLElement;
 }
 
+/** Marks the setting a navigation landed on; the theme colours the flash. */
+const SETTING_FOCUS_CLASS = "lilbee-setting-focus";
+
 export class LilbeeSettingTab extends PluginSettingTab {
+    private versionSettingEl: HTMLElement | null = null;
+    /** Set by the update ribbon icon and the reminder: keep the version row in view across re-renders. */
+    private focusServerUpdate = false;
     plugin: LilbeePlugin;
     /** Total bytes of the shared install, set by the storage report each render. */
     private storageTotalBytes = 0;
@@ -121,11 +127,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
     private serverConfigDropdowns: Map<string, { setValue: (v: string) => unknown }> = new Map();
+    private serverConfigSliders: Map<string, { setValue: (v: number) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
-    // Guards programmatic toggle.setValue() calls from echoing back to the server.
-    private suppressToggleChanges = false;
+    // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
+    private suppressChangeEvents = false;
     private chatModeSettingEl: HTMLElement | null = null;
     private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;
     private chatModeSelectEl: HTMLSelectElement | null = null;
@@ -145,6 +152,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     display(): void {
         this.render();
+        this.revealServerUpdate();
     }
 
     render(): void {
@@ -505,6 +513,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderStorageReport(containerEl);
         this.renderVersionSetting(containerEl);
         this.renderAutoUpdateToggle(containerEl);
+        this.renderUpdateReminderToggle(containerEl);
         this.renderDevBuildsToggle(containerEl);
     }
 
@@ -519,6 +528,38 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
+    private renderUpdateReminderToggle(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_SERVER_UPDATE_REMINDER)
+            .setDesc(MESSAGES.DESC_SERVER_UPDATE_REMINDER)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.isServerUpdateReminderEnabled()).onChange((value) => {
+                    this.plugin.setServerUpdateReminder(value);
+                }),
+            );
+    }
+
+    /** Bring the server version row into view and mark it; the update ribbon icon and reminder land here. */
+    scrollToServerUpdate(): void {
+        this.focusServerUpdate = true;
+        this.revealServerUpdate();
+    }
+
+    /** Runs after a render and after the release list lands, so the row is measured before it scrolls. */
+    private revealServerUpdate(): void {
+        const row = this.versionSettingEl;
+        if (!this.focusServerUpdate || !row) return;
+        window.setTimeout(() => {
+            row.scrollIntoView({ block: "center" });
+            row.addClass(SETTING_FOCUS_CLASS);
+        }, 0);
+    }
+
+    hide(): void {
+        this.focusServerUpdate = false;
+        this.versionSettingEl?.removeClass(SETTING_FOCUS_CLASS);
+    }
+
     /**
      * One control for upgrade, downgrade, and reinstall. The dropdown lists
      * recent releases newest-first; the button names what the selection does.
@@ -531,6 +572,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        this.versionSettingEl = setting.settingEl;
         const progress = this.renderUpdateProgress(containerEl);
 
         let releases: ReleaseInfo[] = [];
@@ -549,6 +591,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const installedBuild = this.plugin.getSharedLilbeeVariant();
             if (installed && installedBuild) {
                 desc += MESSAGES.DESC_SERVER_BUILD(MESSAGES.LABEL_SERVER_BUILD(installedBuild));
+                const detection = this.plugin.getSharedGpuDetection();
+                if (detection) desc += ` ${MESSAGES.DESC_GPU_DETECTION(detection)}`;
             }
             if (newerDevTag) desc += ` ${MESSAGES.DESC_DEV_BUILD_AVAILABLE(newerDevTag)}`;
             setting.setDesc(desc);
@@ -591,6 +635,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
+            this.revealServerUpdate();
             if (loaded.releases === null) {
                 setting.setDesc(
                     installed
@@ -1010,7 +1055,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_SHOW_REASONING)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_SHOW_REASONING));
@@ -1028,7 +1073,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_CHAT_COMPACTION)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_COMPACTION]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CHAT_COMPACTION));
@@ -1059,30 +1104,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
         this.appendLocalResetAffordance(topKSetting, "topK", MESSAGES.LABEL_RESULTS_COUNT);
 
-        const maxDistanceSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_MAX_DISTANCE)
-            .setDesc(MESSAGES.DESC_MAX_DISTANCE)
-            .addSlider((slider) =>
-                slider
-                    .setLimits(0.1, 1.0, 0.1)
-                    .setValue(this.plugin.settings.maxDistance ?? 0.9)
-                    .onChange(async (value) => {
-                        this.plugin.settings.maxDistance = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
-        this.appendLocalResetAffordance(maxDistanceSetting, "maxDistance", MESSAGES.LABEL_MAX_DISTANCE);
+        this.renderConfigSlider(containerEl, "max_distance", MESSAGES.LABEL_MAX_DISTANCE, MESSAGES.DESC_MAX_DISTANCE, {
+            min: 0.05,
+            max: 1.0,
+            step: 0.05,
+        });
 
-        const adaptiveSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_ADAPTIVE_THRESHOLD)
-            .setDesc(MESSAGES.DESC_ADAPTIVE_THRESHOLD)
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.adaptiveThreshold ?? false).onChange(async (value) => {
-                    this.plugin.settings.adaptiveThreshold = value;
-                    await this.plugin.saveSettings();
-                }),
-            );
-        this.appendLocalResetAffordance(adaptiveSetting, "adaptiveThreshold", MESSAGES.LABEL_ADAPTIVE_THRESHOLD);
+        this.renderConfigToggle(
+            containerEl,
+            "adaptive_threshold",
+            MESSAGES.LABEL_ADAPTIVE_THRESHOLD,
+            MESSAGES.DESC_ADAPTIVE_THRESHOLD,
+        );
     }
 
     private loadServerDefaults(): void {
@@ -1104,14 +1137,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
                 for (const [key, toggle] of this.serverConfigToggles) {
                     const v = cfg[key];
-                    if (typeof v === "boolean") {
-                        this.suppressToggleChanges = true;
-                        try {
-                            toggle.setValue(v);
-                        } finally {
-                            this.suppressToggleChanges = false;
-                        }
-                    }
+                    if (typeof v === "boolean") this.setValueSilently(() => toggle.setValue(v));
+                }
+                for (const [key, slider] of this.serverConfigSliders) {
+                    const v = cfg[key];
+                    if (typeof v === "number") this.setValueSilently(() => slider.setValue(v));
                 }
                 for (const [key, textArea] of this.serverConfigTextAreas) {
                     const v = cfg[key];
@@ -1143,6 +1173,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .catch(() => {
                 // Connection status is shown via the Test button — no duplicate warning needed
             });
+    }
+
+    /** Runs a programmatic setValue with the control's onChange muted, so nothing echoes to the server. */
+    private setValueSilently(apply: () => unknown): void {
+        this.suppressChangeEvents = true;
+        try {
+            apply();
+        } finally {
+            this.suppressChangeEvents = false;
+        }
     }
 
     private applyHideableConfigFields(cfg: ConfigResponse): void {
@@ -1220,37 +1260,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
                     this.render();
-                }),
-        );
-    }
-
-    /**
-     * Reset affordance for fields that dual-write: PATCH the server default AND mirror it back
-     * into `plugin.settings[localKey]`. Prevents the re-render from picking up a stale local value
-     * via `toggle.setValue(this.plugin.settings[localKey])`.
-     */
-    private appendDualResetAffordance<K extends keyof LilbeeSettings>(
-        setting: Setting,
-        serverKey: string,
-        localKey: K,
-        label: string,
-    ): Setting {
-        return setting.addExtraButton((btn) =>
-            btn
-                .setIcon(ICON_RESET)
-                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
-                .onClick(async () => {
-                    if (!(serverKey in this.configDefaults)) return;
-                    const def = this.configDefaults[serverKey];
-                    try {
-                        await this.plugin.api.updateConfig({ [serverKey]: def });
-                        this.plugin.settings[localKey] = def as LilbeeSettings[K];
-                        await this.plugin.saveSettings();
-                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.render();
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
-                    }
                 }),
         );
     }
@@ -1447,7 +1456,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_WORKER_POOL_EAGER_START)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ worker_pool_eager_start: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WORKER_POOL_EAGER_START));
@@ -1512,7 +1521,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_FLASH_ATTENTION)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ flash_attention: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FLASH_ATTENTION));
@@ -1669,6 +1678,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
             { integer: true, min: 0, reindex: true },
         );
         this.appendResetAffordance(chunkOverlapSetting, "chunk_overlap", MESSAGES.LABEL_CHUNK_OVERLAP);
+
+        const maxChunksSetting = this.renderHideableNumberField(
+            details,
+            "max_chunks_per_file",
+            MESSAGES.LABEL_MAX_CHUNKS_PER_FILE,
+            MESSAGES.DESC_MAX_CHUNKS_PER_FILE,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(maxChunksSetting, "max_chunks_per_file", MESSAGES.LABEL_MAX_CHUNKS_PER_FILE);
 
         const tesseractSetting = this.renderHideableNumberField(
             details,
@@ -1883,14 +1901,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.appendResetAffordance(mmrSetting, "mmr_lambda", MESSAGES.LABEL_MMR_LAMBDA);
     }
 
-    /** A server-config boolean, registered so loadServerDefaults can fill it. */
+    /** A server-config boolean on a toggle, hidden until loadServerDefaults sees the key. */
     private renderConfigToggle(container: HTMLElement, key: string, name: string, desc: string): void {
         const setting = new Setting(container)
             .setName(name)
             .setDesc(desc)
             .addToggle((toggle) => {
                 toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
+                    if (this.suppressChangeEvents) return;
                     try {
                         await this.plugin.api.updateConfig({ [key]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
@@ -1900,6 +1918,36 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
                 this.serverConfigToggles.set(key, toggle);
             });
+        setting.settingEl.hide();
+        this.serverConfigHideableEls.set(key, setting.settingEl);
+        this.appendResetAffordance(setting, key, name);
+    }
+
+    /** A server-config number on a slider, hidden until loadServerDefaults sees the key. */
+    private renderConfigSlider(
+        container: HTMLElement,
+        key: string,
+        name: string,
+        desc: string,
+        opts: { min: number; max: number; step: number },
+    ): void {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc)
+            .addSlider((slider) => {
+                slider.setLimits(opts.min, opts.max, opts.step).onChange(async (value) => {
+                    if (this.suppressChangeEvents) return;
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+                    }
+                });
+                this.serverConfigSliders.set(key, slider);
+            });
+        setting.settingEl.hide();
+        this.serverConfigHideableEls.set(key, setting.settingEl);
         this.appendResetAffordance(setting, key, name);
     }
 
@@ -2489,7 +2537,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .setDesc(field.desc)
                     .addToggle((toggle) => {
                         toggle.onChange(async (value) => {
-                            if (this.suppressToggleChanges) return;
+                            if (this.suppressChangeEvents) return;
                             try {
                                 await this.plugin.api.updateConfig({ [field.key]: value });
                                 new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
@@ -2612,48 +2660,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
         new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
 
         // Prune raw chunks
-        const pruneSetting = new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_PRUNE_RAW)
-            .setDesc(MESSAGES.DESC_WIKI_PRUNE_RAW)
-            .addToggle((toggle) => {
-                toggle.setValue(this.plugin.settings.wikiPruneRaw);
-                toggle.onChange(async (value) => {
-                    this.plugin.settings.wikiPruneRaw = value;
-                    await this.plugin.saveSettings();
-                    try {
-                        await this.plugin.api.updateConfig({ wiki_prune_raw: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_PRUNE_RAW));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_PRUNE_RAW));
-                    }
-                });
-            });
-        this.appendDualResetAffordance(pruneSetting, "wiki_prune_raw", "wikiPruneRaw", MESSAGES.LABEL_WIKI_PRUNE_RAW);
+        this.renderConfigToggle(
+            subSettingsContainer,
+            "wiki_prune_raw",
+            MESSAGES.LABEL_WIKI_PRUNE_RAW,
+            MESSAGES.DESC_WIKI_PRUNE_RAW,
+        );
 
         // Faithfulness threshold
-        const faithSetting = new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_FAITHFULNESS)
-            .setDesc(MESSAGES.DESC_WIKI_FAITHFULNESS)
-            .addSlider((slider) => {
-                slider
-                    .setLimits(0, 1, 0.05)
-                    .setValue(this.plugin.settings.wikiFaithfulnessThreshold)
-                    .onChange(async (value) => {
-                        this.plugin.settings.wikiFaithfulnessThreshold = value;
-                        await this.plugin.saveSettings();
-                        try {
-                            await this.plugin.api.updateConfig({ wiki_embedding_faithfulness_threshold: value });
-                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_FAITHFULNESS));
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_FAITHFULNESS));
-                        }
-                    });
-            });
-        this.appendDualResetAffordance(
-            faithSetting,
+        this.renderConfigSlider(
+            subSettingsContainer,
             "wiki_embedding_faithfulness_threshold",
-            "wikiFaithfulnessThreshold",
             MESSAGES.LABEL_WIKI_FAITHFULNESS,
+            MESSAGES.DESC_WIKI_FAITHFULNESS,
+            { min: 0, max: 1, step: 0.05 },
         );
 
         // Default search mode

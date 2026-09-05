@@ -45,6 +45,7 @@ import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
+import { addCloseButton } from "../components/close-button";
 import { MESSAGES } from "../locales/en";
 import {
     RETRY_INTERVAL_MS,
@@ -320,7 +321,8 @@ export class ChatView extends ItemView {
 
         // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+        // With the toggle hidden, any narrowed scope is a scope the user cannot see or undo.
+        if (!wikiEnabled && this.plugin.settings.searchChunkType !== SEARCH_CHUNK_TYPE.ALL) {
             this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (wikiEnabled) {
@@ -366,6 +368,7 @@ export class ChatView extends ItemView {
         setIcon(clearBtn, "eraser");
         clearBtn.setAttribute("aria-label", MESSAGES.BUTTON_CLEAR_CHAT);
         clearBtn.addEventListener("click", () => this.clearChat());
+        addCloseButton(actions, this.leaf, MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_CHAT_VIEW));
     }
 
     private createInputArea(container: HTMLElement): void {

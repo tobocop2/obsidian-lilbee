@@ -1,21 +1,14 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { DocumentEntry, DocumentsResponse } from "../types";
 import { ConfirmModal } from "./confirm-modal";
+import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, debounce, DEBOUNCE_MS, relativeTimeFromIso } from "../utils";
-
-const PAGE_SIZE = 20;
-const SCROLL_BOTTOM_THRESHOLD_PX = 200;
+import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
 
 export class DocumentsModal extends Modal {
     private plugin: LilbeePlugin;
-    private offset = 0;
-    private total = 0;
-    private hasMore = true;
-    private isFetching = false;
-    private documents: DocumentEntry[] = [];
-    private selected = new Set<string>();
+    private list: DocumentList | null = null;
+    private unbindScroll: (() => void) | null = null;
     private resultsEl: HTMLElement | null = null;
     private removeBtn: HTMLElement | null = null;
     private searchQuery = "";
@@ -56,97 +49,42 @@ export class DocumentsModal extends Modal {
         this.removeBtn.addEventListener("click", () => void this.removeSelected());
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-documents-results" });
-        this.resultsEl.addEventListener("scroll", this.onScroll);
+        this.list = new DocumentList(
+            this.resultsEl,
+            (limit, offset) => this.plugin.api.listDocuments(this.searchQuery || undefined, limit, offset),
+            { selectable: true, onSelectionChange: () => this.updateRemoveBtn() },
+        );
+        this.unbindScroll = this.list.bindScroll(this.resultsEl);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
-        this.resultsEl?.removeEventListener("scroll", this.onScroll);
+        this.unbindScroll?.();
     }
-
-    private onScroll = (): void => {
-        if (!this.resultsEl || this.isFetching || !this.hasMore) return;
-        const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
-        if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
-            void this.fetchPage();
-        }
-    };
 
     private resetAndFetch(): void {
-        this.offset = 0;
-        this.hasMore = true;
-        this.documents = [];
-        this.selected.clear();
-        if (this.resultsEl) this.resultsEl.empty();
+        if (!this.list) return;
+        this.list.reset();
         this.updateRemoveBtn();
-        void this.fetchPage();
-    }
-
-    private async fetchPage(): Promise<void> {
-        if (this.isFetching) return;
-        this.isFetching = true;
-        try {
-            const response: DocumentsResponse = await this.plugin.api.listDocuments(
-                this.searchQuery || undefined,
-                PAGE_SIZE,
-                this.offset,
-            );
-            this.total = response.total;
-            this.documents.push(...response.documents);
-            this.offset += response.documents.length;
-            this.hasMore = response.has_more;
-
-            for (const doc of response.documents) {
-                this.renderRow(doc);
-            }
-        } catch {
-            new Notice(MESSAGES.ERROR_LOAD_DOCUMENTS);
-        } finally {
-            this.isFetching = false;
-        }
+        void this.list.loadMore();
     }
 
     private updateRemoveBtn(): void {
-        if (!this.removeBtn) return;
-        (this.removeBtn as HTMLButtonElement).disabled = this.selected.size === 0;
-    }
-
-    private renderRow(doc: DocumentEntry): void {
-        if (!this.resultsEl) return;
-        const row = this.resultsEl.createDiv({ cls: "lilbee-documents-row" });
-
-        const checkbox = row.createEl("input", {
-            cls: "lilbee-documents-checkbox",
-            attr: { type: "checkbox" },
-        });
-        checkbox.addEventListener("change", () => {
-            const checked = checkbox.checked;
-            if (checked) {
-                this.selected.add(doc.filename);
-            } else {
-                this.selected.delete(doc.filename);
-            }
-            this.updateRemoveBtn();
-        });
-
-        const nameEl = row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
-        nameEl.setAttribute("title", doc.filename);
-        row.createDiv({ cls: "lilbee-documents-row-chunks", text: `${doc.chunk_count} chunks` });
-        const dateEl = row.createDiv({ cls: "lilbee-documents-row-date", text: relativeTimeFromIso(doc.ingested_at) });
-        if (doc.ingested_at) dateEl.setAttribute("title", doc.ingested_at);
+        if (!this.removeBtn || !this.list) return;
+        (this.removeBtn as HTMLButtonElement).disabled = this.list.selected.length === 0;
     }
 
     private async removeSelected(): Promise<void> {
-        if (this.selected.size === 0) return;
-        const names = Array.from(this.selected);
+        const names = this.list?.selected ?? [];
+        if (names.length === 0) return;
         const confirm = new ConfirmModal(this.app, MESSAGES.NOTICE_CONFIRM_DELETE_DOCS(names.length));
         confirm.open();
         const confirmed = await confirm.result;
         if (!confirmed) return;
         try {
-            const result = await this.plugin.api.removeDocuments(names, true);
+            const result = await this.plugin.api.removeDocuments(names);
             new Notice(MESSAGES.NOTICE_DELETED(result.removed));
             this.resetAndFetch();
         } catch {

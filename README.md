@@ -122,7 +122,7 @@ The pattern works for any vault you've curated:
 
 Whatever it holds becomes searchable, and you can talk to it.
 
-Add a single file from the right-click menu or the command palette. Run **Sync vault** to index everything at once. Background jobs run in a **Task Center**: sync, crawl, wiki build, and model downloads. You keep asking questions while they work.
+Add a single file from the right-click menu or the command palette. Run **Sync vault** to index everything at once. Background jobs run in a **Task Center**: sync, crawl, wiki build, and model downloads. **Chat and search keep working while they run.** The Task Center runs two jobs at a time, so anything you start beyond that waits in the queue for a free slot.
 
 <!-- demo: add | tutorial/#ask | add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question -->
 

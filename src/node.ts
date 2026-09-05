@@ -13,6 +13,7 @@ import {
     readdirSync,
     rmSync,
 } from "fs";
+import { homedir } from "os";
 import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
@@ -22,6 +23,7 @@ const execFileAsync = promisify(execFile);
 /** Injectable Node bindings; exported for test mocking. */
 export const node = {
     spawn,
+    homedir,
     execFile: execFileAsync,
     appendFileSync,
     existsSync,

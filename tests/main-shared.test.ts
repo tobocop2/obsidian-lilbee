@@ -59,6 +59,7 @@ vi.mock("../src/node", () => {
         cpSync: vi.fn(),
         statSync: vi.fn(() => ({ isDirectory: () => false, dev: 1, size: 0 })),
         readdirSync: vi.fn(() => [] as string[]),
+        homedir: () => "/home/u",
         rmSync: vi.fn((p: string) => {
             fsState.files.delete(p);
             fsState.dirs.delete(p);
@@ -142,7 +143,15 @@ vi.mock("../src/server-manager", () => {
 
 import LilbeePlugin from "../src/main";
 import { App, Notice } from "obsidian";
-import { SHARED_PATH } from "../src/types";
+import { NVIDIA_PROBE_STATUS, SHARED_PATH, UNINSTALL_TARGET } from "../src/types";
+import type { GpuDetection } from "../src/types";
+
+/** A probe result, as every install now records one. */
+const DETECTION: GpuDetection = {
+    nvidia: { status: NVIDIA_PROBE_STATUS.MISSING, error: "spawn nvidia-smi ENOENT" },
+    amd: { status: "missing" },
+    detectedAt: "2026-01-01T00:00:00.000Z",
+};
 
 async function createPlugin() {
     const app = new App() as any;
@@ -191,23 +200,30 @@ describe("Shared lilbee version round-trip", () => {
         expect(plugin.getSharedLilbeeVariant()).toBe("");
     });
 
-    it("setSharedLilbeeVariant persists and getSharedLilbeeVariant reads it back", async () => {
+    it("setSharedLilbeeVariant persists the build and the probe that chose it", async () => {
         const plugin = await createPlugin();
-        plugin.setSharedLilbeeVariant("cu125");
+        plugin.setSharedLilbeeVariant("cu125", DETECTION);
         expect(plugin.getSharedLilbeeVariant()).toBe("cu125");
+        expect(plugin.getSharedGpuDetection()).toEqual(DETECTION);
+    });
+
+    it("getSharedGpuDetection returns null before any install records one", async () => {
+        const plugin = await createPlugin();
+        expect(plugin.getSharedGpuDetection()).toBeNull();
     });
 
     it("setSharedLilbeeVariant is a no-op when registry is not initialised", async () => {
         const plugin = await createPlugin();
         (plugin as any).vaultRegistry = null;
-        plugin.setSharedLilbeeVariant("cu125");
+        plugin.setSharedLilbeeVariant("cu125", DETECTION);
         expect(plugin.getSharedLilbeeVariant()).toBe("");
+        expect(plugin.getSharedGpuDetection()).toBeNull();
     });
 
     it("preserves version and variant alongside each other", async () => {
         const plugin = await createPlugin();
         plugin.setSharedLilbeeVersion("v0.5.1");
-        plugin.setSharedLilbeeVariant("cu124");
+        plugin.setSharedLilbeeVariant("cu124", DETECTION);
         expect(plugin.getSharedLilbeeVersion()).toBe("v0.5.1");
         expect(plugin.getSharedLilbeeVariant()).toBe("cu124");
     });
@@ -726,11 +742,13 @@ describe("managed-server uninstall", () => {
 
         const plan = plugin.planServerUninstall()!;
 
-        expect(plan.targets.map((t) => t.path)).toEqual([
+        expect(plan.targets.slice(0, 3).map((t) => t.path)).toEqual([
             `${root}/bin`,
             `${root}/models`,
             `${root}/vaults/${plugin.vaultId}`,
         ]);
+        // The server's unpack cache follows; its path depends on the host platform.
+        expect(plan.targets.slice(3).map((t) => t.kind)).toEqual([UNINSTALL_TARGET.CACHE]);
     });
 
     it("has no plan without a vault registry", async () => {
@@ -774,6 +792,17 @@ describe("managed-server uninstall", () => {
         (plugin as any).vaultRegistry = null;
 
         expect(await plugin.uninstallServer(plan)).toBe(0);
+    });
+
+    it("forgets the build and the probe that chose it", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        plugin.setSharedLilbeeVariant("cu125", DETECTION);
+
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+
+        expect(plugin.getSharedLilbeeVariant()).toBe("");
+        expect(plugin.getSharedGpuDetection()).toBeNull();
     });
 
     it("never starts the managed server once uninstalled", async () => {

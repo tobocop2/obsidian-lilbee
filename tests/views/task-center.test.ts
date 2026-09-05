@@ -4,6 +4,7 @@ import { TaskCenterView, VIEW_TYPE_TASKS } from "../../src/views/task-center";
 import { TaskQueue } from "../../src/task-queue";
 import { TASK_TYPE, TASK_STATUS } from "../../src/types";
 import type LilbeePlugin from "../../src/main";
+import { MESSAGES } from "../../src/locales/en";
 import { ConfirmModal } from "../../src/views/confirm-modal";
 
 let mockCancelConfirmResult = true;
@@ -97,6 +98,17 @@ describe("TaskCenterView.onOpen", () => {
         const clearBtn = contentEl.find("lilbee-tasks-clear");
         expect(clearBtn).not.toBeNull();
         expect(clearBtn!.textContent).toBe("Clear");
+    });
+
+    it("shows a close icon in the toolbar that detaches the leaf", () => {
+        const closeBtn = contentEl.find("lilbee-panel-close");
+        expect(closeBtn).not.toBeNull();
+        expect(closeBtn!.getAttribute("aria-label")).toBe(MESSAGES.LABEL_CLOSE_VIEW(MESSAGES.LABEL_TASKS_VIEW));
+
+        const leaf = (view as any).leaf as WorkspaceLeaf;
+        expect(leaf.detach).not.toHaveBeenCalled();
+        closeBtn!.trigger("click");
+        expect(leaf.detach).toHaveBeenCalledTimes(1);
     });
 
     it("renders counters in header", () => {
