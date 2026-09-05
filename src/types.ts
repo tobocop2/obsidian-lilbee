@@ -743,6 +743,7 @@ export const LOG_FILE = {
     SERVER: "server.log",
     FAULT: "server-fault.log",
     SPAWN_CRASH: "spawn-crash.log",
+    SERVER_STDIO: "server-stdio.log",
     PLUGIN: "plugin.log",
 } as const;
 

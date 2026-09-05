@@ -14,25 +14,11 @@ import type { ServerManagerOptions } from "../src/server-manager";
 
 // ── Mock child process ──────────────────────────────────────────────
 
-function mockStream() {
-    const handlers: Record<string, Function[]> = {};
-    return {
-        on(event: string, handler: Function) {
-            (handlers[event] ??= []).push(handler);
-        },
-        _emit(event: string, ...args: unknown[]) {
-            for (const h of handlers[event] ?? []) h(...args);
-        },
-    };
-}
-
 function mockChild(pid = 1234) {
     const handlers: Record<string, Function[]> = {};
     const onceHandlers: Record<string, Function[]> = {};
     return {
         pid,
-        stdout: mockStream(),
-        stderr: mockStream(),
         on(event: string, handler: Function) {
             (handlers[event] ??= []).push(handler);
         },
@@ -67,8 +53,12 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
 }
 
 const SESSION_JSON = JSON.stringify({ token: "tok-1" });
+const STDIO_FD = 7;
 
-/** readFileSync router: port file answers, server.json behaves per *session*. */
+/** What the spawned server has written to its stdio log; null means the file is unreadable. */
+let stdioLogText: string | null = null;
+
+/** readFileSync router: port file answers, server.json behaves per *session*, stdio log per *stdioLogText*. */
 function fileRouter(session: "present" | "absent") {
     return (p: unknown) => {
         const path = String(p);
@@ -76,6 +66,10 @@ function fileRouter(session: "present" | "absent") {
         if (path.endsWith("server.json")) {
             if (session === "absent") throw new Error("ENOENT");
             return SESSION_JSON;
+        }
+        if (path.endsWith("server-stdio.log")) {
+            if (stdioLogText === null) throw new Error("ENOENT");
+            return stdioLogText;
         }
         throw new Error(`unexpected read: ${path}`);
     };
@@ -251,6 +245,9 @@ describe("ServerManager", () => {
     let readFileSyncSpy: ReturnType<typeof vi.spyOn>;
     let unlinkSyncSpy: ReturnType<typeof vi.spyOn>;
     let appendFileSyncSpy: ReturnType<typeof vi.spyOn>;
+    let openSyncSpy: ReturnType<typeof vi.spyOn>;
+    let closeSyncSpy: ReturnType<typeof vi.spyOn>;
+    let mkdirSyncSpy: ReturnType<typeof vi.spyOn>;
     let children: MockChild[];
 
     /** The most recently spawned mock child. */
@@ -261,6 +258,10 @@ describe("ServerManager", () => {
     beforeEach(() => {
         vi.useFakeTimers();
         children = [];
+        stdioLogText = null;
+        openSyncSpy = vi.spyOn(node, "openSync").mockReturnValue(STDIO_FD);
+        closeSyncSpy = vi.spyOn(node, "closeSync").mockImplementation(() => {});
+        mkdirSyncSpy = vi.spyOn(node, "mkdirSync").mockImplementation(() => undefined);
         spawnSpy = vi.spyOn(node, "spawn").mockImplementation(() => {
             const c = mockChild(1000 + children.length);
             children.push(c);
@@ -329,7 +330,7 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledWith(
                 "/usr/local/bin/lilbee",
                 ["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"],
-                expect.objectContaining({ stdio: ["ignore", "pipe", "pipe"] }),
+                expect.objectContaining({ stdio: ["ignore", STDIO_FD, STDIO_FD] }),
             );
             expect(mgr.state).toBe("ready");
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
@@ -934,10 +935,8 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
             const startP = mgr.start();
             startP.catch(() => {});
-            (await spawnedChild()).stdout._emit(
-                "data",
-                Buffer.from("Another lilbee server is already running for this installation.\n"),
-            );
+            await spawnedChild();
+            stdioLogText = "Another lilbee server is already running for this installation.\n";
             child()._emit("exit", LOCK_REFUSAL_EXIT_CODE, null);
             await vi.advanceTimersByTimeAsync(1000);
             await expect(startP).rejects.toBeInstanceOf(ScopeHeldError);
@@ -1090,22 +1089,16 @@ describe("ServerManager", () => {
     // ── edge coverage ───────────────────────────────────────────────
 
     describe("edges", () => {
-        it("tolerates a child with no output streams", async () => {
-            spawnSpy.mockImplementationOnce(() => {
-                const c = mockChild();
-                (c as any).stdout = null;
-                (c as any).stderr = null;
-                children.push(c);
-                return c as any;
-            });
+        it("lastOutput is empty when the stdio log cannot be read", async () => {
             const mgr = await startFresh();
+            stdioLogText = null;
             expect(mgr.state).toBe("ready");
             expect(mgr.lastOutput).toBe("");
         });
 
         it("skips empty output lines", async () => {
             const mgr = await startFresh();
-            child().stdout._emit("data", Buffer.from("\n\nreal\n"));
+            stdioLogText = "\n\nreal\n";
             expect(mgr.lastOutput).toBe("real");
         });
 
@@ -1221,21 +1214,67 @@ describe("ServerManager", () => {
     // ── output capture ──────────────────────────────────────────────
 
     describe("output capture", () => {
-        it("captures stdout and stderr lines across chunk boundaries", async () => {
+        it("spawns the server with its stdio on the log file and closes the parent's descriptor", async () => {
+            await startFresh();
+            expect(openSyncSpy).toHaveBeenCalledWith("/tmp/data/logs/server-stdio.log", "w");
+            expect(spawnSpy).toHaveBeenCalledWith(
+                "/usr/local/bin/lilbee",
+                expect.any(Array),
+                expect.objectContaining({ stdio: ["ignore", STDIO_FD, STDIO_FD] }),
+            );
+            expect(closeSyncSpy).toHaveBeenCalledWith(STDIO_FD);
+            expect(mkdirSyncSpy).not.toHaveBeenCalled();
+        });
+
+        it("closes the descriptor even when spawn throws", async () => {
+            spawnSpy.mockImplementationOnce(() => {
+                throw new Error("EINVAL");
+            });
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start().catch(() => {});
+            expect(closeSyncSpy).toHaveBeenCalledWith(STDIO_FD);
+            expect(mgr.state).not.toBe("ready");
+        });
+
+        it("creates the logs dir before opening the stdio log", async () => {
+            vi.spyOn(node, "existsSync").mockImplementation((p) => !String(p).endsWith("/logs"));
+            await startFresh();
+            expect(mkdirSyncSpy).toHaveBeenCalledWith("/tmp/data/logs", { recursive: true });
+            expect(openSyncSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([
+            ["an Error", new Error("EACCES"), "EACCES"],
+            ["a bare value", "disk gone", "disk gone"],
+        ])("spawns without capture and says so when opening the stdio log throws %s", async (_, thrown, text) => {
+            openSyncSpy.mockImplementation(() => {
+                throw thrown;
+            });
+            const journal: string[] = [];
+            const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
+            expect(spawnSpy).toHaveBeenCalledWith(
+                "/usr/local/bin/lilbee",
+                expect.any(Array),
+                expect.objectContaining({ stdio: ["ignore", "ignore", "ignore"] }),
+            );
+            expect(closeSyncSpy).not.toHaveBeenCalled();
+            stdioLogText = "stale text from an earlier spawn";
+            expect(mgr.lastOutput).toBe("");
+            expect(journal).toContain(`server output not captured: ${text}`);
+        });
+
+        it.each([
+            ["LF", "\n"],
+            ["CRLF", "\r\n"],
+        ])("reads stdout and stderr lines from the stdio log with %s endings", async (_, eol) => {
             const mgr = await startFresh();
-            child().stdout._emit("data", Buffer.from("hello "));
-            child().stdout._emit("data", Buffer.from("world\npartial"));
-            child().stderr._emit("data", Buffer.from("warn: low disk\n"));
-            expect(mgr.lastOutput).toContain("hello world");
-            expect(mgr.lastOutput).toContain("warn: low disk");
-            expect(mgr.lastOutput).not.toContain("partial");
+            stdioLogText = ["hello world", "warn: low disk", "partial"].join(eol);
+            expect(mgr.lastOutput.split("\n")).toEqual(["hello world", "warn: low disk", "partial"]);
         });
 
         it("keeps only the newest lines", async () => {
             const mgr = await startFresh();
-            for (let i = 0; i < 30; i++) {
-                child().stdout._emit("data", Buffer.from(`line-${i}\n`));
-            }
+            stdioLogText = Array.from({ length: 30 }, (_, i) => `line-${i}`).join("\n") + "\n";
             expect(mgr.lastOutput).not.toContain("line-0\n");
             expect(mgr.lastOutput).toContain("line-29");
         });

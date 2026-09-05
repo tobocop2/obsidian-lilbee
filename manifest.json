@@ -1,7 +1,7 @@
 {
 	"id": "lilbee",
 	"name": "lilbee",
-	"version": "0.6.92",
+	"version": "0.6.93",
 	"minAppVersion": "1.8.7",
 	"description": "A local AI search engine and native model manager for your vault. One-click local models, cited answers (local RAG), and a web crawler. Works with Ollama, LM Studio, and frontier models too.",
 	"author": "tobocop2",
