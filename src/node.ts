@@ -12,6 +12,8 @@ import {
     renameSync,
     readdirSync,
     rmSync,
+    openSync,
+    closeSync,
 } from "fs";
 import { homedir } from "os";
 import { basename, join, resolve, dirname } from "path";
@@ -37,6 +39,8 @@ export const node = {
     renameSync,
     readdirSync,
     rmSync,
+    openSync,
+    closeSync,
     join,
     basename,
     resolve,

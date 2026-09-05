@@ -1,5 +1,4 @@
 import type { ChildProcess } from "child_process";
-import type { Readable } from "stream";
 import type { ServerState } from "./types";
 import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE, bearerHeaders } from "./types";
 import { node } from "./node";
@@ -226,7 +225,10 @@ export class ServerManager {
     private restartTimer: number | null = null;
     private _actualPort: number | null = null;
     private _spawnedVersion = "";
+    /** This supervisor's own notes about the child (exit cause, launch failure). */
     private _outputLines: string[] = [];
+    /** True while the current child writes its stdout and stderr to the stdio log. */
+    private stdioLogged = false;
     /** Set when the child can no longer come up (spawn error, refusal, restarts exhausted); aborts discovery. */
     private fatalStartError: Error | null = null;
     /** Bumped per start(); a superseded attempt's discovery loop steps aside. */
@@ -237,8 +239,19 @@ export class ServerManager {
         this.opts = opts;
     }
 
+    /** Newest lines the server wrote to its stdio log, followed by this supervisor's notes. */
     get lastOutput(): string {
-        return this._outputLines.join("\n");
+        return [...this.stdioTail(), ...this._outputLines].join("\n");
+    }
+
+    private stdioTail(): string[] {
+        if (!this.stdioLogged) return [];
+        try {
+            const lines = node.readFileSync(this.stdioLogPath, "utf-8").split(/\r?\n/);
+            return lines.filter((line) => line.length > 0).slice(-ServerManager.MAX_OUTPUT_LINES);
+        } catch {
+            return [];
+        }
     }
 
     get state(): ServerState {
@@ -269,6 +282,10 @@ export class ServerManager {
 
     private get crashLogPath(): string {
         return `${this.opts.dataDir}/${LOGS_DIR}/${LOG_FILE.SPAWN_CRASH}`;
+    }
+
+    private get stdioLogPath(): string {
+        return `${this.opts.dataDir}/${LOGS_DIR}/${LOG_FILE.SERVER_STDIO}`;
     }
 
     /** Persist the output ring buffer so a crash survives an Obsidian restart. */
@@ -343,27 +360,18 @@ export class ServerManager {
 
     private pushOutputLine(line: string): void {
         this._outputLines.push(line);
-        if (this._outputLines.length > ServerManager.MAX_OUTPUT_LINES) {
-            this._outputLines.shift();
+    }
+
+    /** Descriptor for the child's stdout/stderr; a file it owns outlives a plugin reload, a pipe into this renderer does not. */
+    private openStdioLog(): number | null {
+        try {
+            const dir = `${this.opts.dataDir}/${LOGS_DIR}`;
+            if (!node.existsSync(dir)) node.mkdirSync(dir, { recursive: true });
+            return node.openSync(this.stdioLogPath, "w");
+        } catch (err) {
+            this.journal(`server output not captured: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
         }
-    }
-
-    private attachOutputCapture(child: ChildProcess): void {
-        this.attachStreamCapture(child.stdout);
-        this.attachStreamCapture(child.stderr);
-    }
-
-    private attachStreamCapture(stream: Readable | null): void {
-        if (!stream) return;
-        let partial = "";
-        stream.on("data", (chunk: Buffer) => {
-            partial += chunk.toString();
-            const lines = partial.split("\n");
-            partial = lines.pop()!;
-            for (const line of lines) {
-                if (line.length > 0) this.pushOutputLine(line);
-            }
-        });
     }
 
     private attachLifecycleHandlers(child: ChildProcess): void {
@@ -434,15 +442,23 @@ export class ServerManager {
         // No --port: the server binds 0, the kernel picks a free port, and
         // the chosen value is written to data/server.port for us to read.
         const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
-        const child = node.spawn(this.opts.binaryPath, args, {
-            env: this.buildSpawnEnv(),
-            stdio: ["ignore", "pipe", "pipe"],
-            // POSIX: own process group so stop() can signal the server *and* its
-            // worker forks as a unit. Windows uses taskkill /t for the tree.
-            detached: process.platform !== PLATFORM.WIN32,
-        });
+        const fd = this.openStdioLog();
+        const out = fd ?? "ignore";
+        let child: ChildProcess;
+        try {
+            child = node.spawn(this.opts.binaryPath, args, {
+                env: this.buildSpawnEnv(),
+                stdio: ["ignore", out, out],
+                // POSIX: own process group so stop() can signal the server *and* its
+                // worker forks as a unit. Windows uses taskkill /t for the tree.
+                detached: process.platform !== PLATFORM.WIN32,
+            });
+        } finally {
+            // The child holds its own copy of the descriptor from here on.
+            if (fd !== null) node.closeSync(fd);
+        }
+        this.stdioLogged = fd !== null;
         this.childExit = new Promise((resolve) => child.once("exit", () => resolve()));
-        this.attachOutputCapture(child);
         this.attachLifecycleHandlers(child);
         return child;
     }
@@ -456,6 +472,7 @@ export class ServerManager {
         this.fatalStartError = null;
         this.setState(SERVER_STATE.STARTING);
         this._outputLines = [];
+        this.stdioLogged = false;
 
         // Adopt-first: a healthy server already serving this data dir is the
         // singleton, not garbage. A plugin reload re-attaches instead of
