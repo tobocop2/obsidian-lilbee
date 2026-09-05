@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.3",
-    "lilbee": "^0.6.98",
+    "lilbee": "^0.6.99",
     "node-fetch": "^3.3.2"
   },
   "overrides": {
