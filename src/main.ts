@@ -2555,6 +2555,13 @@ export default class LilbeePlugin extends Plugin {
         for (const p of paths) this.failedAddPaths.add(p);
     }
 
+    /** Enqueue a model pull and open the Task Center so the download is visible. */
+    enqueuePull(name: string): string | null {
+        const taskId = this.taskQueue.enqueue(name, TASK_TYPE.PULL);
+        if (taskId !== null) void this.activateTaskView();
+        return taskId;
+    }
+
     async activateTaskView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
         if (existing.length > 0) {

@@ -26,7 +26,7 @@ import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, compactionMarkerText } 
 import { electronDialog } from "../../src/utils/file-dialog";
 import { ok, err } from "../../src/result";
 import type LilbeePlugin from "../../src/main";
-import { SSE_EVENT } from "../../src/types";
+import { SSE_EVENT, TASK_TYPE } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
 
 const mockChatViewConfirmResult = true;
@@ -147,6 +147,7 @@ function triggerText(container: MockElement, triggerCls: string): string {
 }
 
 function makePlugin(): LilbeePlugin {
+    const taskQueue = new TaskQueue();
     return {
         api: {
             chatStream: vi.fn(),
@@ -250,7 +251,8 @@ function makePlugin(): LilbeePlugin {
         assertFleetReady: vi.fn().mockReturnValue(true),
         serverSupportsSessions: vi.fn().mockReturnValue(true),
         refreshMemoryViews: vi.fn(),
-        taskQueue: new TaskQueue(),
+        taskQueue,
+        enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
         app: {
             vault: {
                 getAbstractFileByPath: vi.fn().mockReturnValue(null),
@@ -4040,10 +4042,10 @@ describe("ChatView — embedding model selector", () => {
 });
 
 describe("ChatView — queue-full notice on auto-pull", () => {
-    it("shows NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+    it("shows NOTICE_QUEUE_FULL when enqueuePull returns null", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+        plugin.enqueuePull = vi.fn(() => null) as any;
         plugin.api.pullModel = vi.fn();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();

@@ -2182,7 +2182,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async pullAndSetReranker(entry: CatalogEntry): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.enqueuePull(`Pull ${entry.display_name}`);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -2333,7 +2333,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async pullAndSetVision(entry: CatalogEntry): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.enqueuePull(`Pull ${entry.display_name}`);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -3136,7 +3136,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async streamChatPull(entry: CatalogEntry): Promise<boolean> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.enqueuePull(`Pull ${entry.display_name}`);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return false;

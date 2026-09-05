@@ -899,7 +899,7 @@ export class CatalogModal extends Modal {
     }
 
     private async executePull(entry: CatalogEntry): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.enqueuePull(`Pull ${entry.hf_repo}`);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
