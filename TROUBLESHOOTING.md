@@ -91,7 +91,7 @@ Fill in both paths from the settings tab's storage section. If it crashes here t
 - **macOS Gatekeeper.** The server binary is unsigned, and the plugin clears the quarantine flag automatically. If macOS still blocks it: System Settings → Privacy & Security → **Allow Anyway**.
 - **Antivirus / SmartScreen on Windows.** Some scanners quarantine the freshly downloaded exe. Add an exclusion for `%LOCALAPPDATA%\lilbee\bin` and re-run the download from settings.
 - **Outdated NVIDIA drivers.** The CUDA build needs current drivers; update them if the server crashes on startup with a GPU error.
-- **Managed mode covers Apple Silicon and Intel Macs, Linux x64, and Windows x64.** On any other machine, use external mode: `pip install lilbee`, run `lilbee serve` yourself, and point the plugin at it from Settings → Connection.
+- **Managed mode covers Apple Silicon and Intel Macs, Linux x64, and Windows x64.** On any other machine, use external mode: [install lilbee](https://github.com/tobocop2/lilbee#install) (for example `pip install lilbee`), run `lilbee serve` yourself, and point the plugin at it from Settings → Connection.
 - **Disk space.** Models run from hundreds of MB to several GB each. A download or index job failing partway through is often just a full disk.
 - **RAM / VRAM exhaustion.** Crashes during chat or indexing usually mean the model doesn't fit in memory. Try a smaller model from the catalog, or close other heavy apps.
 - **Linux: the OOM killer.** If the server dies with `signal SIGKILL` in `spawn-crash.log` and nothing in its own logs, the kernel likely reclaimed its memory. Check with `journalctl -k | grep -i oom`, then free up RAM or pick smaller models.
