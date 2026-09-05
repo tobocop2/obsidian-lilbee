@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.3",
-    "lilbee": "^0.6.99"
+    "lilbee": "^0.6.100"
   },
   "overrides": {
     "brace-expansion@<1.1.18": "^1.1.18",
