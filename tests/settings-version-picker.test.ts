@@ -7,9 +7,9 @@ import type { GpuDetection } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import type LilbeePlugin from "../src/main";
 
-/** The transport the launcher lists releases over; each test serves GitHub's answer through it. */
+/** The global fetch the launcher lists releases over outside a browser runtime; each test serves GitHub's answer through it. */
 const fetchStub = vi.hoisted(() => vi.fn());
-vi.mock("node-fetch", () => ({ default: fetchStub }));
+vi.stubGlobal("fetch", fetchStub);
 // The real release listing runs; only the GPU probe is pinned so no host command is spawned.
 vi.mock("lilbee", async (importOriginal) => ({
     ...(await importOriginal<typeof import("lilbee")>()),

@@ -232,6 +232,7 @@ vi.mock("../src/server-binary", () => ({
 
 vi.mock("../src/node", () => ({
     node: {
+        homedir: vi.fn(() => "/Users/test"),
         spawn: vi.fn(),
         execFile: vi.fn(),
         existsSync: vi.fn(),

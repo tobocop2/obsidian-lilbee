@@ -143,7 +143,7 @@ export function buildZip(bundle: DiagnosticsBundle): Uint8Array {
 
 /** Returns ~/Downloads when present, otherwise the given fallback dir. */
 export function resolveOutputDir(fallbackDir: string): string {
-    const home = process.env.HOME ?? process.env.USERPROFILE;
+    const home = node.homedir();
     if (home) {
         const downloads = node.join(home, "Downloads");
         try {

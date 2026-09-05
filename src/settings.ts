@@ -1283,7 +1283,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.plugin.settings.ragSystemPrompt = value;
                         await this.plugin.saveSettings();
                     });
-                this.serverConfigInputs.set("rag_system_prompt", text.inputEl as unknown as HTMLInputElement);
+                this.serverConfigInputs.set("rag_system_prompt", text.inputEl);
             });
         this.appendLocalResetAffordance(ragPromptSetting, "ragSystemPrompt", MESSAGES.LABEL_RAG_SYSTEM_PROMPT);
 
@@ -1297,7 +1297,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.plugin.settings.generalSystemPrompt = value;
                         await this.plugin.saveSettings();
                     });
-                this.serverConfigInputs.set("general_system_prompt", text.inputEl as unknown as HTMLInputElement);
+                this.serverConfigInputs.set("general_system_prompt", text.inputEl);
             });
         this.appendLocalResetAffordance(
             generalPromptSetting,

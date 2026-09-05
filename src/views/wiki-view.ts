@@ -194,9 +194,7 @@ export class WikiView extends ItemView {
                 if (event.event === SSE_EVENT.ERROR) {
                     // The payload is the server's text, not an Error, so the
                     // generic error formatter would drop it for "unknown error".
-                    throw new Error(
-                        extractSseErrorMessage(event.data as { message?: string } | string, MESSAGES.ERROR_UNKNOWN),
-                    );
+                    throw new Error(extractSseErrorMessage(event.data, MESSAGES.ERROR_UNKNOWN));
                 }
                 if (event.event === SSE_EVENT.WIKI_PHASE || event.event === SSE_EVENT.WIKI_PAGE) {
                     // Still indeterminate: one page emits one wiki_page event,

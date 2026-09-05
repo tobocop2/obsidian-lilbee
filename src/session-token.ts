@@ -20,7 +20,7 @@ import { PLATFORM } from "./types";
 const MAX_WALK_UP_DEPTH = 32;
 
 export function getDefaultLilbeeDataRoot(): string | null {
-    const home = process.env.HOME ?? process.env.USERPROFILE;
+    const home = node.homedir();
     if (!home) return null;
 
     if (process.platform === PLATFORM.DARWIN) {

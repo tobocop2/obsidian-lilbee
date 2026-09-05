@@ -27,42 +27,40 @@ describe("session-token", () => {
     describe("getDefaultLilbeeDataRoot()", () => {
         it("returns macOS path when platform is darwin", () => {
             setPlatform("darwin");
-            process.env.HOME = "/Users/alice";
+            vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
             expect(getDefaultLilbeeDataRoot()).toBe("/Users/alice/Library/Application Support/lilbee");
         });
 
-        it("returns null when no HOME or USERPROFILE is set", () => {
+        it("returns null when the home dir is unknown", () => {
             setPlatform("darwin");
-            delete process.env.HOME;
-            delete process.env.USERPROFILE;
+            vi.spyOn(node, "homedir").mockReturnValue("");
             expect(getDefaultLilbeeDataRoot()).toBeNull();
         });
 
-        it("uses USERPROFILE as fallback when HOME is missing", () => {
+        it("builds the windows path from the home dir when LOCALAPPDATA is unset", () => {
             setPlatform("win32");
-            delete process.env.HOME;
-            process.env.USERPROFILE = "C:\\Users\\alice";
+            vi.spyOn(node, "homedir").mockReturnValue("C:\\Users\\alice");
             delete process.env.LOCALAPPDATA;
             expect(getDefaultLilbeeDataRoot()).toBe("C:\\Users\\alice/AppData/Local/lilbee");
         });
 
         it("uses LOCALAPPDATA on windows when set", () => {
             setPlatform("win32");
-            process.env.HOME = "C:\\Users\\alice";
+            vi.spyOn(node, "homedir").mockReturnValue("C:\\Users\\alice");
             process.env.LOCALAPPDATA = "C:\\Users\\alice\\AppData\\Local";
             expect(getDefaultLilbeeDataRoot()).toBe("C:\\Users\\alice\\AppData\\Local/lilbee");
         });
 
         it("uses XDG_DATA_HOME on linux when set", () => {
             setPlatform("linux");
-            process.env.HOME = "/home/alice";
+            vi.spyOn(node, "homedir").mockReturnValue("/home/alice");
             process.env.XDG_DATA_HOME = "/home/alice/xdg";
             expect(getDefaultLilbeeDataRoot()).toBe("/home/alice/xdg/lilbee");
         });
 
         it("falls back to ~/.local/share on linux when XDG is unset", () => {
             setPlatform("linux");
-            process.env.HOME = "/home/alice";
+            vi.spyOn(node, "homedir").mockReturnValue("/home/alice");
             delete process.env.XDG_DATA_HOME;
             expect(getDefaultLilbeeDataRoot()).toBe("/home/alice/.local/share/lilbee");
         });
@@ -95,7 +93,7 @@ describe("session-token", () => {
         it("falls back to the platform default when nothing else matches", () => {
             delete process.env.LILBEE_DATA;
             setPlatform("darwin");
-            process.env.HOME = "/Users/alice";
+            vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
             vi.spyOn(node, "existsSync").mockReturnValue(false);
             expect(resolveExternalDataRoot("/vault")).toBe("/Users/alice/Library/Application Support/lilbee");
         });
@@ -103,7 +101,7 @@ describe("session-token", () => {
         it("skips local discovery when vaultPath is null", () => {
             delete process.env.LILBEE_DATA;
             setPlatform("darwin");
-            process.env.HOME = "/Users/alice";
+            vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
             const spy = vi.spyOn(node, "existsSync").mockReturnValue(false);
             expect(resolveExternalDataRoot(null)).toBe("/Users/alice/Library/Application Support/lilbee");
             expect(spy).not.toHaveBeenCalled();

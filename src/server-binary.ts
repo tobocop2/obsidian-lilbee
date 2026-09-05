@@ -1,4 +1,3 @@
-import nodeFetch from "node-fetch";
 import {
     DownloadCanceledError,
     assetNameFor,
@@ -11,7 +10,6 @@ import {
     listReleases as listPackageReleases,
     type DownloadProgress,
     type EnsureResult as LauncherEnsureResult,
-    type FetchLike,
     type GpuDetection as LauncherDetection,
     type Host,
     type InstalledBinary,
@@ -42,9 +40,6 @@ export interface EnsureResult extends InstalledBinary {
     detection: GpuDetection | null;
 }
 export { DownloadCanceledError, isDevBuild, isDownloadCanceled };
-
-// Node's https, not the renderer's fetch: GitHub's asset redirect fails CORS in the renderer.
-const fetch: FetchLike = nodeFetch;
 
 const FLAT_BINARY_NAME = "lilbee";
 const WINDOWS_EXE_SUFFIX = ".exe";
@@ -114,12 +109,12 @@ async function withPluginWording<T>(work: Promise<T>): Promise<T> {
 
 /** Recent installable releases for the version picker, newest first, dev builds included when asked. */
 export async function listReleases(includeDev: boolean): Promise<ReleaseInfo[]> {
-    return withPluginWording(listPackageReleases({ includeDev, host: await releaseHost(), fetch }));
+    return withPluginWording(listPackageReleases({ includeDev, host: await releaseHost() }));
 }
 
 /** The newest installable release, honouring the dev-build preference. */
 export async function getLatestRelease(includeDev: boolean): Promise<ReleaseInfo> {
-    return withPluginWording(latestRelease({ includeDev, host: await releaseHost(), fetch }));
+    return withPluginWording(latestRelease({ includeDev, host: await releaseHost() }));
 }
 
 export function checkForUpdate(currentVersion: string, latestTag: string): boolean {
@@ -203,7 +198,7 @@ export class ServerBinary {
             if (installed !== null) return { ...installed, source: ENSURE_SOURCE.CACHE, detection: null };
         }
         const { detection, ...result } = await withPluginWording(
-            ensureBinary({ ...options, cacheDir: this.binDir, host: await releaseHost(), fetch, requireDigest: true }),
+            ensureBinary({ ...options, cacheDir: this.binDir, host: await releaseHost(), requireDigest: true }),
         );
         if (result.source === ENSURE_SOURCE.DOWNLOAD && process.platform === PLATFORM.DARWIN) {
             await clearQuarantine(result.path, onQuarantineFailed);

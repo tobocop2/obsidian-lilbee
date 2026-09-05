@@ -41,7 +41,7 @@ describe("exportDiagnostics", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         Notice.clear();
-        vi.stubEnv("HOME", "/Users/alice");
+        vi.spyOn(node, "homedir").mockReturnValue("/Users/alice");
         writeText = vi.fn().mockResolvedValue(undefined);
         vi.stubGlobal("navigator", { clipboard: { writeText } });
         vi.mocked(node.writeFileSync).mockImplementation(() => undefined);
