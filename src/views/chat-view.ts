@@ -232,6 +232,8 @@ export class ChatView extends ItemView {
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: number | null = null;
     private retryCount = 0;
+    /** Set by onClose; in-flight fetches must not re-arm the retry after it. */
+    private closed = false;
     private emptyStateEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
@@ -252,6 +254,7 @@ export class ChatView extends ItemView {
     }
 
     async onOpen(): Promise<void> {
+        this.closed = false;
         const container = this.containerEl.children[1] as HTMLElement;
         container.empty();
         container.addClass("lilbee-chat-container");
@@ -263,6 +266,7 @@ export class ChatView extends ItemView {
     }
 
     async onClose(): Promise<void> {
+        this.closed = true;
         this.streamController?.abort();
         this.pullController?.abort();
         if (this.retryTimer) {
@@ -435,6 +439,7 @@ export class ChatView extends ItemView {
             this.plugin.api.catalog({ task: MODEL_TASK.RERANK }).catch(() => null),
         ])
             .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig, visionCatalog, rerankCatalog]) => {
+                if (this.closed) return;
                 if (this.retryTimer) {
                     window.clearTimeout(this.retryTimer);
                     this.retryTimer = null;
@@ -454,7 +459,11 @@ export class ChatView extends ItemView {
                 this.renderChatModeToggle(serverConfig);
                 this.renderHealthWarnings();
 
-                if (this.chatInstalled.length === 0) {
+                // Count what the rail can actually offer, not the installed
+                // registry: hosted rows are selectable without being installed,
+                // so a frontier-only user was told to install a model they were
+                // already running, and the retry below never stopped.
+                if (this.chatOptionGroups().flat().length === 0) {
                     this.showEmptyState();
                     this.retryTimer = window.setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
                 } else {
@@ -462,6 +471,7 @@ export class ChatView extends ItemView {
                 }
             })
             .catch(() => {
+                if (this.closed) return;
                 this.retryCount++;
                 const connecting = this.retryCount < ChatView.OFFLINE_THRESHOLD;
                 const label = connecting ? MESSAGES.LABEL_CONNECTING : MESSAGES.LABEL_OFFLINE;
