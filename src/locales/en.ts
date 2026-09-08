@@ -493,11 +493,12 @@ export const MESSAGES = {
         "Obsidian does not manage the lilbee server executable or its models, this plugin does. " +
         "Removing the plugin from Obsidian's Community plugins pane leaves both on disk. Uninstall here first.",
     CALLOUT_UNINSTALL_FIRST:
-        "Removing the plugin does not remove the server. The executable, the downloaded models, and this vault's " +
-        "index live outside your vault, so Obsidian never touches them. Uninstall here before you remove the plugin " +
-        "and nothing is left behind.",
+        "Removing the plugin does not remove the server. The executable, this vault's index and saved chats, and " +
+        "the shared model cache live outside your vault. Obsidian never touches them. Uninstall here before you " +
+        "remove the plugin and nothing is left behind.",
     DESC_UNINSTALL_SERVER: (size: string) =>
-        `Deletes the executable, the models, and this vault's index. Frees ${size}. Your notes are not touched.`,
+        `Deletes the executable, this vault's index and saved chats, and the models every vault on this computer ` +
+        `shares. Frees ${size}. Your notes are not touched.`,
     DESC_INSTALL_SERVER: (size: string) =>
         `Downloads the lilbee server, about ${size}. Models are pulled on demand afterwards.`,
     DESC_SERVER_DOWNLOADING: "The lilbee server is downloading. Progress is in the status bar.",
@@ -506,11 +507,11 @@ export const MESSAGES = {
 
     CONFIRM_UNINSTALL_TITLE: "Uninstall the lilbee server?",
     CONFIRM_UNINSTALL_BODY:
-        "This removes everything lilbee downloaded or built for this vault. It cannot be undone, but you can " +
-        "install the server again at any time.",
+        "This removes what lilbee downloaded or built. It deletes this vault's saved chats and the models that " +
+        "every vault on this computer shares. You cannot undo it, but you can install the server again at any time.",
     LABEL_UNINSTALL_BINARY: "Server executable",
-    LABEL_UNINSTALL_MODELS: "Downloaded models",
-    LABEL_UNINSTALL_INDEX: "Search index for this vault",
+    LABEL_UNINSTALL_MODELS: "Models shared by every vault on this computer",
+    LABEL_UNINSTALL_INDEX: "This vault's index, saved chats, and logs",
     LABEL_UNINSTALL_CACHE: "Unpacked server files",
     LABEL_UNINSTALL_KEEP: "Your notes and attachments",
     LABEL_UNINSTALL_KEEP_VALUE: "untouched",

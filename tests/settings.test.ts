@@ -302,6 +302,8 @@ interface Captured {
     dropdownByName: Map<string, DropdownOnChange>;
     textAreaByName: Map<string, TextOnChange>;
     sliderByName: Map<string, SliderOnChange>;
+    /** Description text each row was given, keyed by the row's display name. */
+    descByName: Map<string, string>;
     /** Every value pushed into a row's slider via setValue, in call order. */
     sliderSetValuesByName: Map<string, number[]>;
     textOnChanges: TextOnChange[];
@@ -347,11 +349,18 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const textAreaByName = new Map<string, TextOnChange>();
     const sliderByName = new Map<string, SliderOnChange>();
     const sliderSetValuesByName = new Map<string, number[]>();
+    const descByName = new Map<string, string>();
     let currentName = "";
     const origSetName = Setting.prototype.setName;
     Setting.prototype.setName = function (name: string) {
         currentName = typeof name === "string" ? name : String(name);
         return origSetName.call(this, name);
+    };
+
+    const origSetDesc = Setting.prototype.setDesc;
+    Setting.prototype.setDesc = function (desc: string) {
+        if (currentName) descByName.set(currentName, desc);
+        return origSetDesc.call(this, desc);
     };
 
     const origAddText = Setting.prototype.addText;
@@ -527,6 +536,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         fn();
     } finally {
         Setting.prototype.setName = origSetName;
+        Setting.prototype.setDesc = origSetDesc;
         Setting.prototype.addText = origAddText;
         (Setting.prototype as any).addTextArea = origAddTextArea;
         Setting.prototype.addSlider = origAddSlider;
@@ -542,6 +552,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         dropdownByName,
         textAreaByName,
         sliderByName,
+        descByName,
         sliderSetValuesByName,
         textOnChanges,
         textAreaOnChanges,
@@ -7709,6 +7720,24 @@ describe("managed-mode uninstall section", () => {
         expect(uninstall?.text).toBe("Uninstall server");
         const callout = tab.containerEl.find("lilbee-uninstall-callout");
         expect(callout?.textContent).toContain("Removing the plugin does not remove the server");
+        expect(callout?.textContent).toContain(
+            "The executable, this vault's index and saved chats, and the shared model cache live outside your vault.",
+        );
+    });
+
+    it("names the saved chats and the shared models in the uninstall row description", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        (tab as any).storageTotalBytes = 13_632_000_000;
+
+        const captured = captureSettingCallbacks(() => tab.display());
+
+        expect(captured.descByName.get(MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(
+            "Deletes the executable, this vault's index and saved chats, and the models every vault on this " +
+                "computer shares. Frees 13.6 GB. Your notes are not touched.",
+        );
     });
 
     it("uninstalls and reports the freed space when the user confirms", async () => {
