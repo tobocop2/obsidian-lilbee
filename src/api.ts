@@ -48,6 +48,7 @@ import type {
     SearchChunkType,
     SourceContent,
     SSEEvent,
+    SetModelResponse,
     StatusResponse,
     WikiStatusResponse,
     SyncOptions,
@@ -638,8 +639,8 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async setChatModel(model: string): Promise<Result<void, Error>> {
-        return this.fetchResult<void>(`${this.baseUrl}/api/models/chat`, {
+    async setChatModel(model: string): Promise<Result<SetModelResponse, Error>> {
+        return this.fetchResult<SetModelResponse>(`${this.baseUrl}/api/models/chat`, {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
@@ -789,24 +790,24 @@ export class LilbeeClient {
         return (await res.json()) as ConfigUpdateResponse;
     }
 
-    async setEmbeddingModel(model: string): Promise<Result<void, Error>> {
-        return this.fetchResult<void>(`${this.baseUrl}/api/models/embedding`, {
+    async setEmbeddingModel(model: string): Promise<Result<SetModelResponse, Error>> {
+        return this.fetchResult<SetModelResponse>(`${this.baseUrl}/api/models/embedding`, {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
         });
     }
 
-    async setRerankerModel(model: string): Promise<Result<void, Error>> {
-        return this.fetchResult<void>(`${this.baseUrl}/api/models/reranker`, {
+    async setRerankerModel(model: string): Promise<Result<SetModelResponse, Error>> {
+        return this.fetchResult<SetModelResponse>(`${this.baseUrl}/api/models/reranker`, {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
         });
     }
 
-    async setVisionModel(model: string): Promise<Result<void, Error>> {
-        return this.fetchResult<void>(`${this.baseUrl}/api/models/vision`, {
+    async setVisionModel(model: string): Promise<Result<SetModelResponse, Error>> {
+        return this.fetchResult<SetModelResponse>(`${this.baseUrl}/api/models/vision`, {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),

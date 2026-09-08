@@ -293,6 +293,13 @@ export const DISCOVER_RAIL = {
     FRESH: "fresh",
 } as const satisfies Record<string, DiscoverRail>;
 
+/** `PUT /api/models/<role>`. The server resolves the ref it was given and says
+ *  whether the change invalidates the index. */
+export interface SetModelResponse {
+    model: string;
+    reindex_required: boolean;
+}
+
 export interface StatusResponse {
     config: Record<string, string>;
     document_count: number;

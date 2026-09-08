@@ -168,8 +168,8 @@ function makePlugin(): LilbeePlugin {
                     ],
                 });
             }),
-            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setChatModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
+            setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: true }))),
             setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
             setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
@@ -2122,7 +2122,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { percent: 50 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2154,7 +2154,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: {} };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2183,7 +2183,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { current: 50, total: 100 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2387,7 +2387,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { percent: 0 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -3117,7 +3117,7 @@ describe("ChatView.onClose — aborts both controllers", () => {
             await waitPromise;
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(slowPull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -3766,6 +3766,26 @@ describe("ChatView — embedding model selector", () => {
         // 4u1: embedding success path must also refresh the Settings tab so
         // the dropdown / subtitle reflect the new active embedding.
         expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+    });
+
+    it("does not rebuild the index when the server says no reindex is needed", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "previous-embed" });
+        // Re-selecting the model already backing the store: the server says the
+        // index still matches, so a full re-embed would be pure waste.
+        plugin.api.setEmbeddingModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        pickRailItem(container, "lilbee-embed-model-select", "nomic-embed-text");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_EMBEDDING_UPDATED)).toBe(true);
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(false);
+        expect(plugin.triggerSync).not.toHaveBeenCalled();
     });
 
     it("4u1: embedding setEmbeddingModel failure does NOT refresh the Settings tab", async () => {
@@ -4690,7 +4710,7 @@ describe("ChatView — pull stream non-error events", () => {
         // exercising the else-if false branch (711).
         const { mockFn } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
         plugin.api.pullModel = mockFn;
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const entry = {

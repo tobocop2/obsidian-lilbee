@@ -51,8 +51,8 @@ function makePlugin(catalogModels: CatalogEntry[] = [localRow()]) {
                 .mockResolvedValue(
                     ok({ total: catalogModels.length, limit: 50, offset: 0, models: catalogModels, has_more: false }),
                 ),
-            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setChatModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
+            setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
         },
         activeModel: "",
         settings: {},

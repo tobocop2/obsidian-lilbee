@@ -149,7 +149,7 @@ function makePlugin(
         config: vi.fn().mockRejectedValue(new Error("unreachable")),
         configDefaults: vi.fn().mockRejectedValue(new Error("unreachable")),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
-        setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+        setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: true }))),
         setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
         setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
         installedModels: vi.fn().mockResolvedValue({ models: [] }),
@@ -1239,7 +1239,9 @@ describe("LilbeeSettingTab", () => {
 
         it("dropdown switch to installed featured ref calls setChatModel", async () => {
             const plugin = makePlugin();
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             const { tab, captured } = renderPicker(plugin, LLAMA_REF, true);
             const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
@@ -1250,7 +1252,9 @@ describe("LilbeeSettingTab", () => {
 
         it("setting model to empty string shows 'not set' in notice", async () => {
             const plugin = makePlugin();
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             const { captured } = renderPicker(plugin, "");
             await captured.dropdownOnChanges[0]("");
             expect(Notice.instances.some((n) => n.message.includes("not set"))).toBe(true);
@@ -1506,7 +1510,9 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             (plugin as any).activeModel = LLAMA_REF;
             (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { tab, deleteBtn } = setupDeleteButton(plugin, LLAMA_REF);
@@ -1625,7 +1631,9 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
 
             const { captured } = renderPickerWithPhi(plugin);
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
@@ -1670,7 +1678,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
             const { captured } = renderPickerWithPhi(plugin);
@@ -1729,7 +1739,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
 
             const { captured } = renderPickerWithPhi(plugin);
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
@@ -1743,7 +1755,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: "raw error string" };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
 
             const { captured } = renderPickerWithPhi(plugin);
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
@@ -1757,7 +1771,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
 
             const { captured } = renderPickerWithPhi(plugin);
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
@@ -1813,7 +1829,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1837,7 +1855,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1856,7 +1876,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { current: 50, total: 100 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1875,7 +1897,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 0 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1920,7 +1944,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { clickHandler } = await setupPullButton(plugin);
@@ -1935,7 +1961,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: "raw error string" };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { clickHandler } = await setupPullButton(plugin);
@@ -1950,7 +1978,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { clickHandler } = await setupPullButton(plugin);
@@ -1963,7 +1993,9 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { clickHandler } = await setupPullButton(plugin);
@@ -1975,7 +2007,9 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1994,7 +2028,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -2010,7 +2046,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "other", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -2249,7 +2287,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { captured } = pickerSetup(plugin);
@@ -2298,7 +2338,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { captured } = pickerSetup(plugin);
@@ -2312,7 +2354,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { current: 60, total: 100 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { captured } = pickerSetup(plugin);
@@ -2327,7 +2371,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { captured } = pickerSetup(plugin);
@@ -2342,7 +2388,9 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { captured } = pickerSetup(plugin);
@@ -2353,7 +2401,9 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
             mockChatPicker(plugin);
 
             const { tab, captured } = pickerSetup(plugin);
@@ -3127,7 +3177,9 @@ describe("managed mode settings", () => {
         it("embedding dropdown onChange sets model and triggers sync", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
-            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: true }),
+            );
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
                     total: 2,
@@ -3165,6 +3217,48 @@ describe("managed mode settings", () => {
             expect(dropdowns.length).toBe(1);
             await dropdowns[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+        });
+
+        it("does not reindex when the server says the index still matches", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "nomic-embed-text", reindex_required: false }),
+            );
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "nomic-embed-text", installed: true, task: "embedding" }],
+                    has_more: false,
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const dropdowns: DropdownOnChange[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: () => fakeDropdown,
+                    setValue: () => fakeDropdown,
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            await dropdowns[0]("nomic-embed-text");
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            // Re-selecting the model already backing the store must not re-embed.
+            expect(plugin.triggerSync).not.toHaveBeenCalled();
         });
 
         it("embedding dropdown onChange aborts when user cancels confirm", async () => {
@@ -3333,6 +3427,37 @@ describe("managed mode settings", () => {
             expect(texts.length).toBe(1);
             await texts[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+        });
+
+        it("fallback text input does not reindex when the index still matches", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "nomic-embed-text", reindex_required: false }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const texts: TextOnChange[] = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: (handler: TextOnChange) => {
+                        texts.push(handler);
+                        return fakeText;
+                    },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                return this;
+            };
+            (tab as any).renderEmbeddingFallback(container);
+            Setting.prototype.addText = origAddText;
+
+            await texts[0]("nomic-embed-text");
+            expect(plugin.triggerSync).not.toHaveBeenCalled();
         });
 
         it("fallback text input skips empty value", async () => {

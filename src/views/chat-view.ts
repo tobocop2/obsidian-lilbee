@@ -636,8 +636,10 @@ export class ChatView extends ItemView {
         void this.plugin.api.setChatModel(value).then((result) => {
             if (result.isOk()) {
                 // Keep the menu's checkmark in sync without waiting for a refetch.
-                this.chatActive = value;
-                this.plugin.activeModel = value;
+                // Store what the server resolved, not what was sent: a bare repo
+                // comes back as the concrete quant it picked.
+                this.chatActive = result.value.model;
+                this.plugin.activeModel = result.value.model;
                 void this.plugin.fetchActiveModel();
                 this.plugin.refreshSettingsTab();
             } else {
@@ -667,10 +669,14 @@ export class ChatView extends ItemView {
                 this.revertEmbeddingTrigger(previous);
                 return;
             }
-            this.activeEmbeddingModel = value;
+            // The server resolved the ref and knows whether the index still
+            // matches. Re-selecting the model already in use rebuilt the whole
+            // index when it said otherwise.
+            this.activeEmbeddingModel = result.value.model;
             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
             this.plugin.refreshSettingsTab();
+            if (!result.value.reindex_required) return;
+            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
             void this.plugin.triggerSync();
         });
     }

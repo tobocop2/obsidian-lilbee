@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type { Result } from "../result";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry, ModelTask } from "../types";
+import type { CatalogEntry, ModelTask, SetModelResponse } from "../types";
 import { CATALOG_SOURCE, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import {
@@ -235,8 +235,8 @@ export class ModelPickerModal extends Modal {
      * took, so a transient not-ready response no longer surfaces as "Failed to
      * set" while the model quietly activates.
      */
-    private async setActiveModelWithRetry(repo: string): Promise<Result<void, Error>> {
-        const set = (m: string): Promise<Result<void, Error>> =>
+    private async setActiveModelWithRetry(repo: string): Promise<Result<SetModelResponse, Error>> {
+        const set = (m: string): Promise<Result<SetModelResponse, Error>> =>
             this.pickerScope === MODEL_TASK.CHAT
                 ? this.plugin.api.setChatModel(m)
                 : this.plugin.api.setEmbeddingModel(m);
