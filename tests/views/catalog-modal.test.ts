@@ -67,10 +67,10 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         api: {
             catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse([]))),
             pullModel: vi.fn(),
-            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setChatModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
+            setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
+            setRerankerModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
+            setVisionModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
             deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "",
@@ -557,7 +557,7 @@ describe("CatalogModal", () => {
 
         it("list-view Use button activates the model via setChatModel", async () => {
             const plugin = makePlugin();
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -588,7 +588,7 @@ describe("CatalogModal", () => {
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
             });
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -776,7 +776,7 @@ describe("CatalogModal", () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(() => emptyStream());
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
@@ -807,7 +807,7 @@ describe("CatalogModal", () => {
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
                 yield { event: SSE_EVENT.DONE, data: {} };
             });
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
@@ -824,7 +824,7 @@ describe("CatalogModal", () => {
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
             });
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
@@ -840,7 +840,7 @@ describe("CatalogModal", () => {
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: {} };
             });
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
@@ -856,7 +856,7 @@ describe("CatalogModal", () => {
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
             });
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
@@ -882,7 +882,7 @@ describe("CatalogModal", () => {
 
         it("activates by the concrete GGUF file ref when the filename is not a glob", async () => {
             const plugin = makePlugin();
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
@@ -935,7 +935,7 @@ describe("CatalogModal", () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(() => emptyStream());
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;

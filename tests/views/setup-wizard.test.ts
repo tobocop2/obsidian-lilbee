@@ -62,14 +62,14 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         api: {
             catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse())),
             pullModel: vi.fn(),
-            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setChatModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
             health: vi.fn().mockResolvedValue(ok({ status: "ok", version: "1.0.0" })),
             syncStream: vi.fn(),
             listModels: vi.fn().mockResolvedValue({
                 chat: { active: "", catalog: [], installed: [] },
             }),
-            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
+            setVisionModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false }))),
             setBaseUrl: vi.fn(),
             setToken: vi.fn(),
             setTokenProvider: vi.fn(),
@@ -3276,7 +3276,7 @@ describe("SetupWizard", () => {
                     yield { event: SSE_EVENT.DONE, data: {} };
                 })(),
             );
-            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     await new Promise(() => {});
@@ -3299,7 +3299,9 @@ describe("SetupWizard", () => {
                     yield { event: SSE_EVENT.DONE, data: {} };
                 })(),
             );
-            plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.setEmbeddingModel = vi.fn((m: string) =>
+                Promise.resolve(ok({ model: m, reindex_required: false })),
+            );
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     await new Promise(() => {});
