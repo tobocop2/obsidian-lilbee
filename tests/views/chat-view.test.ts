@@ -3056,6 +3056,87 @@ describe("ChatView — save to vault", () => {
     });
 });
 
+describe("ChatView empty state", () => {
+    it("a hosted-only user is not told to install a model", async () => {
+        const plugin = makePlugin();
+        // Nothing in the installed registry, but a usable frontier row exists:
+        // the server marks hosted models installed=true in the catalog.
+        plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+        plugin.api.catalog = vi.fn().mockResolvedValue(
+            ok({
+                models: [
+                    {
+                        hf_repo: "gemini-2.0-flash",
+                        display_name: "Gemini 2.0 Flash",
+                        source: "frontier",
+                        provider: "gemini",
+                        task: "chat",
+                        installed: true,
+                        key_status: "ready",
+                        size_gb: 0,
+                        featured: true,
+                    },
+                ],
+                total: 1,
+                limit: 20,
+                offset: 0,
+                has_more: false,
+            }),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(container.textContent ?? "").not.toContain("No models installed");
+        expect((view as any).retryTimer).toBeNull();
+    });
+});
+
+describe("ChatView lifecycle after close", () => {
+    it("a selector fetch that lands after close does not re-arm the retry", async () => {
+        vi.useFakeTimers();
+        try {
+            const plugin = makePlugin();
+            // Server unreachable: the catch arm is the one that re-arms.
+            plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            await view.onClose();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect((view as any).retryTimer).toBeNull();
+            const before = (plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length;
+            await vi.advanceTimersByTimeAsync(120_000);
+            expect((plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("an empty installed list after close does not re-arm the retry", async () => {
+        vi.useFakeTimers();
+        try {
+            const plugin = makePlugin();
+            plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            await view.onClose();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect((view as any).retryTimer).toBeNull();
+            const before = (plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length;
+            await vi.advanceTimersByTimeAsync(120_000);
+            expect((plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
 describe("ChatView.onClose — aborts both controllers", () => {
     it("aborts streamController when active", async () => {
         Notice.clear();
