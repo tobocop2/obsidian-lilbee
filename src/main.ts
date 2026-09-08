@@ -318,6 +318,8 @@ export default class LilbeePlugin extends Plugin {
     vaultRegistry: VaultRegistry | null = null;
     vaultId = "";
     syncController: AbortController | null = null;
+    /** An automatic sync requested while another ran; the running one carries it. */
+    private deferredSync: { options?: SyncOptions } | null = null;
     private pendingSyncCount = 0;
     private pendingHintTimeout: number | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
@@ -3122,9 +3124,11 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
-        // One sync at a time; only a user trigger reports a pending one.
+        // One sync at a time. A user trigger reports the running one; an automatic one is
+        // carried to the next run, because nothing else re-issues it.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
             if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
+            else this.deferredSync = { options };
             return;
         }
         const taskId = this.taskQueue.enqueue(syncTaskLabel(options), TASK_TYPE.SYNC);
@@ -3217,6 +3221,15 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             this.syncController = null;
             this.schedulePendingSyncHint();
+            this.runDeferredSync();
         }
+    }
+
+    /** Runs the sync deferred during this one; the sync task is terminal before this fires. */
+    private runDeferredSync(): void {
+        const deferred = this.deferredSync;
+        if (!deferred) return;
+        this.deferredSync = null;
+        void this.triggerSync(deferred.options, SYNC_TRIGGER.AUTOMATIC);
     }
 }

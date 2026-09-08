@@ -1596,6 +1596,34 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
         });
 
+        it("carries the options of a deferred automatic sync into the follow-up run", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            let releaseFirstSync!: () => void;
+            const firstSyncHeld = new Promise<void>((resolve) => (releaseFirstSync = resolve));
+            let started!: () => void;
+            const syncRunning = new Promise<void>((resolve) => (started = resolve));
+            let calls = 0;
+            plugin.api.syncStream = vi.fn().mockImplementation(() => {
+                const call = ++calls;
+                return (async function* () {
+                    if (call === 1) {
+                        started();
+                        await firstSyncHeld;
+                    }
+                })();
+            });
+
+            const firstSync = plugin.triggerSync();
+            await syncRunning;
+            await plugin.triggerSync({ forceRebuild: true }, SYNC_TRIGGER.AUTOMATIC);
+            releaseFirstSync();
+            await firstSync;
+
+            const secondCall = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[1];
+            expect(secondCall?.[1]).toEqual({ forceRebuild: true });
+        });
+
         it("shows Notice with all stats when done event has populated arrays", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -3907,6 +3935,54 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
             expect(syncSpy).toHaveBeenCalled();
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("indexes pages crawled during a running sync without any further user action", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            // Stand-in server: a sync indexes the pages that exist when it starts,
+            // so a sync already running cannot see pages a later crawl writes.
+            const crawled: string[] = [];
+            const indexed: string[] = [];
+            let firstSyncStarted!: () => void;
+            const syncRunning = new Promise<void>((resolve) => (firstSyncStarted = resolve));
+            let releaseFirstSync!: () => void;
+            const firstSyncHeld = new Promise<void>((resolve) => (releaseFirstSync = resolve));
+            let secondSyncDone!: () => void;
+            const secondSyncFinished = new Promise<void>((resolve) => (secondSyncDone = resolve));
+            let syncCalls = 0;
+            plugin.api.syncStream = vi.fn().mockImplementation(() => {
+                const plan = [...crawled];
+                const call = ++syncCalls;
+                return (async function* () {
+                    if (call === 1) {
+                        firstSyncStarted();
+                        await firstSyncHeld;
+                    }
+                    indexed.push(...plan);
+                    if (call === 2) secondSyncDone();
+                })();
+            });
+
+            const firstSync = plugin.triggerSync();
+            await syncRunning;
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    crawled.push("https://example.com/a");
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/a" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            releaseFirstSync();
+            await firstSync;
+
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(2);
+            await secondSyncFinished;
+            expect(indexed).toEqual(["https://example.com/a"]);
         });
 
         it("forwards null depth/max_pages to api.crawl for unbounded crawls", async () => {
