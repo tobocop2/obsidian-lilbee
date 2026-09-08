@@ -10,11 +10,11 @@ const STRIP_SUFFIXES = [/-GGUF$/i, /-Instruct$/i, /-Chat$/i, /-v\d+(\.\d+)*$/i, 
 const META_PREFIX = /^Meta-/;
 
 /**
- * Build the ref to send when activating a catalog entry. A multi-quant GGUF
- * repo (e.g. "bartowski/SmolLM2-360M-Instruct-GGUF") has no single default
- * file, so the server rejects the bare repo with "not available"; send the
- * concrete "<repo>/<filename>.gguf" instead. Falls back to the bare repo when
- * the filename is missing or a glob (sharded/pattern entries).
+ * Build the ref to send when activating a catalog entry. The server resolves a
+ * bare multi-quant repo by taking the first installed quant in sort order, so
+ * sending "<repo>/<filename>.gguf" is what makes the user's choice exact.
+ * Falls back to the bare repo when the filename is missing or a glob
+ * (sharded/pattern entries).
  */
 export function nativeModelRef(hfRepo: string, ggufFilename: string | null | undefined): string {
     const f = ggufFilename ?? "";
