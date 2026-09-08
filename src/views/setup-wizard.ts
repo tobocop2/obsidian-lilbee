@@ -27,6 +27,7 @@ import { renderModelCard } from "../components/model-card";
 import {
     bindEscapeToClose,
     closeSettings,
+    errorMessage,
     extractSseErrorMessage,
     getSystemMemoryGB,
     percentFromSse,
@@ -211,6 +212,8 @@ export class SetupWizard extends Modal {
     private plugin: LilbeePlugin;
     private step = 0;
     private selectedModel: FeaturedModel | null = null;
+    /** The step's primary action; disabled while nothing is selectable. */
+    private primaryBtn: HTMLButtonElement | null = null;
     private featuredModels: FeaturedModel[] = [];
     private pullController: AbortController | null = null;
     private syncController: AbortController | null = null;
@@ -698,6 +701,7 @@ export class SetupWizard extends Modal {
         });
 
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
+        this.primaryBtn = downloadBtn;
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedModel) {
                 statusEl.setText(MESSAGES.WIZARD_SELECT_MODEL);
@@ -731,17 +735,28 @@ export class SetupWizard extends Modal {
             });
             if (result.isErr()) {
                 this.featuredModels = [];
+                this.renderCatalogFailure(container, statusEl, result.error.message, () => {
+                    void this.loadFeaturedModels(container, memGB, statusEl);
+                });
                 return;
             }
             this.featuredModels = pickNativeChatModels(result.value.models);
-        } catch {
+        } catch (e) {
             this.featuredModels = [];
-            statusEl.setText(MESSAGES.ERROR_LOAD_MODELS);
+            this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
+                void this.loadFeaturedModels(container, memGB, statusEl);
+            });
+            return;
+        }
+        if (this.featuredModels.length === 0) {
+            this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
+                void this.loadFeaturedModels(container, memGB, statusEl);
+            });
             return;
         }
 
         const recommended = recommendedIndex(this.featuredModels, memGB);
-        this.selectedModel = this.featuredModels[recommended] ?? null;
+        this.selectedModel = this.featuredModels[recommended];
 
         this.renderSectionHeading(container, MESSAGES.LABEL_OUR_PICKS);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
@@ -753,6 +768,31 @@ export class SetupWizard extends Modal {
                 onClick: () => this.selectModel(grid, entry),
             });
         }
+    }
+
+    /** Say why the model grid is empty and let the user try again without
+     *  restarting the wizard. A silent empty step has nothing to select, so the
+     *  primary action can only answer "select a model". */
+    /** Reflect whether the step has something to act on. */
+    private syncPrimaryEnabled(): void {
+        if (!this.primaryBtn) return;
+        this.primaryBtn.disabled = this.selectedModel === null && this.selectedEmbedding === null;
+    }
+
+    private renderCatalogFailure(
+        container: HTMLElement,
+        statusEl: HTMLElement,
+        reason: string,
+        retry: () => void,
+    ): void {
+        container.empty();
+        statusEl.setText(reason);
+        const retryBtn = container.createEl("button", { text: MESSAGES.BUTTON_RETRY });
+        retryBtn.addEventListener("click", () => {
+            statusEl.setText("");
+            retry();
+        });
+        this.syncPrimaryEnabled();
     }
 
     private selectModel(grid: HTMLElement, model: FeaturedModel): void {
@@ -797,11 +837,16 @@ export class SetupWizard extends Modal {
                         );
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
+                    // A model that failed to download must not be set as active:
+                    // the set is a ref write, so the server accepts it and the
+                    // wizard would advance claiming a model it never fetched.
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
                     statusEl.setText(msg);
-                    break;
+                    progressEl.hide();
+                    (downloadBtn as HTMLButtonElement).disabled = false;
+                    return;
                 }
             }
 
@@ -857,6 +902,7 @@ export class SetupWizard extends Modal {
         });
 
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
+        this.primaryBtn = downloadBtn;
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedEmbedding) {
                 this.step = WIZARD_STEP.SYNC;
@@ -895,21 +941,32 @@ export class SetupWizard extends Modal {
             });
             if (result.isErr()) {
                 this.embeddingModels = [];
+                this.renderCatalogFailure(container, statusEl, result.error.message, () => {
+                    void this.loadEmbeddingModels(container, statusEl);
+                });
                 return;
             }
             // Trust the server's featured list — don't filter by source.
             // Mis-configured builds can stamp every featured embedding as
             // source="litellm", which would leave the picker empty.
             this.embeddingModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
-        } catch {
+        } catch (e) {
             this.embeddingModels = [];
-            statusEl.setText(MESSAGES.ERROR_LOAD_MODELS);
+            this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
+                void this.loadEmbeddingModels(container, statusEl);
+            });
+            return;
+        }
+        if (this.embeddingModels.length === 0) {
+            this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
+                void this.loadEmbeddingModels(container, statusEl);
+            });
             return;
         }
 
         const recommended = this.embeddingModels.findIndex((m) => m.hf_repo.toLowerCase().includes("nomic-embed-text"));
         const defaultIdx = recommended >= 0 ? recommended : 0;
-        this.selectedEmbedding = this.embeddingModels[defaultIdx] ?? null;
+        this.selectedEmbedding = this.embeddingModels[defaultIdx];
 
         this.renderSectionHeading(container, MESSAGES.WIZARD_EMBEDDING_RECOMMENDED);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
@@ -965,11 +1022,16 @@ export class SetupWizard extends Modal {
                         );
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
+                    // A model that failed to download must not be set as active:
+                    // the set is a ref write, so the server accepts it and the
+                    // wizard would advance claiming a model it never fetched.
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
                     statusEl.setText(msg);
-                    break;
+                    progressEl.hide();
+                    (downloadBtn as HTMLButtonElement).disabled = false;
+                    return;
                 }
             }
 

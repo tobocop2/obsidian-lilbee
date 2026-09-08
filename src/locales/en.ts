@@ -109,6 +109,7 @@ export const MESSAGES = {
     BUTTON_INSTALL_SERVER: "Install server",
     BUTTON_REINSTALL: "Reinstall",
     BUTTON_RETRY: "Retry",
+    WIZARD_NO_MODELS_OFFERED: "The server offered no models for this step.",
     BUTTON_UNINSTALL_SERVER: "Uninstall server",
     BUTTON_UNINSTALL: "Uninstall",
     BUTTON_DOWNLOADING: "Downloading...",
