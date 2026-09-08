@@ -5717,6 +5717,38 @@ describe("LilbeePlugin", () => {
             await flush();
         });
 
+        it("onScopeHeld routes a restart refusal into the take-over negotiation", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const onScopeHeld = mockServerOpts?.onScopeHeld;
+            expect(onScopeHeld).toBeDefined();
+            const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+
+            onScopeHeld(new Error("another server owns the shared root"));
+            await flush();
+
+            expect(negotiate).toHaveBeenCalled();
+            // The refused manager is released so the negotiation starts clean.
+            expect((plugin as any).serverManager).toBeNull();
+        });
+
+        it("onScopeHeld does nothing without a vault registry", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const onScopeHeld = mockServerOpts?.onScopeHeld;
+            const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+            (plugin as any).vaultRegistry = null;
+
+            onScopeHeld(new Error("another server owns the shared root"));
+            await flush();
+
+            expect(negotiate).not.toHaveBeenCalled();
+        });
+
         it("onRestartsExhausted shows persistent error Notice with stderr", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();

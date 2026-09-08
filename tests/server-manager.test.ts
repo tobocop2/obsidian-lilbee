@@ -871,15 +871,47 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledTimes(4); // no further restarts
         });
 
-        it("a ready start resets the crash budget", async () => {
+        it("a run that stayed up resets the crash budget", async () => {
             const mgr = await startFresh();
             for (let round = 0; round < 5; round++) {
+                // Up long enough to count as healthy before the next crash.
+                await vi.advanceTimersByTimeAsync(120_000);
                 child()._emit("exit", 1, null);
                 await vi.advanceTimersByTimeAsync(3000); // restart -> ready again
             }
-            // Five crash/recover rounds and it is still willing to restart:
             expect(mgr.state).toBe("ready");
             expect(spawnSpy).toHaveBeenCalledTimes(6);
+        });
+
+        it("a server that keeps dying right after ready gives up instead of looping", async () => {
+            let exhausted = "";
+            const mgr = await startFresh({ onRestartsExhausted: (out) => (exhausted = out) });
+            // Each round reaches ready and dies immediately: a flap, not a recovery.
+            for (let round = 0; round < 5; round++) {
+                child()._emit("exit", 1, null);
+                await vi.advanceTimersByTimeAsync(3000);
+            }
+            expect(exhausted).toContain("server exited (exit code 1)");
+            expect(mgr.state).toBe("error");
+            await vi.advanceTimersByTimeAsync(30_000);
+            // Four spawns: the original plus MAX_CRASH_RESTARTS.
+            expect(spawnSpy).toHaveBeenCalledTimes(4);
+        });
+
+        it("a lock refusal during a crash restart is reported, not swallowed", async () => {
+            let held = 0;
+            const mgr = await startFresh({ onScopeHeld: () => (held += 1) });
+            // The respawn is refused: another vault took the shared root while
+            // this server was down.
+            vi.spyOn(node, "existsSync").mockReturnValue(false);
+            child()._emit("exit", 1, null);
+            await vi.advanceTimersByTimeAsync(3000);
+            (await spawnedChild())._emit("exit", LOCK_REFUSAL_EXIT_CODE, null);
+            // The refusal is raised by the port-file poll, not the exit itself.
+            await vi.advanceTimersByTimeAsync(2000);
+
+            expect(held).toBe(1);
+            expect(mgr.state).toBe("error");
         });
 
         it("stop() cancels a pending crash-restart", async () => {

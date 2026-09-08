@@ -707,6 +707,15 @@ export default class LilbeePlugin extends Plugin {
                 const notice = new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
                 this.attachExportLink(notice);
             },
+            onScopeHeld: () => {
+                // Another vault took the root while this server was down. The
+                // restart path has no take-over of its own, so route it into the
+                // same negotiation a first start uses instead of dying silently.
+                const registry = this.vaultRegistry;
+                if (!registry) return;
+                this.serverManager = null;
+                void this.negotiateTakeOver(registry);
+            },
             onShutdownFailure: (err: Error) => {
                 new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
             },
