@@ -2067,6 +2067,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                                 return;
                             }
                             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                            if (!result.value.reindex_required) return;
                             new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
                             void this.plugin.triggerSync();
                         });
@@ -2408,6 +2409,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             return;
                         }
                         new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                        if (!result.value.reindex_required) return;
                         new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
                         void this.plugin.triggerSync();
                     });
