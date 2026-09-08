@@ -929,12 +929,12 @@ export default class LilbeePlugin extends Plugin {
             await this.persistAgentIntegration();
             return;
         }
-        // An unremembered choice wires this session only, so the picker can return.
-        if (choice.remember) {
-            this.settings.agentIntegration.agent = choice.client;
-            this.settings.agentIntegration.pickerShown = true;
-            await this.persistAgentIntegration();
-        }
+        // Connecting answers the question, so the picker does not come back.
+        // `remember` decides only whether the agent selection is kept, which is
+        // why it can default to off without the picker returning every start.
+        this.settings.agentIntegration.pickerShown = true;
+        if (choice.remember) this.settings.agentIntegration.agent = choice.client;
+        await this.persistAgentIntegration();
         await this.applyAgentWiring(choice.client);
     }
 

@@ -1386,9 +1386,11 @@ export class SetupWizard extends Modal {
             const serverReady =
                 this.plugin.serverManager?.state === SERVER_STATE.READY ||
                 this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
-            // This skips the server step, which is the other place setup is
-            // recorded. Passing it is the same milestone either way.
-            if (serverReady) void this.markServerReady();
+            // Only a managed server that reached READY has actually answered.
+            // `serverMode === EXTERNAL` is a stored preference: the consent
+            // modal writes it before setup completes, so treating it as proof
+            // would record setup with no server behind it.
+            if (this.plugin.serverManager?.state === SERVER_STATE.READY) void this.markServerReady();
             this.step = serverReady ? WIZARD_STEP.MODEL_PICKER : WIZARD_STEP.SERVER_MODE;
         } else {
             this.step++;

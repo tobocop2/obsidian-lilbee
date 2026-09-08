@@ -3681,9 +3681,10 @@ describe("SetupWizard", () => {
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(false);
         });
 
-        it("records setup when welcome skips the server step on a running server", () => {
+        it("records setup when welcome skips the server step on a running managed server", () => {
             const plugin = makePlugin({
-                settings: { serverMode: "external", setupCompleted: false },
+                serverManager: { state: "ready" },
+                settings: { serverMode: "managed", setupCompleted: false },
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3691,6 +3692,20 @@ describe("SetupWizard", () => {
             wizard.next();
 
             expect(plugin.settings.setupCompleted).toBe(true);
+        });
+
+        it("does not record setup when external mode is only a stored preference", () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "external", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.next();
+
+            expect(plugin.settings.setupCompleted).toBe(false);
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
         });
 
         it("re-running setup on a configured vault does not rewrite the flag", async () => {
