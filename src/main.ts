@@ -59,6 +59,7 @@ import {
     CHAT_STATUS,
     type ChatStatus,
     type HealthResponse,
+    type HealthWarning,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
     type RequestOutcome,
@@ -101,6 +102,7 @@ import {
     sessionTokenInvalidMessage,
     supportsPlacement,
     supportsSessions,
+    sameWarnings,
     warmStatusText,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
@@ -343,6 +345,8 @@ export default class LilbeePlugin extends Plugin {
     // True when the server is up but the chat role is still cold-loading (from /api/health).
     private chatStatus: ChatStatus = CHAT_STATUS.READY;
     private chatError: string | null = null;
+    /** Degradations from the last health probe; surfaces read this. */
+    healthWarnings: HealthWarning[] = [];
     private warmController: AbortController | null = null;
     // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
     // so /api/health stalls behind the active stream and would falsely flip
@@ -1963,6 +1967,11 @@ export default class LilbeePlugin extends Plugin {
     private reflectChatStatus(health: HealthResponse): void {
         const status = LilbeePlugin.chatStatusOf(health);
         this.chatError = health.chat_error ?? null;
+        const warnings = health.warnings ?? [];
+        if (!sameWarnings(this.healthWarnings, warnings)) {
+            this.healthWarnings = warnings;
+            this.refreshOpenChatWarnings();
+        }
         if (status === this.chatStatus) return;
         this.chatStatus = status;
         this.syncWarmStream();
@@ -2730,6 +2739,15 @@ export default class LilbeePlugin extends Plugin {
 
     // Re-sync the model rail in every open chat view after a model is switched
     // elsewhere (e.g. the catalog), so the pills don't show a stale selection.
+    /** Repaint the degradation banner in every open chat view. The health probe
+     *  owns the data and runs on its own cadence, so the view cannot pull it. */
+    refreshOpenChatWarnings(): void {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)) {
+            const view = leaf.view;
+            if (view instanceof ChatView) view.refreshHealthWarnings();
+        }
+    }
+
     refreshOpenChatRails(): void {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)) {
             const view = leaf.view;

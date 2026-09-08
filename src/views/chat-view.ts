@@ -204,6 +204,8 @@ export class ChatView extends ItemView {
     /** The send in progress, so a resume can let it finish unwinding before replacing the transcript. */
     private inFlightSend: Promise<void> | null = null;
     private messagesEl: HTMLElement | null = null;
+    /** Banner for server-reported degradations; empty when there are none. */
+    private warningsEl: HTMLElement | null = null;
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
     private sending = false;
@@ -255,6 +257,7 @@ export class ChatView extends ItemView {
         container.addClass("lilbee-chat-container");
 
         this.createToolbar(container);
+        this.warningsEl = container.createDiv({ cls: "lilbee-chat-warnings" });
         this.messagesEl = container.createDiv({ cls: "lilbee-chat-messages" });
         this.createInputArea(container);
     }
@@ -449,6 +452,7 @@ export class ChatView extends ItemView {
                     serverConfig,
                 );
                 this.renderChatModeToggle(serverConfig);
+                this.renderHealthWarnings();
 
                 if (this.chatInstalled.length === 0) {
                     this.showEmptyState();
@@ -1460,6 +1464,26 @@ export class ChatView extends ItemView {
 
     private enqueueAddFile(file: TFile): void {
         void this.plugin.addToLilbee(file);
+    }
+
+    /** Show what the server says is degraded. These states persist until the
+     *  user acts, so they live in the view rather than in a toast that fires
+     *  once and is gone. */
+    /** Public so the plugin can repaint after a health probe changes the set. */
+    refreshHealthWarnings(): void {
+        this.renderHealthWarnings();
+    }
+
+    private renderHealthWarnings(): void {
+        const el = this.warningsEl;
+        // A probe can land on a leaf whose onOpen has not run yet.
+        if (!el) return;
+        el.empty();
+        for (const w of this.plugin.healthWarnings) {
+            const row = el.createDiv({ cls: "lilbee-chat-warning" });
+            row.createSpan({ cls: "lilbee-chat-warning-message", text: w.message });
+            if (w.remedy) row.createSpan({ cls: "lilbee-chat-warning-remedy", text: w.remedy });
+        }
     }
 
     private showEmptyState(): void {

@@ -23,6 +23,7 @@ import {
     noticeServerUnreachableIfApplicable,
     percentFromSse,
     percentOfBytes,
+    sameWarnings,
     warmStatusText,
     relativeTimeFromIso,
     sessionTokenInvalidMessage,
@@ -658,5 +659,25 @@ describe("warmStatusText", () => {
     it("falls back to the starting label for every other phase", () => {
         expect(warmStatusText(snapshot({ phase: "starting" }))).toBe(MESSAGES.STATUS_WARM_STARTING);
         expect(warmStatusText(snapshot({ phase: "ready" }))).toBe(MESSAGES.STATUS_WARM_STARTING);
+    });
+});
+
+describe("sameWarnings", () => {
+    const w = (code: string, message = "m") => ({ code, message });
+
+    it("treats identical sets as unchanged", () => {
+        expect(sameWarnings([w("a"), w("b")], [w("a"), w("b")])).toBe(true);
+    });
+
+    it("detects a different length", () => {
+        expect(sameWarnings([w("a")], [w("a"), w("b")])).toBe(false);
+    });
+
+    it("detects a different code", () => {
+        expect(sameWarnings([w("a")], [w("b")])).toBe(false);
+    });
+
+    it("detects a changed message under the same code", () => {
+        expect(sameWarnings([w("a", "one")], [w("a", "two")])).toBe(false);
     });
 });

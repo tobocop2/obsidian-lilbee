@@ -149,6 +149,7 @@ function triggerText(container: MockElement, triggerCls: string): string {
 function makePlugin(): LilbeePlugin {
     const taskQueue = new TaskQueue();
     return {
+        healthWarnings: [],
         api: {
             chatStream: vi.fn(),
             installedModels: vi.fn().mockImplementation((params?: { task?: string }) => {
@@ -2569,6 +2570,75 @@ describe("ChatView — toolbar groups and tooltips", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const spacer = container.find("lilbee-toolbar-spacer");
         expect(spacer).not.toBeNull();
+    });
+});
+
+describe("ChatView health warnings", () => {
+    it("shows a server-reported degradation with its remedy", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [
+            { code: "fts_unavailable", message: "Keyword search is unavailable.", remedy: "Run rebuild." },
+        ];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const text = container.textContent ?? "";
+        expect(text).toContain("Keyword search is unavailable.");
+        expect(text).toContain("Run rebuild.");
+    });
+
+    it("is a no-op on a view whose onOpen has not run", () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [{ code: "fts_unavailable", message: "Keyword search is unavailable." }];
+        const view = new ChatView(makeLeaf(), plugin);
+        // The health probe can reach a leaf before its view has been opened.
+        expect(() => view.refreshHealthWarnings()).not.toThrow();
+    });
+
+    it("repaints when the plugin reports a new degradation after open", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(container.find("lilbee-chat-warning")).toBeNull();
+
+        // The health probe owns this data and runs on its own cadence.
+        plugin.healthWarnings = [{ code: "fts_unavailable", message: "Keyword search is unavailable." }];
+        view.refreshHealthWarnings();
+
+        expect(container.textContent ?? "").toContain("Keyword search is unavailable.");
+    });
+
+    it("shows nothing when the server reports no degradation", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(container.find("lilbee-chat-warning")).toBeNull();
+    });
+
+    it("omits the remedy line when the server sends none", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [{ code: "x", message: "Something is degraded.", remedy: null }];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(container.textContent ?? "").toContain("Something is degraded.");
+        expect(container.find("lilbee-chat-warning-remedy")).toBeNull();
     });
 });
 
