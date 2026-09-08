@@ -124,6 +124,43 @@ export function isHttpStatus(error: Error, status: number): boolean {
     return error.message.startsWith(`Server responded ${status}`);
 }
 
+/**
+ * Accumulates SSE lines into frames. A frame is the `event:` name plus every
+ * `data:` line before the blank line that ends it.
+ */
+class SseFrames {
+    private event: string = SSE_EVENT.MESSAGE;
+    private data: string[] = [];
+
+    /** Feed one line. Returns the frame it completed, or null. */
+    accept(line: string): SSEEvent | null {
+        if (line.startsWith("event:")) {
+            this.event = (line.startsWith("event: ") ? line.slice(7) : line.slice(6)).trim();
+            return null;
+        }
+        if (line.startsWith("data:")) {
+            this.data.push(line.startsWith("data: ") ? line.slice(6) : line.slice(5));
+            return null;
+        }
+        return line.trim() === "" ? this.take() : null;
+    }
+
+    /** The accumulated frame, or null when there is none. Resets either way. */
+    take(): SSEEvent | null {
+        const event = this.event;
+        const raw = this.data.join("\n");
+        const had = this.data.length > 0;
+        this.event = SSE_EVENT.MESSAGE;
+        this.data = [];
+        if (!had) return null;
+        try {
+            return { event, data: JSON.parse(raw) };
+        } catch {
+            return { event, data: raw };
+        }
+    }
+}
+
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
@@ -994,61 +1031,30 @@ export class LilbeeClient {
         }
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        const frames = new SseFrames();
         let buffer = "";
-        let currentEvent: string = SSE_EVENT.MESSAGE;
-        // Consecutive `data:` lines are one payload joined by newlines, so they
-        // accumulate until the blank line that ends the frame.
-        let data: string[] = [];
-
-        const frame = (): SSEEvent | null => {
-            if (data.length === 0) {
-                currentEvent = SSE_EVENT.MESSAGE;
-                return null;
-            }
-            const raw = data.join("\n");
-            const event = currentEvent;
-            data = [];
-            currentEvent = SSE_EVENT.MESSAGE;
-            try {
-                return { event, data: JSON.parse(raw) };
-            } catch {
-                return { event, data: raw };
-            }
-        };
 
         try {
             for (;;) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
-
                 const lines = buffer.split("\n");
                 // split() always returns at least one element, so pop() is never undefined
                 buffer = lines.pop()!;
-
                 for (const line of lines) {
-                    if (line.startsWith("event:")) {
-                        currentEvent = (line.startsWith("event: ") ? line.slice(7) : line.slice(6)).trim();
-                    } else if (line.startsWith("data:")) {
-                        data.push(line.startsWith("data: ") ? line.slice(6) : line.slice(5));
-                    } else if (line.trim() === "") {
-                        const ev = frame();
-                        if (ev) yield ev;
-                    }
+                    const event = frames.accept(line);
+                    if (event) yield event;
                 }
             }
             // A stream that closes without its trailing blank line still holds a
-            // frame, usually the terminating `done`. Dropping it let the chat
-            // loop exit normally with the answer unrendered and unsaved.
-            if (buffer.startsWith("data:")) {
-                data.push(buffer.startsWith("data: ") ? buffer.slice(6) : buffer.slice(5));
-            }
-            const tail = frame();
+            // frame, usually the terminating `done`.
+            frames.accept(buffer);
+            const tail = frames.take();
             if (tail) yield tail;
         } finally {
-            // A consumer that stops early (an SSE error, a cancelled pull) would
-            // otherwise leave the body unread and the socket open until the
-            // server finished sending.
+            // A consumer that stops early would otherwise leave the body unread
+            // and the socket open until the server finished sending.
             await reader.cancel().catch(() => undefined);
         }
     }
