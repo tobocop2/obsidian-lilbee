@@ -8595,12 +8595,43 @@ describe("LilbeePlugin", () => {
             expect(updateConfig).not.toHaveBeenCalled();
         });
 
-        it("no-ops when storeContentInVault is off", async () => {
+        it("moves content back out of the vault when the toggle is off", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { storeContentInVault: false },
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/test/vault/lilbee",
+                        vault_base: "/test/vault",
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            const patch = updateConfig.mock.calls[0][0] as Record<string, unknown>;
+            expect(String(patch.documents_dir)).toContain("documents");
+            expect(String(patch.documents_dir)).not.toContain("/test/vault/lilbee");
+            expect(patch.vault_base).toBeNull();
+        });
+
+        it("does not re-PATCH when content already sits outside the vault", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin({ storeContentInVault: false });
+            const docsDir = (plugin as any).serverOwnedDocumentsDir() as string;
+            (plugin.api as any).config = vi.fn().mockResolvedValue({ documents_dir: docsDir, vault_base: null });
+            (plugin.api as any).updateConfig = updateConfig;
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("does nothing when the data dir cannot be resolved", async () => {
             const updateConfig = vi.fn();
             const plugin = await setupConfiguredPlugin(
                 { storeContentInVault: false },
                 { config: vi.fn().mockResolvedValue({}), updateConfig },
             );
+            (plugin as any).vaultRegistry = null;
             await plugin.configureManagedStorage();
             expect(updateConfig).not.toHaveBeenCalled();
         });

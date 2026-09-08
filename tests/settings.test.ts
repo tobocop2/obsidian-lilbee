@@ -824,7 +824,7 @@ describe("LilbeeSettingTab", () => {
             expect((plugin as any).configureManagedStorage).toHaveBeenCalled();
         });
 
-        it("onChange false persists and does not trigger configureManagedStorage", async () => {
+        it("onChange false persists and moves content back out of the vault", async () => {
             const plugin = makePlugin({ serverMode: "managed", storeContentInVault: true });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -832,7 +832,8 @@ describe("LilbeeSettingTab", () => {
 
             await toggleByName.get(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)!(false);
             expect(plugin.settings.storeContentInVault).toBe(false);
-            expect((plugin as any).configureManagedStorage).not.toHaveBeenCalled();
+            // Off is a destination, not a no-op: the server has to be told.
+            expect((plugin as any).configureManagedStorage).toHaveBeenCalled();
         });
 
         it("is disabled and marks the row in external mode", async () => {
@@ -857,6 +858,43 @@ describe("LilbeeSettingTab", () => {
             await textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
             expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
             expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("sends the cited-answer prompt to the server", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+
+            await textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                rag_system_prompt: "You are a pirate.",
+            });
+        });
+
+        it("an empty prompt clears the override rather than setting an empty one", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+
+            await textAreaByName.get(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)!("   ");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ general_system_prompt: null });
+        });
+
+        it("reports a prompt the server refused", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api as any).updateConfig = vi.fn().mockRejectedValue(new Error("read-only config"));
+            const tab = makeTab(plugin);
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+
+            await textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
+            expect(
+                Notice.instances.some((n) =>
+                    n.message.includes(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
+                ),
+            ).toBe(true);
         });
 
         it("saves generalSystemPrompt when the no-document textarea changes", async () => {

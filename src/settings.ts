@@ -1175,6 +1175,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
+    /** Send a system prompt to the server. An empty box means "use the default",
+     *  so it clears the override rather than setting an empty prompt. */
+    private async pushSystemPrompt(key: string, value: string, name: string): Promise<void> {
+        const trimmed = value.trim();
+        try {
+            await this.plugin.api.updateConfig({ [key]: trimmed === "" ? null : trimmed });
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+        }
+    }
+
     /** Runs a programmatic setValue with the control's onChange muted, so nothing echoes to the server. */
     private setValueSilently(apply: () => unknown): void {
         this.suppressChangeEvents = true;
@@ -1273,6 +1284,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             cls: "setting-item-description",
         });
 
+        // Both prompts reach the server through /api/config. They used to travel
+        // only in the spawn environment, which made them dead in external mode
+        // and stale until the next spawn in managed mode.
         const ragPromptSetting = new Setting(details)
             .setName(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)
             .setDesc(MESSAGES.DESC_RAG_SYSTEM_PROMPT)
@@ -1282,6 +1296,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.ragSystemPrompt = value;
                         await this.plugin.saveSettings();
+                        await this.pushSystemPrompt(
+                            CONFIG_KEY.RAG_SYSTEM_PROMPT,
+                            value,
+                            MESSAGES.LABEL_RAG_SYSTEM_PROMPT,
+                        );
                     });
                 this.serverConfigInputs.set("rag_system_prompt", text.inputEl);
             });
@@ -1296,6 +1315,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.generalSystemPrompt = value;
                         await this.plugin.saveSettings();
+                        await this.pushSystemPrompt(
+                            CONFIG_KEY.GENERAL_SYSTEM_PROMPT,
+                            value,
+                            MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
+                        );
                     });
                 this.serverConfigInputs.set("general_system_prompt", text.inputEl);
             });
@@ -2812,9 +2836,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.onChange(async (value) => {
                     this.plugin.settings.storeContentInVault = value;
                     await this.plugin.saveSettings();
-                    if (value) {
-                        void this.plugin.configureManagedStorage();
-                    }
+                    // Both directions move content; off is not a no-op.
+                    void this.plugin.configureManagedStorage();
                 });
             });
         if (this.plugin.settings.serverMode !== SERVER_MODE.MANAGED) {
