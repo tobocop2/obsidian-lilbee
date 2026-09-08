@@ -996,29 +996,60 @@ export class LilbeeClient {
         const decoder = new TextDecoder();
         let buffer = "";
         let currentEvent: string = SSE_EVENT.MESSAGE;
+        // Consecutive `data:` lines are one payload joined by newlines, so they
+        // accumulate until the blank line that ends the frame.
+        let data: string[] = [];
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
+        const frame = (): SSEEvent | null => {
+            if (data.length === 0) {
+                currentEvent = SSE_EVENT.MESSAGE;
+                return null;
+            }
+            const raw = data.join("\n");
+            const event = currentEvent;
+            data = [];
+            currentEvent = SSE_EVENT.MESSAGE;
+            try {
+                return { event, data: JSON.parse(raw) };
+            } catch {
+                return { event, data: raw };
+            }
+        };
 
-            const lines = buffer.split("\n");
-            // split() always returns at least one element, so pop() is never undefined
-            buffer = lines.pop()!;
+        try {
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
 
-            for (const line of lines) {
-                if (line.startsWith("event:")) {
-                    currentEvent = (line.startsWith("event: ") ? line.slice(7) : line.slice(6)).trim();
-                } else if (line.startsWith("data:")) {
-                    const raw = line.startsWith("data: ") ? line.slice(6) : line.slice(5);
-                    try {
-                        yield { event: currentEvent, data: JSON.parse(raw) };
-                    } catch {
-                        yield { event: currentEvent, data: raw };
+                const lines = buffer.split("\n");
+                // split() always returns at least one element, so pop() is never undefined
+                buffer = lines.pop()!;
+
+                for (const line of lines) {
+                    if (line.startsWith("event:")) {
+                        currentEvent = (line.startsWith("event: ") ? line.slice(7) : line.slice(6)).trim();
+                    } else if (line.startsWith("data:")) {
+                        data.push(line.startsWith("data: ") ? line.slice(6) : line.slice(5));
+                    } else if (line.trim() === "") {
+                        const ev = frame();
+                        if (ev) yield ev;
                     }
-                    currentEvent = SSE_EVENT.MESSAGE;
                 }
             }
+            // A stream that closes without its trailing blank line still holds a
+            // frame, usually the terminating `done`. Dropping it let the chat
+            // loop exit normally with the answer unrendered and unsaved.
+            if (buffer.startsWith("data:")) {
+                data.push(buffer.startsWith("data: ") ? buffer.slice(6) : buffer.slice(5));
+            }
+            const tail = frame();
+            if (tail) yield tail;
+        } finally {
+            // A consumer that stops early (an SSE error, a cancelled pull) would
+            // otherwise leave the body unread and the socket open until the
+            // server finished sending.
+            await reader.cancel().catch(() => undefined);
         }
     }
 }
