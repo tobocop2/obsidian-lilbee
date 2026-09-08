@@ -3,6 +3,7 @@ import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
 import {
+    CAPABILITY,
     CHAT_STATUS,
     DEFAULT_SHARED_CONFIG,
     INDETERMINATE_PROGRESS,
@@ -4225,6 +4226,134 @@ describe("LilbeePlugin", () => {
             expect(setupTasks[0]!.status).toBe("done");
             expect(crawlTasks.length).toBe(1);
             expect(crawlTasks[0]!.status).toBe("done");
+        });
+
+        it("installCrawlerBrowser drives the setup stream and reports success", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.invalidateCapability = vi.fn();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 90_000_000,
+                            total_bytes: 180_000_000,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(true);
+
+            const setupTasks = plugin.taskQueue.completed.filter((t) => t.type === "setup");
+            expect(setupTasks.length).toBe(1);
+            expect(setupTasks[0]!.status).toBe("done");
+            expect(plugin.api.invalidateCapability).toHaveBeenCalledWith(CAPABILITY.CRAWLING_BROWSER);
+        });
+
+        it("installCrawlerBrowser reports an indeterminate download with no total", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.invalidateCapability = vi.fn();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 5_000_000,
+                            total_bytes: null,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(true);
+            expect(plugin.taskQueue.completed.filter((t) => t.type === "setup")[0]!.status).toBe("done");
+        });
+
+        it("installCrawlerBrowser fails the task and reports the server error", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.invalidateCapability = vi.fn();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    yield {
+                        event: SSE_EVENT.SETUP_DONE,
+                        data: { component: "chromium", success: false, error: "no disk space" },
+                    };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+
+            const setup = plugin.taskQueue.completed.find((t) => t.type === "setup");
+            expect(setup?.status).toBe("failed");
+            expect(Notice.instances.some((n: any) => n.message.includes("no disk space"))).toBe(true);
+            expect(plugin.api.invalidateCapability).not.toHaveBeenCalled();
+        });
+
+        it("installCrawlerBrowser falls back to a generic error when the server sends none", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: false, error: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")?.error).toBe(MESSAGES.ERROR_UNKNOWN);
+        });
+
+        it("installCrawlerBrowser fails the task when the stream throws", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    throw new Error("connection reset");
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")?.error).toContain("connection reset");
+        });
+
+        it("installCrawlerBrowser reports a full queue instead of starting a download", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin.taskQueue, "enqueue").mockReturnValue(null);
+            plugin.api.setupCrawler = vi.fn();
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.api.setupCrawler).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+        });
+
+        it("installCrawlerBrowser ends without a setup_done when the stream closes early", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")?.status).toBe("failed");
         });
 
         it("ignores setup_progress when no setup_start was seen", async () => {

@@ -17,6 +17,7 @@ import type {
     Capability,
     CatalogResponse,
     ConfigResponse,
+    CrawlerStatusResponse,
     ConfigUpdateResponse,
     ConversationState,
     CrawlRenderMode,
@@ -413,7 +414,9 @@ export class LilbeeClient {
             case CAPABILITY.API_KEYS:
                 return this.probeLitellmInstalled();
             case CAPABILITY.CRAWLING:
-                return this.probeCrawlerInstalled();
+                return this.probeCrawlerInstalled("package_installed");
+            case CAPABILITY.CRAWLING_BROWSER:
+                return this.probeCrawlerInstalled("installed");
             case CAPABILITY.WIKI:
                 return this.probeWikiEnabled();
         }
@@ -425,10 +428,11 @@ export class LilbeeClient {
         return body.error === null || body.error === undefined;
     }
 
-    private async probeCrawlerInstalled(): Promise<boolean> {
+    /** `package_installed` is the bundled crawler package; `installed` also requires Chromium. */
+    private async probeCrawlerInstalled(field: "package_installed" | "installed"): Promise<boolean> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/setup/crawler/status`);
-        const body = (await res.json()) as { package_installed?: boolean };
-        return body.package_installed === true;
+        const body = (await res.json()) as CrawlerStatusResponse;
+        return body[field] === true;
     }
 
     private async probeWikiEnabled(): Promise<boolean> {
@@ -766,6 +770,15 @@ export class LilbeeClient {
                 body: JSON.stringify(body),
                 signal,
             },
+            { stream: true },
+        );
+        yield* this.parseSSE(res);
+    }
+
+    async *setupCrawler(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/setup/crawler`,
+            { method: "POST", signal },
             { stream: true },
         );
         yield* this.parseSSE(res);

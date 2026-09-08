@@ -4,14 +4,28 @@ import { MockElement } from "../__mocks__/obsidian";
 import { CrawlModal } from "../../src/views/crawl-modal";
 import { MESSAGES } from "../../src/locales/en";
 
-function makePlugin(renderMode: string = "http") {
+function makePlugin(renderMode: string = "http", browserReady: boolean = true) {
     return {
         runCrawl: vi.fn(),
+        installCrawlerBrowser: vi.fn().mockResolvedValue(true),
         api: {
             config: vi.fn().mockResolvedValue({ crawl_render_mode: renderMode }),
             updateConfig: vi.fn().mockResolvedValue({}),
+            getCapability: vi.fn().mockResolvedValue(browserReady),
         },
     };
+}
+
+/** Obsidian's hide()/show() toggle inline display, which is what the mock records. */
+function isHidden(el: MockElement): boolean {
+    return el.style.display === "none";
+}
+
+/** Let the modal's config and capability probes settle. */
+async function settle(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 }
 
 function collectTexts(el: MockElement): string[] {
@@ -32,9 +46,9 @@ function findButtons(el: MockElement): MockElement[] {
     return buttons;
 }
 
-function openModal() {
+function openModal(renderMode: string = "http", browserReady: boolean = true) {
     const app = new App();
-    const plugin = makePlugin();
+    const plugin = makePlugin(renderMode, browserReady);
     const modal = new CrawlModal(app as any, plugin as any);
     modal.onOpen();
     const el = modal.contentEl as unknown as MockElement;
@@ -403,8 +417,7 @@ describe("CrawlModal", () => {
         const modal = new CrawlModal(app as any, plugin as any);
         modal.onOpen();
         const el = modal.contentEl as unknown as MockElement;
-        await Promise.resolve();
-        await Promise.resolve();
+        await settle();
         expect((el.find("lilbee-crawl-browser-input") as any).checked).toBe(true);
         expect(plugin.api.config).toHaveBeenCalled();
     });
@@ -433,13 +446,13 @@ describe("CrawlModal", () => {
             api: {
                 config: vi.fn().mockRejectedValue(new Error("unreachable")),
                 updateConfig: vi.fn().mockResolvedValue({}),
+                getCapability: vi.fn().mockResolvedValue(true),
             },
         };
         const modal = new CrawlModal(app as any, plugin as any);
         modal.onOpen();
         const el = modal.contentEl as unknown as MockElement;
-        await Promise.resolve();
-        await Promise.resolve();
+        await settle();
         expect((el.find("lilbee-crawl-browser-input") as any).checked).toBe(false);
     });
 
@@ -452,5 +465,54 @@ describe("CrawlModal", () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser", undefined);
+    });
+
+    it("disables the Use-browser toggle and offers the install when Chromium is missing", async () => {
+        const { el } = openModal("http", false);
+        await settle();
+        const browser = el.find("lilbee-crawl-browser-input") as any;
+        expect(browser.disabled).toBe(true);
+        expect(browser.checked).toBe(false);
+        const setup = el.find("lilbee-crawl-browser-setup") as MockElement;
+        expect(isHidden(setup)).toBe(false);
+        expect(collectTexts(setup).some((t) => t.includes(MESSAGES.NOTICE_CRAWL_BROWSER_MISSING))).toBe(true);
+    });
+
+    it("ignores a server default of browser mode when Chromium is missing", async () => {
+        const { el } = openModal("browser", false);
+        await settle();
+        expect((el.find("lilbee-crawl-browser-input") as any).checked).toBe(false);
+    });
+
+    it("enables the toggle after the install succeeds", async () => {
+        const { plugin, el } = openModal("http", false);
+        await settle();
+        const setup = el.find("lilbee-crawl-browser-setup") as MockElement;
+        findButtons(setup)[0].trigger("click");
+        await settle();
+        expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+        const browser = el.find("lilbee-crawl-browser-input") as any;
+        expect(browser.disabled).toBe(false);
+        expect(browser.checked).toBe(true);
+        expect(isHidden(setup)).toBe(true);
+    });
+
+    it("re-enables the install button when the install fails", async () => {
+        const { plugin, el } = openModal("http", false);
+        (plugin.installCrawlerBrowser as any).mockResolvedValue(false);
+        await settle();
+        const setup = el.find("lilbee-crawl-browser-setup") as MockElement;
+        const btn = findButtons(setup)[0] as any;
+        btn.trigger("click");
+        await settle();
+        expect(btn.disabled).toBe(false);
+        expect((el.find("lilbee-crawl-browser-input") as any).disabled).toBe(true);
+    });
+
+    it("leaves the install offer hidden when Chromium is present", async () => {
+        const { el } = openModal();
+        await settle();
+        expect(isHidden(el.find("lilbee-crawl-browser-setup") as MockElement)).toBe(true);
+        expect((el.find("lilbee-crawl-browser-input") as any).disabled).toBe(false);
     });
 });

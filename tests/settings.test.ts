@@ -181,6 +181,7 @@ function makePlugin(
         triggerSync,
         runWikiLint,
         runWikiPrune,
+        installCrawlerBrowser: vi.fn().mockResolvedValue(true),
         initWikiSync,
         reconcileWiki,
         configureManagedStorage,
@@ -306,6 +307,8 @@ interface Captured {
     descByName: Map<string, string>;
     /** Every value pushed into a row's slider via setValue, in call order. */
     sliderSetValuesByName: Map<string, number[]>;
+    /** Every value pushed into a row's dropdown via setValue, in call order. */
+    dropdownSetValuesByName: Map<string, string[]>;
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
     blurHandlers: BlurCapture[];
@@ -349,6 +352,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const textAreaByName = new Map<string, TextOnChange>();
     const sliderByName = new Map<string, SliderOnChange>();
     const sliderSetValuesByName = new Map<string, number[]>();
+    const dropdownSetValuesByName = new Map<string, string[]>();
     const descByName = new Map<string, string>();
     let currentName = "";
     const origSetName = Setting.prototype.setName;
@@ -445,6 +449,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+        const name = currentName;
         const options: Record<string, string> = {};
         const setValues: string[] = [];
         const fakeDropdown = {
@@ -470,6 +475,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         cb(fakeDropdown);
         dropdownOptions.push(options);
         dropdownSetValues.push(setValues);
+        if (name) dropdownSetValuesByName.set(name, setValues);
         return this;
     };
 
@@ -554,6 +560,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         sliderByName,
         descByName,
         sliderSetValuesByName,
+        dropdownSetValuesByName,
         textOnChanges,
         textAreaOnChanges,
         blurHandlers,
@@ -1178,9 +1185,9 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Setup wizard + Start + Server version + Refresh + Browse Catalog + Wiki Lint + Wiki Prune
-            // + Export diagnostics + Reset all + Uninstall server = 10
-            expect(buttonOnClicks.length).toBe(10);
+            // Setup wizard + Start + Server version + Refresh + Browse Catalog + Install Chromium
+            // + Wiki Lint + Wiki Prune + Export diagnostics + Reset all + Uninstall server = 11
+            expect(buttonOnClicks.length).toBe(11);
             // Refresh is the fourth button (index 3)
             await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
@@ -4624,6 +4631,76 @@ describe("managed mode settings", () => {
             expect((tab as any).crawlingContainerEl?.style.display).not.toBe("none");
             expect((tab as any).wikiContainerEl?.style.display).not.toBe("none");
             expect((tab as any).apiKeysContainerEl?.style.display).not.toBe("none");
+        });
+
+        it("offers the Chromium install and refuses browser render mode when Chromium is missing", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).not.toBe("none");
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+            const setValues = captured.dropdownSetValuesByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!;
+            expect(setValues[setValues.length - 1]).toBe("http");
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_CRAWL_BROWSER_MISSING)).toBe(true);
+        });
+
+        it("hides the Chromium install offer when the server can already render with a browser", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).toBe("none");
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("accepts browser render mode after the Chromium install succeeds", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            await clickButton(captured, MESSAGES.LABEL_CRAWL_BROWSER_SETUP);
+            expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).toBe("none");
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("keeps the Chromium install offer up when the install fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            (plugin.installCrawlerBrowser as any).mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            await clickButton(captured, MESSAGES.LABEL_CRAWL_BROWSER_SETUP);
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).not.toBe("none");
+        });
+
+        it("leaves the Chromium install offer hidden when the whole crawling section is gated off", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).toBe("none");
         });
 
         it("calls invalidateCapability(API_KEYS) after a key save so the catalog refresh can pick up the new state", async () => {

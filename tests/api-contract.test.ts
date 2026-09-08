@@ -137,6 +137,7 @@ const INVOCATIONS: Record<string, unknown[]> = {
     exportDataset: ["parquet"],
     importDataset: [new ArrayBuffer(8), "parquet"],
     crawl: ["https://example.com"],
+    setupCrawler: [],
     config: [],
     configDefaults: [],
     updateConfig: [{}],
@@ -258,7 +259,7 @@ describe("api.ts route contract", () => {
     });
 
     it("probes capabilities against routes the server serves", async () => {
-        for (const capability of ["api_keys", "crawling", "wiki"]) {
+        for (const capability of ["api_keys", "crawling", "crawling_browser", "wiki"]) {
             client.invalidateCapability();
             const calls = await record("getCapability", [capability]);
             expect(calls.length).toBeGreaterThan(0);

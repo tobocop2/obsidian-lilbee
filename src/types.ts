@@ -250,11 +250,13 @@ export const KEY_STATUS = {
     MISSING_KEY: "missing_key",
 } as const satisfies Record<string, KeyStatus>;
 
-export type Capability = "api_keys" | "crawling" | "wiki";
+export type Capability = "api_keys" | "crawling" | "crawling_browser" | "wiki";
 
 export const CAPABILITY = {
     API_KEYS: "api_keys",
+    // CRAWLING is the crawler package; CRAWLING_BROWSER also needs Playwright Chromium.
     CRAWLING: "crawling",
+    CRAWLING_BROWSER: "crawling_browser",
     WIKI: "wiki",
 } as const satisfies Record<string, Capability>;
 
@@ -902,6 +904,12 @@ export interface WikiPagePayload {
     pages: number;
     current: number;
     total: number;
+}
+
+export interface CrawlerStatusResponse {
+    installed?: boolean;
+    package_installed?: boolean;
+    chromium_installed?: boolean;
 }
 
 export interface SetupStartPayload {

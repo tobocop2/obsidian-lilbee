@@ -1360,6 +1360,21 @@
     background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
 }
 
+.lilbee-crawl-browser-setup {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-2, 8px);
+    margin: 0 0 var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 3px solid var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 6%, transparent);
+    border-radius: 0 var(--radius-s, 4px) var(--radius-s, 4px) 0;
+    color: var(--text-muted);
+    font-size: var(--font-smaller, 12px);
+    line-height: var(--line-height-normal, 1.5);
+}
+
 .lilbee-crawl-notice {
     margin: 0 0 var(--size-4-2, 8px);
     padding: var(--size-4-2, 8px) var(--size-4-3, 12px);

@@ -269,6 +269,10 @@ export const MESSAGES = {
         "How pages are fetched. Lightweight is a fast HTTP fetch with no JavaScript. Browser runs Chromium so JavaScript-rendered pages work, at the cost of more memory and slower crawls.",
     LABEL_CRAWL_RENDER_MODE_HTTP: "Lightweight (HTTP, no JavaScript)",
     LABEL_CRAWL_RENDER_MODE_BROWSER: "Browser (Chromium, JavaScript)",
+    LABEL_CRAWL_BROWSER_SETUP: "Browser rendering",
+    DESC_CRAWL_BROWSER_SETUP:
+        "Browser render mode needs Chromium, which the server downloads once. The download is about 180 MB.",
+    BUTTON_INSTALL_CHROMIUM: "Install Chromium",
     LABEL_CRAWL_EXCLUDE_PATTERNS: "URL exclude patterns",
     DESC_CRAWL_EXCLUDE_PATTERNS:
         "Regex patterns that skip URLs at link-discovery during recursive crawls. One per line. Blank = no filtering.",
@@ -731,6 +735,9 @@ export const MESSAGES = {
     STATUS_TASK_BATCH: (current: number, total: number, file: string, status: string) =>
         `${status} ${current}/${total} ${file}`,
     STATUS_TASK_CRAWLER_PREPARING: "Preparing crawler…",
+    TASK_CRAWLER_BROWSER_SETUP: "Chromium setup",
+    NOTICE_CRAWL_BROWSER_MISSING: "Browser render mode needs Chromium. Install it first, then pick browser mode.",
+    NOTICE_CRAWLER_BROWSER_READY: "Chromium is ready. Browser render mode is now available.",
     STATUS_TASK_SETUP_PROGRESS: "chromium: {downloaded}/{total} MB",
     STATUS_TASK_SETUP_PROGRESS_INDETERMINATE: "chromium: {downloaded} MB",
     STATUS_INDEXING: "Indexing: {file}",
@@ -781,6 +788,7 @@ export const MESSAGES = {
     ERROR_CRAWLER_SETUP_FAILED:
         "Crawler setup failed: {error}. Run 'make crawl-setup' in the lilbee repo or 'lilbee setup crawler' to retry.",
     ERROR_CRAWLER_SETUP_FAILED_SHORT: "Chromium setup failed — see setup task",
+    ERROR_CRAWLER_SETUP_INCOMPLETE: "The server stopped the Chromium download before it finished.",
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
     ERROR_CHAT_FAILED: (reason: string) => `Chat failed: ${reason}`,

@@ -138,6 +138,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private chatModeSelectEl: HTMLSelectElement | null = null;
     private apiKeysContainerEl: HTMLElement | null = null;
     private crawlingContainerEl: HTMLElement | null = null;
+    private crawlerBrowserSetupEl: HTMLElement | null = null;
+    // Fail open: an unreachable probe must not block a render mode that works.
+    private crawlerBrowserReady = true;
     private wikiContainerEl: HTMLElement | null = null;
     /** Last successful release-list fetch; failures are not cached, so a retry always refetches. */
     private releasesCache: { at: number; releases: ReleaseInfo[] } | null = null;
@@ -200,14 +203,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async applyCapabilityGating(): Promise<void> {
-        const [apiKeys, crawling, wiki] = await Promise.all([
+        const [apiKeys, crawling, crawlingBrowser, wiki] = await Promise.all([
             this.plugin.api.getCapability(CAPABILITY.API_KEYS),
             this.plugin.api.getCapability(CAPABILITY.CRAWLING),
+            this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER),
             this.plugin.api.getCapability(CAPABILITY.WIKI),
         ]);
         if (!apiKeys && this.apiKeysContainerEl) this.apiKeysContainerEl.hide();
         if (!crawling && this.crawlingContainerEl) this.crawlingContainerEl.hide();
         if (!wiki && this.wikiContainerEl) this.wikiContainerEl.hide();
+        this.crawlerBrowserReady = crawlingBrowser;
+        // The offer belongs inside a visible Crawling section, never on its own.
+        if (crawling && !crawlingBrowser && this.crawlerBrowserSetupEl) this.crawlerBrowserSetupEl.show();
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -2623,6 +2630,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.addOption(CRAWL_RENDER_MODE.BROWSER, MESSAGES.LABEL_CRAWL_RENDER_MODE_BROWSER);
                 dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
                 dropdown.onChange(async (value) => {
+                    if (value === CRAWL_RENDER_MODE.BROWSER && !this.crawlerBrowserReady) {
+                        dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
+                        new Notice(MESSAGES.NOTICE_CRAWL_BROWSER_MISSING);
+                        return;
+                    }
                     try {
                         await this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_RENDER_MODE));
@@ -2635,6 +2647,23 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.appendResetAffordance(renderModeSetting, CONFIG_KEY.CRAWL_RENDER_MODE, MESSAGES.LABEL_CRAWL_RENDER_MODE);
         renderModeContainer.hide();
         this.serverConfigHideableEls.set(CONFIG_KEY.CRAWL_RENDER_MODE, renderModeContainer);
+
+        const browserSetupContainer = containerEl.createDiv();
+        new Setting(browserSetupContainer)
+            .setName(MESSAGES.LABEL_CRAWL_BROWSER_SETUP)
+            .setDesc(MESSAGES.DESC_CRAWL_BROWSER_SETUP)
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_INSTALL_CHROMIUM).onClick(async () => {
+                    btn.setDisabled(true);
+                    const installed = await this.plugin.installCrawlerBrowser();
+                    btn.setDisabled(false);
+                    if (!installed) return;
+                    this.crawlerBrowserReady = true;
+                    browserSetupContainer.hide();
+                }),
+            );
+        browserSetupContainer.hide();
+        this.crawlerBrowserSetupEl = browserSetupContainer;
 
         const patternsSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)

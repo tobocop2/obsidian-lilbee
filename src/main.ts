@@ -37,6 +37,7 @@ import {
     DEFAULT_SETTINGS,
     DOT_STATE,
     ENSURE_SOURCE,
+    CAPABILITY,
     ERROR_NAME,
     LOGS_DIR,
     MANAGED_CONSENT_RESULT,
@@ -3024,6 +3025,66 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /**
+     * Download Playwright Chromium so the crawler can render with a browser.
+     * Resolves true when the server reports the component installed.
+     */
+    async installCrawlerBrowser(): Promise<boolean> {
+        const taskId = this.taskQueue.enqueue(MESSAGES.TASK_CRAWLER_BROWSER_SETUP, TASK_TYPE.SETUP);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return false;
+        }
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
+        try {
+            const error = await this.drainCrawlerSetup(taskId, controller.signal);
+            if (error !== null) {
+                this.taskQueue.fail(taskId, error);
+                new Notice(MESSAGES.ERROR_CRAWLER_SETUP_FAILED.replace("{error}", error));
+                return false;
+            }
+            this.taskQueue.complete(taskId);
+            this.api.invalidateCapability(CAPABILITY.CRAWLING_BROWSER);
+            new Notice(MESSAGES.NOTICE_CRAWLER_BROWSER_READY, NOTICE_DURATION_MS);
+            return true;
+        } catch (err) {
+            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+            this.taskQueue.fail(taskId, msg);
+            new Notice(MESSAGES.ERROR_CRAWLER_SETUP_FAILED.replace("{error}", msg));
+            return false;
+        }
+    }
+
+    /** A download with no announced total stays indeterminate rather than dividing by zero. */
+    private renderSetupProgress(taskId: string, d: SetupProgressPayload): void {
+        const pct = d.total_bytes ? (d.downloaded_bytes / d.total_bytes) * 100 : -1;
+        this.taskQueue.update(taskId, pct, formatSetupDetail(d.downloaded_bytes, d.total_bytes));
+    }
+
+    /** Renders the setup stream onto `taskId`. Returns null on success, else the error text. */
+    private async drainCrawlerSetup(taskId: string, signal: AbortSignal): Promise<string | null> {
+        let outcome: string | null = MESSAGES.ERROR_CRAWLER_SETUP_INCOMPLETE;
+        for await (const event of this.api.setupCrawler(signal)) {
+            switch (event.event) {
+                case SSE_EVENT.SETUP_START: {
+                    const d = event.data as SetupStartPayload;
+                    this.taskQueue.update(taskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                    break;
+                }
+                case SSE_EVENT.SETUP_PROGRESS:
+                    this.renderSetupProgress(taskId, event.data as SetupProgressPayload);
+                    break;
+                case SSE_EVENT.SETUP_DONE: {
+                    const d = event.data as SetupDonePayload;
+                    outcome = d.success ? null : (d.error ?? MESSAGES.ERROR_UNKNOWN);
+                    break;
+                }
+            }
+        }
+        return outcome;
+    }
+
     async runCrawl(
         url: string,
         depth: number | null,
@@ -3063,9 +3124,7 @@ export default class LilbeePlugin extends Plugin {
                     }
                     case SSE_EVENT.SETUP_PROGRESS: {
                         if (setupTaskId === null) break;
-                        const d = event.data as SetupProgressPayload;
-                        const pct = d.total_bytes ? (d.downloaded_bytes / d.total_bytes) * 100 : -1;
-                        this.taskQueue.update(setupTaskId, pct, formatSetupDetail(d.downloaded_bytes, d.total_bytes));
+                        this.renderSetupProgress(setupTaskId, event.data as SetupProgressPayload);
                         break;
                     }
                     case SSE_EVENT.SETUP_DONE: {

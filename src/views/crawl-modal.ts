@@ -2,7 +2,7 @@ import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
-import { CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlRenderMode } from "../types";
+import { CAPABILITY, CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlRenderMode } from "../types";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -95,15 +95,40 @@ export class CrawlModal extends Modal {
         asInput(browserInput).checked = false;
         browserLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_USE_BROWSER });
 
-        // Pre-set the toggle from the server's current crawl_render_mode (sticky default).
-        void this.plugin.api
-            .config()
-            .then((cfg) => {
-                asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
-            })
-            .catch(() => {
-                /* Leave the toggle at its lightweight default if config is unreachable. */
+        const browserSetup = contentEl.createDiv({ cls: "lilbee-crawl-browser-setup" });
+        browserSetup.createSpan({ text: MESSAGES.NOTICE_CRAWL_BROWSER_MISSING });
+        const installBtn = browserSetup.createEl("button", {
+            text: MESSAGES.BUTTON_INSTALL_CHROMIUM,
+            attr: { type: "button" },
+        });
+        browserSetup.hide();
+        installBtn.addEventListener("click", () => {
+            installBtn.disabled = true;
+            void this.plugin.installCrawlerBrowser().then((installed) => {
+                installBtn.disabled = false;
+                if (!installed) return;
+                asInput(browserInput).disabled = false;
+                asInput(browserInput).checked = true;
+                browserSetup.hide();
             });
+        });
+
+        // Resolve both before touching the toggle: the sticky default must not
+        // re-check a box that the missing Chromium just disabled.
+        void (async () => {
+            const [cfg, browserReady] = await Promise.all([
+                this.plugin.api.config().catch(() => null),
+                this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER),
+            ]);
+            if (!browserReady) {
+                asInput(browserInput).disabled = true;
+                browserSetup.show();
+                return;
+            }
+            if (cfg !== null) {
+                asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
+            }
+        })();
 
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
