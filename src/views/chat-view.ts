@@ -1470,7 +1470,7 @@ export class ChatView extends ItemView {
 
     private renderHealthWarnings(): void {
         const el = this.warningsEl;
-        /* v8 ignore next 2 -- onOpen always creates it before any refresh lands */
+        // A probe can land on a leaf whose onOpen has not run yet.
         if (!el) return;
         el.empty();
         for (const w of this.plugin.healthWarnings) {

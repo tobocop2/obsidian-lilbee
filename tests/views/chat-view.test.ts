@@ -2590,6 +2590,14 @@ describe("ChatView health warnings", () => {
         expect(text).toContain("Run rebuild.");
     });
 
+    it("is a no-op on a view whose onOpen has not run", () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [{ code: "fts_unavailable", message: "Keyword search is unavailable." }];
+        const view = new ChatView(makeLeaf(), plugin);
+        // The health probe can reach a leaf before its view has been opened.
+        expect(() => view.refreshHealthWarnings()).not.toThrow();
+    });
+
     it("repaints when the plugin reports a new degradation after open", async () => {
         const plugin = makePlugin();
         plugin.healthWarnings = [];
