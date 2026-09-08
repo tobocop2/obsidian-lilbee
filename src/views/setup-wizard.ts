@@ -735,6 +735,7 @@ export class SetupWizard extends Modal {
             });
             if (result.isErr()) {
                 this.featuredModels = [];
+                this.selectedModel = null;
                 this.renderCatalogFailure(container, statusEl, result.error.message, () => {
                     void this.loadFeaturedModels(container, memGB, statusEl);
                 });
@@ -743,12 +744,14 @@ export class SetupWizard extends Modal {
             this.featuredModels = pickNativeChatModels(result.value.models);
         } catch (e) {
             this.featuredModels = [];
+            this.selectedModel = null;
             this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
                 void this.loadFeaturedModels(container, memGB, statusEl);
             });
             return;
         }
         if (this.featuredModels.length === 0) {
+            this.selectedModel = null;
             this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
                 void this.loadFeaturedModels(container, memGB, statusEl);
             });
@@ -770,15 +773,9 @@ export class SetupWizard extends Modal {
         }
     }
 
-    /** Say why the model grid is empty and let the user try again without
-     *  restarting the wizard. A silent empty step has nothing to select, so the
-     *  primary action can only answer "select a model". */
-    /** Reflect whether the step has something to act on. */
-    private syncPrimaryEnabled(): void {
-        if (!this.primaryBtn) return;
-        this.primaryBtn.disabled = this.selectedModel === null && this.selectedEmbedding === null;
-    }
-
+    /** Say why the grid is empty and let the user try again without restarting
+     *  the wizard. The step has nothing to select, so it also clears the stale
+     *  selection and disables the primary action. */
     private renderCatalogFailure(
         container: HTMLElement,
         statusEl: HTMLElement,
@@ -792,7 +789,7 @@ export class SetupWizard extends Modal {
             statusEl.setText("");
             retry();
         });
-        this.syncPrimaryEnabled();
+        if (this.primaryBtn) this.primaryBtn.disabled = true;
     }
 
     private selectModel(grid: HTMLElement, model: FeaturedModel): void {
@@ -941,6 +938,7 @@ export class SetupWizard extends Modal {
             });
             if (result.isErr()) {
                 this.embeddingModels = [];
+                this.selectedEmbedding = null;
                 this.renderCatalogFailure(container, statusEl, result.error.message, () => {
                     void this.loadEmbeddingModels(container, statusEl);
                 });
@@ -952,12 +950,14 @@ export class SetupWizard extends Modal {
             this.embeddingModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
         } catch (e) {
             this.embeddingModels = [];
+            this.selectedEmbedding = null;
             this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
                 void this.loadEmbeddingModels(container, statusEl);
             });
             return;
         }
         if (this.embeddingModels.length === 0) {
+            this.selectedEmbedding = null;
             this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
                 void this.loadEmbeddingModels(container, statusEl);
             });

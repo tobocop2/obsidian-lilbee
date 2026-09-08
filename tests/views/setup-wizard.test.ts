@@ -1029,6 +1029,45 @@ describe("SetupWizard", () => {
             expect((wizard.contentEl as unknown as MockElement).textContent ?? "").toContain("Qwen3");
         });
 
+        it("a failed catalog load drops a selection made before it", async () => {
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+            expect((wizard as any).selectedModel).not.toBeNull();
+
+            // Re-entering the step against a server that now fails must not keep
+            // the earlier pick: the grid is empty and the model is unreachable.
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect((wizard as any).selectedModel).toBeNull();
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            expect((btn as unknown as { disabled: boolean }).disabled).toBe(true);
+        });
+
+        it("disables the model step's action even when an embedding is selected", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("offline")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            // A later step's selection must not enable this one's action.
+            (wizard as any).selectedEmbedding = { hf_repo: "nomic", display_name: "nomic" };
+            wizard.next();
+            await tick();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            expect((btn as unknown as { disabled: boolean }).disabled).toBe(true);
+        });
+
         it("a failed catalog load says so and offers a retry", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
