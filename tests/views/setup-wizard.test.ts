@@ -4,7 +4,7 @@ import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
 import { getSystemMemoryGB } from "../../src/utils";
 import * as utils from "../../src/utils";
-import { SessionTokenError } from "../../src/api";
+import { LilbeeClient, SessionTokenError } from "../../src/api";
 import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
 import { ok, err } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
@@ -81,6 +81,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         startManagedServer: vi.fn().mockResolvedValue(undefined),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
+        resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
+        setupWizardOpen: false,
         ...overrides,
     };
     // Default consent gate: delegate to startManagedServer (so per-test
@@ -697,7 +699,8 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
         });
 
-        it("external mode: Next checks health and advances", async () => {
+        it("external mode: Next checks the connection and advances", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(true);
             const plugin = makePlugin({
                 serverManager: null,
                 settings: { serverMode: "managed" },
@@ -716,17 +719,18 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            expect(plugin.api.health).toHaveBeenCalled();
+            expect(probe).toHaveBeenCalled();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+            probe.mockRestore();
         });
 
-        it("external mode: handles health check failure", async () => {
+        it("external mode: handles a server that does not answer", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(false);
             const plugin = makePlugin({
                 serverManager: null,
                 settings: { serverMode: "managed" },
             });
-            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("connection refused")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -742,6 +746,7 @@ describe("SetupWizard", () => {
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Could not connect"))).toBe(true);
+            probe.mockRestore();
         });
 
         it("Back returns to welcome", () => {
@@ -3595,6 +3600,398 @@ describe("SetupWizard", () => {
             expect((wizard as any).syncResult ?? null).toBeNull();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
+        });
+    });
+
+    describe("Setup is complete once a server answers", () => {
+        it("managed: records setup as complete when the server reaches ready", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("managed: leaves setup incomplete when the server never starts", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                ensureManagedConsentThenStart: vi.fn().mockResolvedValue({ kind: "canceled" }),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.setupCompleted).toBe(false);
+        });
+
+        it("external: records setup as complete once the server answers", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(true);
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[1].trigger("click");
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+            probe.mockRestore();
+        });
+
+        it("skipping after the server is up keeps the plugin configured", async () => {
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+            wizard.skip();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(false);
+        });
+
+        it("records setup when welcome skips the server step on a running server", () => {
+            const plugin = makePlugin({
+                settings: { serverMode: "external", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.next();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+        });
+
+        it("re-running setup on a configured vault does not rewrite the flag", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: true },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+        });
+
+        it("says what an early exit costs when no server was ever chosen", () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.skip();
+
+            expect(plugin.settings.setupCompleted).toBe(false);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(true);
+        });
+    });
+
+    describe("External mode is checked before it is persisted", () => {
+        it("keeps the working configuration when the external server does not answer", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(false);
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[1].trigger("click");
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.serverMode).toBe("managed");
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+            expect(plugin.api.setBaseUrl).not.toHaveBeenCalled();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Could not connect"))).toBe(true);
+            probe.mockRestore();
+        });
+
+        it("probes the typed URL and token, not the stored ones", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(true);
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[1].trigger("click");
+            const inputs = el.findAll("lilbee-wizard-url-input");
+            inputs[0].value = "http://10.0.0.4:9000";
+            inputs[1].value = "tok-abc";
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(probe).toHaveBeenCalledWith("http://10.0.0.4:9000/api/health", expect.any(Number), "tok-abc");
+            expect(plugin.settings.serverUrl).toBe("http://10.0.0.4:9000");
+            expect(plugin.settings.manualToken).toBe("tok-abc");
+            expect(plugin.settings.serverMode).toBe("external");
+            probe.mockRestore();
+        });
+    });
+
+    describe("Retrying a failed catalog load", () => {
+        it("gives the primary action back when the retry succeeds", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi
+                .fn()
+                .mockResolvedValueOnce(err(new Error("connection refused")))
+                .mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === MESSAGES.BUTTON_DOWNLOAD_CONTINUE)!;
+            expect(downloadBtn.disabled).toBe(true);
+
+            findButtons(el)
+                .find((b) => b.textContent === MESSAGES.BUTTON_RETRY)!
+                .trigger("click");
+            await tick();
+
+            expect(downloadBtn.disabled).toBe(false);
+        });
+    });
+
+    describe("Our picks is curated", () => {
+        it("drops models the host cannot run", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "a/huge", display_name: "Huge", fit: "wont_run" }),
+                makeEntry({ hf_repo: "a/small", display_name: "Small", fit: "fits" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["a/small"]);
+        });
+
+        it("drops safety-stripped community re-uploads", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Qwen3-27B-Uncensored", display_name: "Qwen3 27B Uncensored" }),
+                makeEntry({ hf_repo: "x/Qwen3-27B-Heretic-Abliterated", display_name: "Heretic Abliterated" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("drops runtime-specific quants", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Flash-ROCm-FP4-Imatrix", display_name: "Flash ROCm FP4" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("drops models the server says it cannot load", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Weird-Arch", display_name: "Weird", compat: "unsupported" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("keeps a model whose name merely contains an excluded marker", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "org/Qwen3-Input-Guard", display_name: "Qwen3 Input Guard" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["org/Qwen3-Input-Guard", "Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("shows the raw list rather than an empty grid when curation removes everything", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Only-Uncensored", display_name: "Only Uncensored" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["x/Only-Uncensored"]);
+        });
+    });
+
+    describe("An installed chat model is used, not re-downloaded", () => {
+        it("sets the model and advances without pulling", async () => {
+            const entry = makeEntry({
+                hf_repo: "Liquid/LFM2.5-2.6B-GGUF",
+                display_name: "LFM2.5 2.6B",
+                installed: true,
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([entry])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("Liquid/LFM2.5-2.6B-GGUF");
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("embedding"))).toBe(true);
+        });
+
+        it("keeps the user on the step when the server refuses to set the installed model", async () => {
+            const entry = makeEntry({
+                hf_repo: "Liquid/LFM2.5-2.6B-GGUF",
+                display_name: "LFM2.5 2.6B",
+                installed: true,
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([entry])));
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("model is not loadable")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const useBtn = findButtons(el).find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(useBtn.disabled).toBe(false);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("model is not loadable"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("LFM2.5 2.6B"))).toBe(true);
+        });
+
+        it("labels the action Download & continue for a model that is not on disk", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const labels = findButtons(el).map((b) => b.textContent);
+            expect(labels).toContain(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+            expect(labels).not.toContain(MESSAGES.BUTTON_USE_CONTINUE);
+        });
+
+        it("does not paint the recommended card as the server's active model", async () => {
+            const entry = makeEntry({
+                hf_repo: "Liquid/LFM2.5-2.6B-GGUF",
+                display_name: "LFM2.5 2.6B",
+                installed: true,
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([entry])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const label = el.find("lilbee-model-card-status-label");
+            expect(label?.textContent).toBe(MESSAGES.LABEL_INSTALLED);
+        });
+    });
+
+    describe("Wiki step", () => {
+        it("turns the wiki on for the running plugin, not only on disk", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: false } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.WIKI;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[0].trigger("click");
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+
+            expect(plugin.settings.wikiEnabled).toBe(true);
+        });
+    });
+
+    describe("Agent picker never covers the wizard", () => {
+        it("marks the plugin as showing setup while the wizard is open", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+
+            wizard.open();
+            expect(plugin.setupWizardOpen).toBe(true);
+
+            wizard.close();
+            expect(plugin.setupWizardOpen).toBe(false);
+        });
+
+        it("re-offers the pairing it pushed aside once the wizard closes", () => {
+            const plugin = makePlugin({
+                settings: { serverMode: "external", setupCompleted: true },
+                resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.close();
+
+            expect(plugin.resumeDeferredAgentPicker).toHaveBeenCalled();
         });
     });
 });

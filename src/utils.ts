@@ -108,6 +108,9 @@ export const SPINNER_MIN_DISPLAY_MS = 800;
 // is expected.
 export const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
+/** How long a reachability probe waits for a server to answer. */
+export const SERVER_PROBE_TIMEOUT_MS = 5000;
+
 export class StreamIdleError extends Error {
     constructor(timeoutMs: number) {
         super(`stream idle for ${Math.round(timeoutMs / 1000)}s`);

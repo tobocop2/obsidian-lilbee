@@ -336,7 +336,19 @@ export default class LilbeePlugin extends Plugin {
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
-    wikiEnabled = false;
+    /**
+     * One flag, read straight from the stored setting. It used to be a second
+     * field mirrored from `settings.wikiEnabled` by hand, and every writer that
+     * forgot the mirror left the wiki commands unregistered while chat was
+     * already asking for wiki content.
+     */
+    get wikiEnabled(): boolean {
+        return this.settings.wikiEnabled;
+    }
+    /** True while the setup wizard owns the screen; nothing else may take the foreground. */
+    setupWizardOpen = false;
+    /** Set when agent pairing wanted the screen and the wizard had it. */
+    private agentPickerDeferred = false;
     wikiPageCount = 0;
     wikiDraftCount = 0;
     wikiSync: WikiSync | null = null;
@@ -366,7 +378,6 @@ export default class LilbeePlugin extends Plugin {
     async onload(): Promise<void> {
         this.registerErrorCapture();
         await this.loadSettings();
-        this.wikiEnabled = this.settings.wikiEnabled;
 
         // Sweep up status-bar items + ribbon icons that prior dead lilbee
         // instances left behind. Each crashed/incompletely-unloaded reload
@@ -899,6 +910,12 @@ export default class LilbeePlugin extends Plugin {
     /** Offer the picker the first time lilbee sees an agent CLI on this machine. */
     private async maybeShowAgentPicker(): Promise<void> {
         if (this.settings.agentIntegration.pickerShown) return;
+        // Pairing a coding agent is not part of setting up the vault. The
+        // wizard re-offers it on close, so the question is deferred, not dropped.
+        if (this.setupWizardOpen) {
+            this.agentPickerDeferred = true;
+            return;
+        }
         const index = await this.api.getAgentConfigIndex();
         if (index.isErr()) return;
         const detections = index.value.clients;
@@ -919,6 +936,13 @@ export default class LilbeePlugin extends Plugin {
             await this.persistAgentIntegration();
         }
         await this.applyAgentWiring(choice.client);
+    }
+
+    /** Offer the agent pairing the setup wizard pushed aside, now that it has the screen back. */
+    async resumeDeferredAgentPicker(): Promise<void> {
+        if (!this.agentPickerDeferred) return;
+        this.agentPickerDeferred = false;
+        await this.runAgentBoot();
     }
 
     /** Agent settings never change the server mode, so they skip saveSettings' restart logic. */
@@ -2199,7 +2223,6 @@ export default class LilbeePlugin extends Plugin {
         try {
             const wiki = await this.api.wikiStatus();
             if (wiki.isOk()) {
-                this.wikiEnabled = this.settings.wikiEnabled;
                 this.wikiPageCount = wiki.value.pages;
                 this.wikiDraftCount = wiki.value.drafts;
             }

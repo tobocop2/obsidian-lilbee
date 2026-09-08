@@ -26,7 +26,7 @@ const TASK_TAG_CLS: Record<string, string> = {
 export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
     const card = container.createDiv({ cls: "lilbee-model-card" });
     card.dataset.repo = entry.hf_repo;
-    if (options.isActive) card.addClass("is-selected");
+    if (options.isActive || options.isSelected) card.addClass("is-selected");
     if (entry.fit && FIT_RAIL_CLASS[entry.fit]) card.addClass(FIT_RAIL_CLASS[entry.fit]);
     if (entry.compat === MODEL_COMPAT.UNSUPPORTED) card.addClass("is-unsupported");
 

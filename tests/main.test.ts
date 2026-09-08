@@ -7711,14 +7711,14 @@ describe("LilbeePlugin", () => {
         it("is unavailable while the wiki is off", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = false;
+            plugin.settings.wikiEnabled = false;
             expect(wikiUpdateCmd(plugin).checkCallback(true)).toBe(false);
         });
 
         it("is available with the wiki on, and runs the update when invoked", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
             const spy = vi.spyOn(plugin, "runWikiUpdate").mockResolvedValue(undefined);
 
             expect(wikiUpdateCmd(plugin).checkCallback(true)).toBe(true);
@@ -7970,7 +7970,7 @@ describe("LilbeePlugin", () => {
         it("wiki command returns false when wikiEnabled is false", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = false;
+            plugin.settings.wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "wiki",
@@ -7981,7 +7981,7 @@ describe("LilbeePlugin", () => {
         it("wiki command returns true when wikiEnabled is true", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "wiki",
@@ -7992,7 +7992,7 @@ describe("LilbeePlugin", () => {
         it("wiki-lint command returns false when wikiEnabled is false", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = false;
+            plugin.settings.wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "wiki-lint",
@@ -8003,7 +8003,7 @@ describe("LilbeePlugin", () => {
         it("wiki-lint command returns true when wikiEnabled is true", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "wiki-lint",
@@ -8014,7 +8014,7 @@ describe("LilbeePlugin", () => {
         it("wiki command calls activateWikiView when not checking", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
             const spy = vi.spyOn(plugin, "activateWikiView").mockResolvedValue(undefined);
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -8027,7 +8027,7 @@ describe("LilbeePlugin", () => {
         it("wiki-lint command calls runWikiLint when not checking", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
             const spy = vi.spyOn(plugin, "runWikiLint").mockResolvedValue(undefined);
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -8040,7 +8040,7 @@ describe("LilbeePlugin", () => {
         it("wiki-drafts command returns false when wikiEnabled is false", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = false;
+            plugin.settings.wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "wiki-drafts",
@@ -8051,7 +8051,7 @@ describe("LilbeePlugin", () => {
         it("wiki-drafts command returns true when wikiEnabled is true", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "wiki-drafts",
@@ -8062,7 +8062,7 @@ describe("LilbeePlugin", () => {
         it("wiki-drafts command opens DraftModal when not checking", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).wikiEnabled = true;
+            plugin.settings.wikiEnabled = true;
             mockDraftModalOpen.mockClear();
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -9268,6 +9268,42 @@ describe("agent integration", () => {
             expect(mockAgentPickerOpen).not.toHaveBeenCalled();
         });
 
+        it("stays out of the way while the setup wizard is open", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }));
+            plugin.setupWizardOpen = true;
+
+            await (plugin as any).runAgentBoot();
+
+            expect(mockAgentPickerOpen).not.toHaveBeenCalled();
+            expect(plugin.settings.agentIntegration.pickerShown).toBe(false);
+        });
+
+        it("offers the deferred picker once the setup wizard has closed", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }));
+            plugin.setupWizardOpen = true;
+            await (plugin as any).runAgentBoot();
+            plugin.setupWizardOpen = false;
+
+            await plugin.resumeDeferredAgentPicker();
+
+            expect(mockAgentPickerOpen).toHaveBeenCalledTimes(1);
+        });
+
+        it("has nothing to resume when the wizard never displaced the picker", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi.fn();
+
+            await plugin.resumeDeferredAgentPicker();
+
+            expect(plugin.api.getAgentConfigIndex).not.toHaveBeenCalled();
+        });
+
         it("stays quiet when the server cannot be asked", async () => {
             const { plugin } = await agentPlugin();
             plugin.api.getAgentConfigIndex = vi.fn().mockResolvedValue(errResult(new Error("offline")));
@@ -9410,5 +9446,18 @@ describe("agent integration", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("Reload it"))).toBe(false);
         });
+    });
+});
+
+describe("wiki enablement", () => {
+    it("reads the stored setting, so there is no second flag to drift", async () => {
+        const plugin = await createPlugin({ serverMode: "external", wikiEnabled: false });
+        await plugin.loadSettings();
+
+        expect(plugin.wikiEnabled).toBe(false);
+        plugin.settings.wikiEnabled = true;
+        expect(plugin.wikiEnabled).toBe(true);
+        plugin.settings.wikiEnabled = false;
+        expect(plugin.wikiEnabled).toBe(false);
     });
 });

@@ -1563,5 +1563,8 @@ export interface ModelCardOptions {
     onRemove?: (entry: CatalogEntry, btn: HTMLElement) => void;
     onInfo?: (entry: CatalogEntry) => void;
     showActions?: boolean;
+    /** The server's active model for this task. Only this claims the ACTIVE badge. */
     isActive?: boolean;
+    /** Highlighted in a picker. Carries no claim about what the server is serving. */
+    isSelected?: boolean;
 }

@@ -98,6 +98,7 @@ export const MESSAGES = {
     BUTTON_BROWSE_FULL_CATALOG: "Browse full catalog",
     BUTTON_BROWSE_MORE: "Browse more…",
     BUTTON_DOWNLOAD_CONTINUE: "Download & continue",
+    BUTTON_USE_CONTINUE: "Use & continue",
     BUTTON_DELETE_SELECTED: "Remove selected",
     BUTTON_CRAWL: "Crawl",
     BUTTON_START: "Start",
@@ -853,6 +854,8 @@ export const MESSAGES = {
     NOTICE_ENTER_URL: "lilbee: please enter a URL",
     NOTICE_DOWNLOAD_CANCELLED: "lilbee: download cancelled",
     NOTICE_INDEXING_CANCELLED: "lilbee: indexing cancelled",
+    NOTICE_SETUP_INCOMPLETE:
+        'lilbee has no server yet. Run "Run setup wizard" from the command palette to finish setup.',
     NOTICE_NOTHING_SAVE: "Nothing to save",
     NOTICE_NO_MODELS_INSTALLED: "No models installed.",
     NOTICE_NO_MODELS_DESCRIPTION: "Download a model to start chatting with your notes",
