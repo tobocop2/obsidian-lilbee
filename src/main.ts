@@ -917,12 +917,25 @@ export default class LilbeePlugin extends Plugin {
      * deep-link into the local editor. No-op when the toggle is off, the
      * server is external, or the current values already match.
      */
+    /** Where the managed server keeps content when it is not stored in the vault. */
+    private serverOwnedDocumentsDir(): string | null {
+        const registry = this.vaultRegistry;
+        if (!registry) return null;
+        return node.join(registry.resolveDataDir(this.vaultId), "documents");
+    }
+
     async configureManagedStorage(): Promise<void> {
         if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
-        if (!this.settings.storeContentInVault) return;
 
+        // Off is a real destination, not a no-op: leaving documents_dir inside
+        // the vault means content keeps landing there after the user opted out.
+        // The server refuses to reset this field (its default is a sentinel), so
+        // the way back is an explicit path to the server's own data dir.
+        const storeInVault = this.settings.storeContentInVault;
         const vaultBase = this.getVaultBasePath();
-        const desiredDocsDir = `${vaultBase}/lilbee`;
+        const desiredDocsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();
+        const desiredVaultBase = storeInVault ? vaultBase : null;
+        if (desiredDocsDir === null) return;
 
         let current: Record<string, unknown>;
         try {
@@ -934,7 +947,7 @@ export default class LilbeePlugin extends Plugin {
 
         const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
         const currentVault = typeof current.vault_base === "string" ? current.vault_base : null;
-        if (currentDocs === desiredDocsDir && currentVault === vaultBase) {
+        if (currentDocs === desiredDocsDir && currentVault === desiredVaultBase) {
             return;
         }
 
@@ -942,7 +955,7 @@ export default class LilbeePlugin extends Plugin {
         try {
             await this.api.updateConfig({
                 documents_dir: desiredDocsDir,
-                vault_base: vaultBase,
+                vault_base: desiredVaultBase,
             });
             notice.hide();
             new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZED);
