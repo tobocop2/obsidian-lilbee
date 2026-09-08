@@ -900,7 +900,9 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             const texts = collectTexts(el);
-            expect(texts.some((t) => t.includes("Could not load models"))).toBe(true);
+            // The server's own reason, not a generic string, plus a way out.
+            expect(texts.some((t) => t.includes("fail"))).toBe(true);
+            expect(findButtons(el).some((b) => b.textContent === "Retry")).toBe(true);
         });
 
         it("sets empty featured models when catalog returns error result", async () => {
@@ -982,6 +984,189 @@ describe("SetupWizard", () => {
             await tick();
 
             expect(plugin.api.pullModel).toHaveBeenCalled();
+        });
+
+        it("an empty featured list says so instead of rendering nothing", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            expect(el.textContent ?? "").toContain("offered no models");
+
+            plugin.api.catalog = vi
+                .fn()
+                .mockResolvedValue(ok(makeCatalogResponse([makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })])));
+            findButtons(el)
+                .find((b) => b.textContent === "Retry")!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect((wizard.contentEl as unknown as MockElement).textContent ?? "").toContain("Qwen3");
+        });
+
+        it("a thrown catalog error reports its reason and retries", async () => {
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockRejectedValue(new Error("socket hang up"));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            expect(el.textContent ?? "").toContain("socket hang up");
+
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            findButtons(el)
+                .find((b) => b.textContent === "Retry")!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect((wizard.contentEl as unknown as MockElement).textContent ?? "").toContain("Qwen3");
+        });
+
+        it("a failed catalog load drops a selection made before it", async () => {
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+            expect((wizard as any).selectedModel).not.toBeNull();
+
+            // Re-entering the step against a server that now fails must not keep
+            // the earlier pick: the grid is empty and the model is unreachable.
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect((wizard as any).selectedModel).toBeNull();
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            expect((btn as unknown as { disabled: boolean }).disabled).toBe(true);
+        });
+
+        it("disables the model step's action even when an embedding is selected", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("offline")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            // A later step's selection must not enable this one's action.
+            (wizard as any).selectedEmbedding = { hf_repo: "nomic", display_name: "nomic" };
+            wizard.next();
+            await tick();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            expect((btn as unknown as { disabled: boolean }).disabled).toBe(true);
+        });
+
+        it("a failed catalog load says so and offers a retry", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            expect(el.textContent ?? "").toContain("connection refused");
+            expect(findButtons(el).some((b) => b.textContent === "Retry")).toBe(true);
+        });
+
+        it("retrying a failed catalog load renders the models", async () => {
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Retry")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            const after = wizard.contentEl as unknown as MockElement;
+            expect(after.textContent ?? "").toContain("Qwen3");
+        });
+
+        it("the download button is disabled while no model can be selected", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("offline")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            expect((btn as unknown as { disabled: boolean }).disabled).toBe(true);
+        });
+
+        it("a failed download does not set the model or advance the step", async () => {
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { current: 10, total: 100 } };
+                    yield { event: SSE_EVENT.ERROR, data: { message: "no space left on device" } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+            // Still on the model step, with the server's reason on screen.
+            expect((wizard as any).step).toBe(WIZARD_STEP.MODEL_PICKER);
+            const text = (wizard.contentEl as unknown as MockElement).textContent ?? "";
+            expect(text).toContain("no space left on device");
+        });
+
+        it("a failed embedding download does not set the model or advance the step", async () => {
+            const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: { message: "checksum mismatch" } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            btn!.trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+            expect((wizard as any).step).toBe(WIZARD_STEP.EMBEDDING_PICKER);
         });
 
         it("pull progress with current/total computes percentage", async () => {
@@ -2874,6 +3059,46 @@ describe("SetupWizard", () => {
             expect(other.classList.contains("is-selected")).toBe(false);
         });
 
+        it("loadEmbeddingModels reports an empty list and retries", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((statusEl as unknown as MockElement).textContent).toContain("offered no models");
+
+            const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            findButtons(container as unknown as MockElement)
+                .find((b) => b.textContent === "Retry")!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect((wizard as any).embeddingModels.length).toBe(1);
+        });
+
+        it("loadEmbeddingModels retries after an isErr result", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("gateway timeout")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((statusEl as unknown as MockElement).textContent).toContain("gateway timeout");
+
+            const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            findButtons(container as unknown as MockElement)
+                .find((b) => b.textContent === "Retry")!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect((wizard as any).embeddingModels.length).toBe(1);
+        });
+
         it("loadEmbeddingModels handles catalog error", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
@@ -2883,7 +3108,17 @@ describe("SetupWizard", () => {
             const statusEl = new MockElement("div") as unknown as HTMLElement;
             await (wizard as any).loadEmbeddingModels(container, statusEl);
             expect((wizard as any).embeddingModels).toEqual([]);
-            expect((statusEl as unknown as MockElement).textContent).toContain("Could not load models");
+            // The server's own reason reaches the step, not a generic string.
+            expect((statusEl as unknown as MockElement).textContent).toContain("fail");
+
+            const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            findButtons(container as unknown as MockElement)
+                .find((b) => b.textContent === "Retry")!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect((wizard as any).embeddingModels.length).toBe(1);
         });
 
         it("loadEmbeddingModels handles catalog isErr result", async () => {
