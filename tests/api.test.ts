@@ -28,6 +28,8 @@ function sseResponse(chunks: string[]): Response {
             }
             return { done: true, value: undefined };
         }),
+        // Real readers always have cancel; the parser releases the socket with it.
+        cancel: vi.fn(async () => undefined),
     };
     return {
         ok: true,
@@ -1251,6 +1253,92 @@ describe("setChatModel()", () => {
 });
 
 describe("parseSSE — edge cases", () => {
+    it("yields a final event the stream ended without a trailing newline", async () => {
+        // A connection that closes mid-frame drops its last event, which is
+        // almost always `done`: chat then exits its loop normally, so the
+        // answer is never rendered, persisted, or un-spinnered.
+        fetchMock.mockResolvedValue(sseResponse(['event: token\ndata: "a"\n\nevent: done\ndata: {}']));
+
+        const events = await collect(client.syncStream());
+
+        expect(events.map((e) => e.event)).toEqual(["token", "done"]);
+    });
+
+    it("ignores a blank line that ends no frame", async () => {
+        fetchMock.mockResolvedValue(sseResponse(['\n\nevent: token\ndata: "a"\n\n']));
+
+        const events = await collect(client.syncStream());
+
+        expect(events).toEqual([{ event: "token", data: "a" }]);
+    });
+
+    it("emits a trailing data: frame written without a space", async () => {
+        fetchMock.mockResolvedValue(sseResponse(['data:{"tail":true}']));
+
+        const events = await collect(client.syncStream());
+
+        expect(events).toEqual([{ event: "message", data: { tail: true } }]);
+    });
+
+    it("survives a reader whose cancel rejects", async () => {
+        const encoder = new TextEncoder();
+        let sent = false;
+        const reader = {
+            read: vi.fn(async () => {
+                if (sent) return { done: true, value: undefined };
+                sent = true;
+                return { done: false, value: encoder.encode('event: token\ndata: "x"\n\n') };
+            }),
+            cancel: vi.fn(async () => {
+                throw new Error("already released");
+            }),
+        };
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: { getReader: () => reader },
+            headers: new Headers(),
+        });
+
+        const events = await collect(client.syncStream());
+
+        expect(events).toEqual([{ event: "token", data: "x" }]);
+    });
+
+    it("joins consecutive data lines into one payload", async () => {
+        // Per SSE, consecutive data lines are one payload joined by newlines.
+        // Splitting them fed truncated non-JSON to the real handler and leaked
+        // the rest as `message` events.
+        fetchMock.mockResolvedValue(sseResponse(['event: token\ndata: {"a":\ndata: 1}\n\n']));
+
+        const events = await collect(client.syncStream());
+
+        expect(events).toHaveLength(1);
+        expect(events[0]).toEqual({ event: "token", data: { a: 1 } });
+    });
+
+    it("cancels the reader when the consumer stops early", async () => {
+        const encoder = new TextEncoder();
+        const cancel = vi.fn(async () => undefined);
+        const reader = {
+            read: vi.fn(async () => ({
+                done: false,
+                value: encoder.encode('event: token\ndata: "x"\n\n'),
+            })),
+            cancel,
+        };
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: { getReader: () => reader },
+            headers: new Headers(),
+        });
+
+        for await (const _e of client.syncStream()) break;
+
+        expect(cancel).toHaveBeenCalled();
+    });
+
     it("yields plain string when JSON.parse fails on data field", async () => {
         fetchMock.mockResolvedValue(sseResponse(["data: not-valid-json\n\n"]));
 
@@ -1296,6 +1384,7 @@ describe("parseSSE — edge cases", () => {
                 }
                 return { done: true, value: undefined };
             }),
+            cancel: vi.fn(async () => undefined),
         };
         fetchMock.mockResolvedValue({
             ok: true,
@@ -1337,17 +1426,16 @@ describe("parseSSE — edge cases", () => {
         expect(events[1]).toEqual({ event: "b", data: 2 });
     });
 
-    it("handles trailing partial line left in buffer without final newline", async () => {
-        // The buffer remainder logic: last element of split("\n") goes back into buffer.
-        // If there's no trailing \n the last partial line stays in buffer and is dropped
-        // at stream end (done). Verify no crash and no spurious events.
+    it("emits a trailing frame the stream left without a final newline", async () => {
+        // The tail used to be dropped, which lost the terminating `done` of any
+        // stream that closed mid-frame.
         fetchMock.mockResolvedValue(sseResponse(["data: {}\n\ndata: incomplete"]));
 
         const events = await collect(client.syncStream());
 
-        // Only the complete line should produce an event; the partial is silently dropped
-        expect(events).toHaveLength(1);
+        expect(events).toHaveLength(2);
         expect(events[0].data).toEqual({});
+        expect(events[1].data).toBe("incomplete");
     });
 
     it("trims whitespace from event name", async () => {

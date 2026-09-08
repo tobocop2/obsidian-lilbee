@@ -89,7 +89,12 @@ function universalResponse(): Response {
         json: () => Promise.resolve({}),
         text: () => Promise.resolve("{}"),
         arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-        body: { getReader: () => ({ read: async () => ({ done: true, value: undefined }) }) },
+        body: {
+            getReader: () => ({
+                read: async () => ({ done: true, value: undefined }),
+                cancel: async () => undefined,
+            }),
+        },
     } as unknown as Response;
 }
 
