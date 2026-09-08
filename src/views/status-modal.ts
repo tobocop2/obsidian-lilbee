@@ -34,7 +34,7 @@ export class StatusModal extends Modal {
             this.renderDocuments(contentEl, status);
             this.renderHeldOut(contentEl, status);
             await this.renderModels(contentEl, status);
-            this.renderWiki(contentEl, status);
+            await this.renderWiki(contentEl);
         } catch {
             new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
             this.close();
@@ -171,8 +171,11 @@ export class StatusModal extends Modal {
         this.addRow(table, MESSAGES.LABEL_STATUS_SERVED_CONTEXT, String(ctx));
     }
 
-    private renderWiki(container: HTMLElement, status: StatusResponse): void {
-        if (!status.wiki) return;
+    /** Wiki counters come from /api/wiki/status; /api/status carries none. */
+    private async renderWiki(container: HTMLElement): Promise<void> {
+        const result = await this.plugin.api.wikiStatus();
+        if (result.isErr()) return;
+        const wiki = result.value;
 
         const section = container.createEl("details", { attr: { open: "" } });
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_WIKI });
@@ -181,14 +184,14 @@ export class StatusModal extends Modal {
         this.addRow(
             table,
             MESSAGES.LABEL_STATUS_WIKI,
-            status.wiki.enabled ? MESSAGES.LABEL_STATUS_ENABLED : MESSAGES.LABEL_STATUS_DISABLED,
+            wiki.wiki_enabled ? MESSAGES.LABEL_STATUS_ENABLED : MESSAGES.LABEL_STATUS_DISABLED,
         );
-        this.addRow(table, MESSAGES.LABEL_STATUS_WIKI_PAGES, String(status.wiki.page_count));
-        this.addRow(table, MESSAGES.LABEL_STATUS_WIKI_DRAFTS, String(status.wiki.draft_count));
+        this.addRow(table, MESSAGES.LABEL_STATUS_WIKI_PAGES, String(wiki.pages));
+        this.addRow(table, MESSAGES.LABEL_STATUS_WIKI_DRAFTS, String(wiki.drafts));
         this.addRow(
             table,
-            MESSAGES.LABEL_STATUS_WIKI_LAST_LINT,
-            status.wiki.last_lint ?? MESSAGES.LABEL_STATUS_NOT_AVAILABLE,
+            MESSAGES.LABEL_STATUS_WIKI_LINT,
+            MESSAGES.VALUE_STATUS_WIKI_LINT(wiki.lint_errors, wiki.lint_warnings),
         );
     }
 

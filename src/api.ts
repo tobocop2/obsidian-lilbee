@@ -49,6 +49,7 @@ import type {
     SourceContent,
     SSEEvent,
     StatusResponse,
+    WikiStatusResponse,
     SyncOptions,
     LintResult,
     DraftAcceptResponse,
@@ -775,6 +776,17 @@ export class LilbeeClient {
         });
     }
 
+    /** Chat-model cold-load progress, streamed as SSE until the engine is ready
+     *  or fails. Each `warm` event carries a `WarmProgress` snapshot. */
+    async *warmStream(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/warm/stream`,
+            { headers: this.authHeaders() },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
     /** Live per-GPU utilization + free memory, streamed as SSE until aborted. */
     async *gpuStatsStream(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
@@ -827,6 +839,13 @@ export class LilbeeClient {
     /** One client's config document, built against this server's live URL and token. */
     async getAgentConfig(client: AgentClient): Promise<Result<AgentConfigResponse, Error>> {
         return this.fetchResult<AgentConfigResponse>(`${this.baseUrl}/api/agent-config/${encodeURIComponent(client)}`, {
+            headers: this.authHeaders(),
+        });
+    }
+
+    /** Wiki counters. `/api/status` carries none, so they come from here. */
+    async wikiStatus(): Promise<Result<WikiStatusResponse, Error>> {
+        return this.fetchResult<WikiStatusResponse>(`${this.baseUrl}/api/wiki/status`, {
             headers: this.authHeaders(),
         });
     }

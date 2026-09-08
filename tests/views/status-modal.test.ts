@@ -34,6 +34,7 @@ function makePlugin(overrides: Partial<{ activeModel: string }> = {}): LilbeePlu
             showModel: vi.fn(),
             health: vi.fn().mockResolvedValue(ok({ status: "ok", version: "1" })),
             listDocuments: vi.fn().mockResolvedValue(makeDocsResponse()),
+            wikiStatus: vi.fn().mockResolvedValue(err(new Error("wiki off"))),
         },
     } as unknown as LilbeePlugin;
 }
@@ -157,16 +158,20 @@ describe("StatusModal", () => {
         expect(cell?.attributes["title"]).toBe("Smoffyy/Gemma4-E4B-Instruct-Pure-GGUF/Gemma4-E4B-F16.gguf");
     });
 
-    it("renders wiki section when wiki is present", async () => {
+    it("renders the wiki counters from /api/wiki/status", async () => {
         const plugin = makePlugin();
-        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(
-                makeStatus({
-                    wiki: { enabled: true, page_count: 10, draft_count: 2, last_lint: "2026-01-01" },
-                }),
-            ),
-        );
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+        asMock(plugin.api.wikiStatus).mockResolvedValue(
+            ok({
+                wiki_enabled: true,
+                summaries: 4,
+                drafts: 2,
+                pages: 10,
+                lint_errors: 1,
+                lint_warnings: 3,
+            }),
+        );
 
         const modal = new StatusModal(new App(), plugin);
         modal.open();
@@ -177,14 +182,32 @@ describe("StatusModal", () => {
         });
 
         const content = (modal as any).contentEl as MockElement;
-        const values = content.findAll("lilbee-status-value");
-        const texts = values.map((v: MockElement) => v.textContent);
+        const texts = content.findAll("lilbee-status-value").map((v: MockElement) => v.textContent);
         expect(texts).toContain("10");
         expect(texts).toContain("2");
-        expect(texts).toContain("2026-01-01");
+        expect(texts).toContain("1 errors, 3 warnings");
     });
 
-    it("does not render wiki section when wiki is absent", async () => {
+    it("renders the wiki section as disabled when the server reports it off", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+        asMock(plugin.api.wikiStatus).mockResolvedValue(
+            ok({ wiki_enabled: false, summaries: 0, drafts: 0, pages: 0, lint_errors: 0, lint_warnings: 0 }),
+        );
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBe(3);
+        });
+        const content = (modal as any).contentEl as MockElement;
+        const texts = content.findAll("lilbee-status-value").map((v: MockElement) => v.textContent);
+        expect(texts).toContain("disabled");
+    });
+
+    it("omits the wiki section when the wiki status call fails", async () => {
         const plugin = makePlugin();
         (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
@@ -341,31 +364,6 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const values = content.findAll("lilbee-status-value");
         expect(values.length).toBeGreaterThan(0);
-    });
-
-    it("renders wiki disabled status", async () => {
-        const plugin = makePlugin();
-        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(
-                makeStatus({
-                    wiki: { enabled: false, page_count: 0, draft_count: 0, last_lint: null },
-                }),
-            ),
-        );
-        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
-
-        const modal = new StatusModal(new App(), plugin);
-        modal.open();
-        await vi.waitFor(() => {
-            const content = (modal as any).contentEl as MockElement;
-            expect(content.findAll("lilbee-status-table").length).toBe(3);
-        });
-
-        const content = (modal as any).contentEl as MockElement;
-        const values = content.findAll("lilbee-status-value");
-        const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("disabled");
-        expect(texts).toContain("n/a");
     });
 
     it("skips model details when no chat model set", async () => {

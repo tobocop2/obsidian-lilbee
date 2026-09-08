@@ -2,7 +2,14 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { DEFAULT_SHARED_CONFIG, INDETERMINATE_PROGRESS, SETUP_OUTCOME, SSE_EVENT, SYNC_TRIGGER } from "../src/types";
+import {
+    CHAT_STATUS,
+    DEFAULT_SHARED_CONFIG,
+    INDETERMINATE_PROGRESS,
+    SETUP_OUTCOME,
+    SSE_EVENT,
+    SYNC_TRIGGER,
+} from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -58,6 +65,8 @@ vi.mock("../src/api", () => ({
             wikiGenerate: vi.fn(),
             wikiPrune: vi.fn(),
             listDocuments: vi.fn(),
+            warmStream: vi.fn(),
+            wikiStatus: vi.fn(),
         };
     }),
 }));
@@ -1361,24 +1370,24 @@ describe("LilbeePlugin", () => {
         it("shows a warming pill while the chat engine cold-loads", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).reflectChatWarmth({ status: "ok", version: "1", chat_ready: false });
+            (plugin as any).reflectChatStatus({ status: "ok", version: "1", chat_ready: false });
             expect((plugin.statusBarEl as any)?.textContent).toContain("warming");
         });
 
         it("ignores repeat warming snapshots", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).reflectChatWarmth({ chat_ready: false });
-            (plugin as any).reflectChatWarmth({ chat_ready: false });
+            (plugin as any).reflectChatStatus({ chat_ready: false });
+            (plugin as any).reflectChatStatus({ chat_ready: false });
             expect((plugin.statusBarEl as any)?.textContent).toContain("warming");
         });
 
         it("reverts to ready once the chat engine is warm", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).reflectChatWarmth({ chat_ready: false });
+            (plugin as any).reflectChatStatus({ chat_ready: false });
             (plugin as any).settings.serverMode = "external";
-            (plugin as any).reflectChatWarmth({ chat_ready: true });
+            (plugin as any).reflectChatStatus({ chat_ready: true });
             expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
         });
     });
@@ -3348,21 +3357,298 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("chat readiness states", () => {
+        const health = (over: Record<string, unknown>) => ({
+            status: "ok",
+            version: "0.6.90b433",
+            ...over,
+        });
+
+        it("a served response does not repaint ready over the loading pill", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(health({ chat_ready: false, chat_status: CHAT_STATUS.LOADING }));
+            // Every successful request lands on this outcome, the health probe included.
+            (plugin as any).handleRequestOutcome("ok");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("warming");
+        });
+
+        it("a served response does not repaint ready over the failed-engine pill", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(
+                health({ chat_ready: false, chat_status: CHAT_STATUS.ERROR, chat_error: "boom" }),
+            );
+            (plugin as any).handleRequestOutcome("ok");
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("ready");
+        });
+
+        it("error status blocks with the server's reason, not a wait-and-retry", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const reason =
+                "The chat model SmolLM-360M-Instruct.Q4_K_M.gguf loads, but the memory left after " +
+                "its weights backs only a 2048-token context. Use a smaller model or a smaller quant.";
+            (plugin as any).reflectChatStatus(
+                health({ chat_ready: false, chat_status: CHAT_STATUS.ERROR, chat_error: reason }),
+            );
+            expect((plugin as any).assertFleetReady()).toBe(false);
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes(reason))).toBe(true);
+            expect(messages).not.toContain(MESSAGES.NOTICE_FLEET_WARMING);
+        });
+
+        it("not_started lets the request through so the server warms the engine", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(health({ chat_ready: false, chat_status: CHAT_STATUS.NOT_STARTED }));
+            expect((plugin as any).assertFleetReady()).toBe(true);
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_FLEET_WARMING);
+        });
+
+        it("not_started does not paint a warming pill", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(health({ chat_ready: false, chat_status: CHAT_STATUS.NOT_STARTED }));
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("warming");
+        });
+
+        it("loading still blocks and says so", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(health({ chat_ready: false, chat_status: CHAT_STATUS.LOADING }));
+            expect((plugin as any).assertFleetReady()).toBe(false);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_FLEET_WARMING);
+        });
+
+        it("a server without chat_status falls back to the chat_ready bool", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(health({ chat_ready: false }));
+            expect((plugin as any).chatStatus).toBe(CHAT_STATUS.LOADING);
+            (plugin as any).reflectChatStatus(health({ chat_ready: true }));
+            expect((plugin as any).chatStatus).toBe(CHAT_STATUS.READY);
+        });
+
+        it("error clears once the engine comes up", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(
+                health({ chat_ready: false, chat_status: CHAT_STATUS.ERROR, chat_error: "boom" }),
+            );
+            expect((plugin as any).assertFleetReady()).toBe(false);
+            (plugin as any).settings.serverMode = "external";
+            (plugin as any).reflectChatStatus(health({ chat_ready: true, chat_status: CHAT_STATUS.READY }));
+            expect((plugin as any).assertFleetReady()).toBe(true);
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
+        });
+    });
+
+    describe("cold-load progress stream", () => {
+        const loading = { status: "ok", version: "1", chat_ready: false, chat_status: CHAT_STATUS.LOADING };
+
+        async function* warmEvents(...data: Record<string, unknown>[]) {
+            for (const d of data) yield { event: SSE_EVENT.WARM, data: d };
+        }
+
+        it("paints the read phase with a byte percentage", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.warmStream as any).mockReturnValue(
+                warmEvents({
+                    phase: "reading_weights",
+                    model_ref: "a/b.gguf",
+                    bytes_done: 50,
+                    bytes_total: 200,
+                    detail: null,
+                    error: null,
+                    elapsed_s: 1,
+                }),
+            );
+            (plugin as any).reflectChatStatus(loading);
+            await vi.waitFor(() => {
+                expect((plugin.statusBarEl as any)?.textContent).toContain("25%");
+            });
+        });
+
+        it("names the engine-load phase, which carries no byte signal", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.warmStream as any).mockReturnValue(
+                warmEvents({
+                    phase: "loading_engine",
+                    model_ref: null,
+                    bytes_done: 0,
+                    bytes_total: 0,
+                    detail: null,
+                    error: null,
+                    elapsed_s: 9,
+                }),
+            );
+            (plugin as any).reflectChatStatus(loading);
+            await vi.waitFor(() => {
+                expect((plugin.statusBarEl as any)?.textContent).toContain("loading the engine");
+            });
+        });
+
+        it("ignores events that are not warm snapshots", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.warmStream as any).mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.DONE, data: {} };
+                })(),
+            );
+            (plugin as any).reflectChatStatus(loading);
+            await vi.waitFor(() => {
+                expect((plugin as any).warmController).toBeNull();
+            });
+        });
+
+        it("survives a stream the server refuses", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.warmStream as any).mockImplementation(() => {
+                throw new Error("no such route");
+            });
+            (plugin as any).reflectChatStatus(loading);
+            await vi.waitFor(() => {
+                expect((plugin as any).warmController).toBeNull();
+            });
+        });
+
+        it("aborts the stream once the engine leaves the loading state", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            let aborted = false;
+            (plugin.api.warmStream as any).mockImplementation((signal: AbortSignal) => {
+                signal.addEventListener("abort", () => {
+                    aborted = true;
+                });
+                return (async function* () {
+                    await new Promise(() => undefined);
+                })();
+            });
+            (plugin as any).reflectChatStatus(loading);
+            expect((plugin as any).warmController).not.toBeNull();
+            (plugin as any).settings.serverMode = "external";
+            (plugin as any).reflectChatStatus({ ...loading, chat_ready: true, chat_status: CHAT_STATUS.READY });
+            expect(aborted).toBe(true);
+            expect((plugin as any).warmController).toBeNull();
+        });
+
+        it("keeps one stream while the engine stays in the loading state", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.warmStream as any).mockReturnValue(
+                (async function* () {
+                    await new Promise(() => undefined);
+                })(),
+            );
+            (plugin as any).reflectChatStatus(loading);
+            const first = (plugin as any).warmController;
+            (plugin as any).syncWarmStream();
+            expect((plugin as any).warmController).toBe(first);
+        });
+
+        it("stops reading a stream that a newer one has replaced", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            let painted = 0;
+            const snap = {
+                phase: "reading_weights",
+                model_ref: null,
+                bytes_done: 1,
+                bytes_total: 2,
+                detail: null,
+                error: null,
+                elapsed_s: 0,
+            };
+            const replacement = new AbortController();
+            (plugin.api.warmStream as any).mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.WARM, data: snap };
+                    // A newer sync takes over between the two events.
+                    (plugin as any).warmController = replacement;
+                    painted += 1;
+                    yield { event: SSE_EVENT.WARM, data: snap };
+                })(),
+            );
+            const paint = vi.spyOn(plugin as any, "paintWarmProgress");
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
+            const controller = new AbortController();
+            (plugin as any).warmController = controller;
+            await (plugin as any).consumeWarmStream(controller);
+            expect(paint).toHaveBeenCalledTimes(1);
+            expect(painted).toBe(1);
+            // The replacement controller survives the old stream finishing.
+            expect((plugin as any).warmController).toBe(replacement);
+        });
+
+        it("drops a late snapshot from a stream that has been replaced", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).chatStatus = CHAT_STATUS.READY;
+            (plugin as any).paintWarmProgress({
+                phase: "reading_weights",
+                model_ref: null,
+                bytes_done: 1,
+                bytes_total: 2,
+                detail: null,
+                error: null,
+                elapsed_s: 0,
+            });
+            expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("reading weights");
+        });
+    });
+
+    describe("wiki counters", () => {
+        it("reads pages and drafts from the wiki status route", async () => {
+            const plugin = await createPlugin({ wikiEnabled: true });
+            await plugin.onload();
+            (plugin.api.listModels as any).mockResolvedValue({
+                chat: { active: "m", available: [] },
+                embedding: { active: null, available: [] },
+            });
+            (plugin.api.wikiStatus as any).mockResolvedValue(
+                ok({
+                    wiki_enabled: true,
+                    summaries: 7,
+                    drafts: 3,
+                    pages: 12,
+                    lint_errors: 0,
+                    lint_warnings: 0,
+                }),
+            );
+            await plugin.fetchActiveModel();
+            expect(plugin.wikiPageCount).toBe(12);
+            expect(plugin.wikiDraftCount).toBe(3);
+        });
+    });
+
     describe("fleet readiness gate", () => {
         it("assertFleetReady blocks and notices while the fleet is warming", async () => {
             const plugin = await createPlugin();
-            (plugin as any).chatWarming = true;
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
             expect((plugin as any).assertFleetReady()).toBe(false);
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FLEET_WARMING)).toBe(true);
-            (plugin as any).chatWarming = false;
+            (plugin as any).chatStatus = CHAT_STATUS.READY;
             expect((plugin as any).assertFleetReady()).toBe(true);
+        });
+
+        it("falls back to a generic reason when the server sends none", async () => {
+            const plugin = await createPlugin();
+            (plugin as any).chatStatus = CHAT_STATUS.ERROR;
+            (plugin as any).chatError = null;
+            expect((plugin as any).assertFleetReady()).toBe(false);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_FLEET_ERROR(null));
         });
 
         it("blocks addToLilbee while the fleet is warming", async () => {
             const plugin = await createPlugin();
             (plugin as any).statusBarEl = {};
             plugin.activeModel = "llama3";
-            (plugin as any).chatWarming = true;
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
             const runUpload = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
             const runAdd = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
             await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
@@ -3375,7 +3661,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             (plugin as any).statusBarEl = {};
             plugin.activeModel = "llama3";
-            (plugin as any).chatWarming = true;
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
             const runAdd = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
             expect(runAdd).not.toHaveBeenCalled();
@@ -4310,7 +4596,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.activeModel = "old-model";
-            (plugin as any).chatWarming = false;
+            (plugin as any).chatStatus = CHAT_STATUS.READY;
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "Qwen/Qwen3-235B-A22B", catalog: [], installed: [] } });
@@ -4335,7 +4621,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.activeModel = "old";
-            (plugin as any).chatWarming = true;
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
             const setReady = vi.spyOn(plugin as any, "setStatusReady");
             plugin.api.listModels = vi.fn().mockResolvedValue({ chat: { active: "new", catalog: [], installed: [] } });
             await (plugin as any).refreshActiveModel();

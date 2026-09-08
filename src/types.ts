@@ -16,14 +16,56 @@ export interface DocumentResult {
     best_relevance: number;
 }
 
-/** `GET /api/health`. `chat_ready`/`chat_ctx` are absent on older servers. */
+/** How ready the server's chat engine is. A bare `chat_ready` bool cannot tell a
+ *  fleet that is loading apart from one that never started or that failed. */
+export type ChatStatus = "ready" | "loading" | "not_started" | "error";
+
+export const CHAT_STATUS = {
+    READY: "ready",
+    LOADING: "loading",
+    NOT_STARTED: "not_started",
+    ERROR: "error",
+} as const satisfies Record<string, ChatStatus>;
+
+/** The stage a chat-model cold load is in, from `GET /api/warm/stream`. */
+export type WarmPhase = "starting" | "reading_weights" | "loading_engine" | "ready" | "error";
+
+export const WARM_PHASE = {
+    STARTING: "starting",
+    READING_WEIGHTS: "reading_weights",
+    LOADING_ENGINE: "loading_engine",
+    READY: "ready",
+    ERROR: "error",
+} as const satisfies Record<string, WarmPhase>;
+
+/** One `warm` event. Bytes are zero outside `reading_weights`, the only phase
+ *  with a byte signal. */
+export interface WarmProgress {
+    phase: WarmPhase;
+    model_ref: string | null;
+    bytes_done: number;
+    bytes_total: number;
+    detail: string | null;
+    error: string | null;
+    elapsed_s: number;
+}
+
+/** `GET /api/health`. Every chat field is absent on older servers. */
 export interface HealthResponse {
     status: string;
     version: string;
     /** True once the chat engine is loaded and can serve a first token. */
     chat_ready?: boolean;
+    chat_status?: ChatStatus;
+    /** Why the engine failed to come up; set when `chat_status` is `error`. */
+    chat_error?: string | null;
     /** Per-slot context window the chat engine serves; null when not up. */
     chat_ctx?: number | null;
+    /** Batching slots the engine serves, which is its real request concurrency. */
+    chat_slots?: number | null;
+    /** Prompt tokens processed for a prefill in flight; null when idle. */
+    chat_prefill_processed?: number | null;
+    chat_prefill_total?: number | null;
 }
 
 /** Whether a citation states a fact from the source or an inference drawn from it. */
@@ -259,12 +301,16 @@ export interface StatusResponse {
     skipped_total?: number;
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
-    wiki?: {
-        enabled: boolean;
-        page_count: number;
-        draft_count: number;
-        last_lint: string | null;
-    };
+}
+
+/** `GET /api/wiki/status`. The wiki counters live here; `/api/status` has none. */
+export interface WikiStatusResponse {
+    wiki_enabled: boolean;
+    summaries: number;
+    drafts: number;
+    pages: number;
+    lint_errors: number;
+    lint_warnings: number;
 }
 
 /** A file a skip marker holds out of the index, with the reason the server recorded. */
@@ -798,6 +844,7 @@ export const SSE_EVENT = {
     COMPACTING: "compacting",
     COMPACTION: "compaction",
     WARMING: "warming",
+    WARM: "warm",
     PROGRESS: "progress",
     MESSAGE: "message",
     FILE_START: "file_start",
