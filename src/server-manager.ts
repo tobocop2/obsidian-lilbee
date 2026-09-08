@@ -23,6 +23,9 @@ const SERVER_MANAGER_CONFIG = {
     KILL_GRACE_MS: 5000,
     CRASH_RESTART_DELAY_MS: 3000,
     MAX_CRASH_RESTARTS: 3,
+    // A run that served this long counts as healthy, so its failure starts a
+    // fresh budget. Shorter runs are a flap and keep spending the old one.
+    STABLE_UPTIME_MS: 60_000,
     PORT_FILE_POLL_INTERVAL_MS: 500,
     PORT_FILE_MAX_ATTEMPTS: 240,
     SPAWN_CRASH_LOG_MAX_BYTES: 262_144,
@@ -190,6 +193,8 @@ export interface ServerManagerOptions {
     installedVersion: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (output: string) => void;
+    /** Another vault took the shared root while this server was down. */
+    onScopeHeld?: (error: ScopeHeldError) => void;
     onShutdownFailure?: (error: Error) => void;
     /** Receives one line per lifecycle decision (spawn, adopt, stop, crash-restart). */
     onJournal?: (message: string) => void;
@@ -222,6 +227,8 @@ export class ServerManager {
     private adoptedWatch: number | null = null;
     private _state: ServerState = SERVER_STATE.STOPPED;
     private crashCount = 0;
+    /** When the current run reached READY; null while it is not up. */
+    private readyAt: number | null = null;
     private restartTimer: number | null = null;
     private _actualPort: number | null = null;
     private _spawnedVersion = "";
@@ -407,6 +414,12 @@ export class ServerManager {
     }
 
     private scheduleCrashRestart(): void {
+        // Reaching READY is not evidence the server works; staying there is.
+        // Resetting on the start itself let an adopt-fail-adopt cycle spend
+        // attempt 1 forever, so the budget never ran out and nothing was said.
+        const uptime = this.readyAt === null ? 0 : Date.now() - this.readyAt;
+        if (uptime >= SERVER_MANAGER_CONFIG.STABLE_UPTIME_MS) this.crashCount = 0;
+        this.readyAt = null;
         if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
             this.crashCount++;
             this.journal(
@@ -429,12 +442,14 @@ export class ServerManager {
         this.opts.onRestartsExhausted?.(this.lastOutput);
     }
 
-    /** Crash-loop restart: failures already surface via state + onRestartsExhausted, so don't rethrow. */
+    /** Crash-loop restart: failures surface via state + onRestartsExhausted, so
+     *  don't rethrow. A lock refusal is not a crash and has its own recovery,
+     *  so it is handed to the caller instead of being dropped here. */
     private async startForRestart(): Promise<void> {
         try {
             await this.start();
-        } catch {
-            // already reported
+        } catch (err) {
+            if (err instanceof ScopeHeldError) this.opts.onScopeHeld?.(err);
         }
     }
 
@@ -481,7 +496,7 @@ export class ServerManager {
         // running a different version than the installed binary is asked to
         // exit, so a binary update takes effect on the next reload.
         if (await this.tryAdopt()) {
-            this.crashCount = 0;
+            this.readyAt = Date.now();
             this.setState(SERVER_STATE.READY);
             return;
         }
@@ -497,7 +512,7 @@ export class ServerManager {
         try {
             await this.waitForPortFile(generation);
             await this.waitForReady(generation);
-            this.crashCount = 0;
+            this.readyAt = Date.now();
             this.setState(SERVER_STATE.READY);
         } catch (err) {
             // A crash-restart superseded this attempt; the newer start owns the state.
