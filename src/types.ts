@@ -50,6 +50,13 @@ export interface WarmProgress {
     elapsed_s: number;
 }
 
+/** A degradation the server reports: answers still come back, but worse. */
+export interface HealthWarning {
+    code: string;
+    message: string;
+    remedy?: string | null;
+}
+
 /** `GET /api/health`. Every chat field is absent on older servers. */
 export interface HealthResponse {
     status: string;
@@ -66,6 +73,8 @@ export interface HealthResponse {
     /** Prompt tokens processed for a prefill in flight; null when idle. */
     chat_prefill_processed?: number | null;
     chat_prefill_total?: number | null;
+    /** Degradations the server is reporting; absent on older servers. */
+    warnings?: HealthWarning[];
 }
 
 /** Whether a citation states a fact from the source or an inference drawn from it. */

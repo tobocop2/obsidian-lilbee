@@ -1409,6 +1409,41 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("refreshOpenChatWarnings()", () => {
+        it("repaints ChatView banners and skips non-chat views", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const refreshHealthWarnings = vi.fn();
+            const chatView = Object.assign(Object.create(ChatView.prototype), { refreshHealthWarnings });
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: chatView }, { view: {} }]);
+
+            (plugin as any).refreshOpenChatWarnings();
+
+            expect(refreshHealthWarnings).toHaveBeenCalledTimes(1);
+        });
+
+        it("repaints only when the reported set changes", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const repaint = vi.spyOn(plugin as any, "refreshOpenChatWarnings");
+
+            const warn = [{ code: "fts_unavailable", message: "Keyword search is unavailable." }];
+            const health = (over: Record<string, unknown>) => ({ status: "ok", version: "1", ...over });
+
+            (plugin as any).reflectChatStatus(health({ chat_ready: true, warnings: warn }));
+            expect(repaint).toHaveBeenCalledTimes(1);
+
+            // Same set on the next probe: nothing to repaint.
+            (plugin as any).reflectChatStatus(health({ chat_ready: true, warnings: warn }));
+            expect(repaint).toHaveBeenCalledTimes(1);
+
+            // Cleared: repaint so the banner disappears.
+            (plugin as any).reflectChatStatus(health({ chat_ready: true, warnings: [] }));
+            expect(repaint).toHaveBeenCalledTimes(2);
+        });
+    });
+
     describe("activateTaskView()", () => {
         it("reveals existing leaf when task view is already open", async () => {
             const plugin = await createPlugin();

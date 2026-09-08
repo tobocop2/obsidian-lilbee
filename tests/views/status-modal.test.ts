@@ -28,6 +28,7 @@ function makeDocsResponse(docs: DocumentEntry[] = [], total?: number, hasMore = 
 
 function makePlugin(overrides: Partial<{ activeModel: string }> = {}): LilbeePlugin {
     return {
+        healthWarnings: [],
         activeModel: overrides.activeModel ?? "mistral:7b",
         api: {
             status: vi.fn(),
@@ -156,6 +157,52 @@ describe("StatusModal", () => {
         expect(texts).toContain("Gemma4-E4B-F16.gguf");
         const cell = values.find((v: MockElement) => v.textContent === "Gemma4-E4B-F16.gguf");
         expect(cell?.attributes["title"]).toBe("Smoffyy/Gemma4-E4B-Instruct-Pure-GGUF/Gemma4-E4B-F16.gguf");
+    });
+
+    it("lists server-reported degradations with their remedies", async () => {
+        const plugin = makePlugin();
+        (plugin as any).healthWarnings = [
+            { code: "fts_unavailable", message: "Keyword search is unavailable.", remedy: "Run rebuild." },
+        ];
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.textContent ?? "").toContain("Keyword search is unavailable.");
+        });
+        expect(((modal as any).contentEl as MockElement).textContent ?? "").toContain("Run rebuild.");
+    });
+
+    it("omits the remedy line when the server sends none", async () => {
+        const plugin = makePlugin();
+        (plugin as any).healthWarnings = [{ code: "x", message: "Something is degraded.", remedy: null }];
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.textContent ?? "").toContain("Something is degraded.");
+        });
+        expect(((modal as any).contentEl as MockElement).find("lilbee-status-warning-remedy")).toBeNull();
+    });
+
+    it("omits the degraded section when the server reports nothing", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThan(0);
+        });
+        expect(((modal as any).contentEl as MockElement).find("lilbee-status-warning")).toBeNull();
     });
 
     it("renders the wiki counters from /api/wiki/status", async () => {

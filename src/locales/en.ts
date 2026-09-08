@@ -903,6 +903,7 @@ export const MESSAGES = {
     LABEL_STATUS_ARCHITECTURE: "Architecture",
     LABEL_STATUS_CONTEXT_LENGTH: "Context length",
     LABEL_STATUS_SERVED_CONTEXT: "Serving context",
+    LABEL_STATUS_WARNINGS: "Degraded",
     LABEL_STATUS_WIKI: "Wiki",
     LABEL_STATUS_WIKI_PAGES: "Pages",
     LABEL_STATUS_WIKI_DRAFTS: "Drafts",

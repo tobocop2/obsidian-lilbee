@@ -31,6 +31,7 @@ export class StatusModal extends Modal {
                 return;
             }
             const status = statusResult.value;
+            this.renderWarnings(contentEl);
             this.renderDocuments(contentEl, status);
             this.renderHeldOut(contentEl, status);
             await this.renderModels(contentEl, status);
@@ -38,6 +39,24 @@ export class StatusModal extends Modal {
         } catch {
             new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
             this.close();
+        }
+    }
+
+    /** Degradations the server is reporting. These answer normally and look
+     *  healthy, so the status modal is where an operator checking "why are the
+     *  answers off" can see them. */
+    private renderWarnings(container: HTMLElement): void {
+        const warnings = this.plugin.healthWarnings;
+        if (warnings.length === 0) return;
+
+        const section = container.createEl("details", { attr: { open: "" } });
+        section.createEl("summary", { text: MESSAGES.LABEL_STATUS_WARNINGS });
+        for (const w of warnings) {
+            const row = section.createDiv({ cls: "lilbee-status-warning" });
+            row.createDiv({ cls: "lilbee-status-warning-message", text: w.message });
+            if (w.remedy) {
+                row.createDiv({ cls: "lilbee-status-warning-remedy", text: w.remedy });
+            }
         }
     }
 
