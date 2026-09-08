@@ -3364,6 +3364,25 @@ describe("LilbeePlugin", () => {
             ...over,
         });
 
+        it("a served response does not repaint ready over the loading pill", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(health({ chat_ready: false, chat_status: CHAT_STATUS.LOADING }));
+            // Every successful request lands on this outcome, the health probe included.
+            (plugin as any).handleRequestOutcome("ok");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("warming");
+        });
+
+        it("a served response does not repaint ready over the failed-engine pill", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatStatus(
+                health({ chat_ready: false, chat_status: CHAT_STATUS.ERROR, chat_error: "boom" }),
+            );
+            (plugin as any).handleRequestOutcome("ok");
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("ready");
+        });
+
         it("error status blocks with the server's reason, not a wait-and-retry", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

@@ -1880,6 +1880,10 @@ export default class LilbeePlugin extends Plugin {
         // queue ticks and the status bar visibly flickers between the two.
         // The queue republishes on every change, so there is nothing to restore.
         if (this.taskQueue.activeAll.length > 0 || this.taskQueue.queued.length > 0) return;
+        // A served response says the server answered, not that the chat engine
+        // is up. Without this the health probe's own OK outcome repaints "ready"
+        // over the pill reflectChatStatus just painted.
+        if (this.chatStatus === CHAT_STATUS.LOADING || this.chatStatus === CHAT_STATUS.ERROR) return;
         if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
             this.showNotInstalledStatus();
             return;
