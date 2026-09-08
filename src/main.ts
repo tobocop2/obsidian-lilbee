@@ -1023,7 +1023,7 @@ export default class LilbeePlugin extends Plugin {
         // ask it to exit before deleting the tree out from under it.
         if (owner !== null) await askServerToExit(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
 
-        executeUninstall(plan);
+        await executeUninstall(plan, registry.sharedRoot, ownDataDir);
 
         registry.saveConfig({
             ...registry.loadConfig(),

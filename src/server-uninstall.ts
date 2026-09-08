@@ -3,6 +3,7 @@
  * shared model cache, and one vault's index. Never touches the Obsidian vault.
  */
 import { node } from "./node";
+import { ServerBinary } from "./server-binary";
 import { dirSizeBytes } from "./storage-stats";
 import { sharedBinDir, sharedModelsDir } from "./vault-registry";
 import {
@@ -45,8 +46,39 @@ export function planUninstall(sharedRoot: string, vaultDataDir: string): Uninsta
     return { targets, totalBytes: targets.reduce((sum, t) => sum + t.bytes, 0) };
 }
 
-/** Delete every planned path. Missing paths are not an error. */
-export function executeUninstall(plan: UninstallPlan): void {
+/** How long the stop may run before the child is killed and the uninstall goes on. */
+const ENGINE_STOP_TIMEOUT_MS = 15_000;
+
+/**
+ * The binary's off switch for the shared engine, whoever started it. The data dir
+ * names the vault whose private engine is stopped alongside the machine-wide one,
+ * and it precedes the command because the server binds it on the root command.
+ */
+function engineStopArgs(vaultDataDir: string): string[] {
+    return ["--data-dir", vaultDataDir, "engine", "stop"];
+}
+
+/**
+ * Stop the shared engine, which outlives any one plugin process and holds the model
+ * files open. A missing binary, one too old to know the command, and a stop past its
+ * bound are all ignored.
+ */
+async function stopSharedEngine(sharedRoot: string, vaultDataDir: string): Promise<void> {
+    const binary = new ServerBinary(sharedBinDir(sharedRoot)).installed();
+    if (binary === null) return;
+    try {
+        await node.execFile(binary.path, engineStopArgs(vaultDataDir), { timeout: ENGINE_STOP_TIMEOUT_MS });
+    } catch {
+        // An engine that will not stop is not a reason to refuse the uninstall.
+    }
+}
+
+/**
+ * Stop the engine, then delete every planned path. Missing paths are not an error.
+ * The order is the contract: deleting a file a live engine holds open fails on Windows.
+ */
+export async function executeUninstall(plan: UninstallPlan, sharedRoot: string, vaultDataDir: string): Promise<void> {
+    await stopSharedEngine(sharedRoot, vaultDataDir);
     for (const t of plan.targets) {
         node.rmSync(t.path, { recursive: true, force: true });
     }
