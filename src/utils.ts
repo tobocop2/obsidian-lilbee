@@ -1,8 +1,8 @@
 import { Notice, type App, type Modal, type TFile } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
-import { SERVER_MODE } from "./types";
-import type { ServerMode } from "./types";
+import { SERVER_MODE, WARM_PHASE } from "./types";
+import type { ServerMode, WarmProgress } from "./types";
 
 /**
  * Tag the modal's outer wrapper so the stylesheet keeps the close-X button
@@ -387,6 +387,17 @@ export function setDeterminateProgress(fill: HTMLElement, percent: number): void
 export function percentOfBytes(received: number, total: number | null): number | undefined {
     if (!total || total <= 0) return undefined;
     return Math.min(100, Math.round((received / total) * 100));
+}
+
+/** Status-pill text for one cold-load snapshot. Only `reading_weights` carries
+ *  bytes, so every other phase reads as a plain label. */
+export function warmStatusText(snapshot: WarmProgress): string {
+    if (snapshot.phase === WARM_PHASE.READING_WEIGHTS) {
+        const percent = percentOfBytes(snapshot.bytes_done, snapshot.bytes_total);
+        return percent === undefined ? MESSAGES.STATUS_WARM_READING_UNSIZED : MESSAGES.STATUS_WARM_READING(percent);
+    }
+    if (snapshot.phase === WARM_PHASE.LOADING_ENGINE) return MESSAGES.STATUS_WARM_LOADING_ENGINE;
+    return MESSAGES.STATUS_WARM_STARTING;
 }
 
 export function percentFromSse(data: { percent?: number; current?: number; total?: number }): number | undefined {

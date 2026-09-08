@@ -56,6 +56,8 @@ import {
     type DiagnosticsContext,
     type DotState,
     type GpuDetection,
+    CHAT_STATUS,
+    type ChatStatus,
     type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
@@ -70,6 +72,7 @@ import {
     INDETERMINATE_PROGRESS,
     type SyncDone,
     type SSEEvent,
+    type WarmProgress,
     type SyncOptions,
     type SyncTrigger,
     type TaskEntry,
@@ -98,6 +101,7 @@ import {
     sessionTokenInvalidMessage,
     supportsPlacement,
     supportsSessions,
+    warmStatusText,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
     withIdleTimeout,
@@ -337,7 +341,9 @@ export default class LilbeePlugin extends Plugin {
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
     // True when the server is up but the chat role is still cold-loading (from /api/health).
-    private chatWarming = false;
+    private chatStatus: ChatStatus = CHAT_STATUS.READY;
+    private chatError: string | null = null;
+    private warmController: AbortController | null = null;
     // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
     // so /api/health stalls behind the active stream and would falsely flip
     // the status bar to error.
@@ -1924,7 +1930,7 @@ export default class LilbeePlugin extends Plugin {
                 // server stays connected.
                 void this.refreshActiveModel();
             }
-            this.reflectChatWarmth(health.value);
+            this.reflectChatStatus(health.value);
             return;
         }
         this.healthFailureStreak += 1;
@@ -1941,19 +1947,67 @@ export default class LilbeePlugin extends Plugin {
         this.maybeWarnMissingToken();
     }
 
-    /** Reflect the chat engine's warm state from a health snapshot: show a warming
-     * pill while it cold-loads, and revert to ready once it is warm. Older servers
-     * omit `chat_ready`, which we treat as ready. */
-    private reflectChatWarmth(health: HealthResponse): void {
-        const warming = health.chat_ready === false;
-        if (warming === this.chatWarming) return;
-        this.chatWarming = warming;
-        if (warming) {
+    /** The engine state a health snapshot reports. Servers without `chat_status`
+     *  only distinguish ready from not-ready, so `chat_ready` stands in. */
+    private static chatStatusOf(health: HealthResponse): ChatStatus {
+        return health.chat_status ?? (health.chat_ready === false ? CHAT_STATUS.LOADING : CHAT_STATUS.READY);
+    }
+
+    /** Reflect the chat engine's state from a health snapshot. `not_started` is
+     *  not a fault and not a wait: nothing is loading because nothing asked it to,
+     *  and the next request warms it. */
+    private reflectChatStatus(health: HealthResponse): void {
+        const status = LilbeePlugin.chatStatusOf(health);
+        this.chatError = health.chat_error ?? null;
+        if (status === this.chatStatus) return;
+        this.chatStatus = status;
+        this.syncWarmStream();
+        if (status === CHAT_STATUS.LOADING) {
             this.updateStatusBar(MESSAGES.STATUS_WARMING, DOT_STATE.PRIMARY);
             this.setStatusClass("lilbee-status-starting");
-        } else {
-            this.setStatusReady();
+            return;
         }
+        if (status === CHAT_STATUS.ERROR) {
+            this.updateStatusBar(MESSAGES.STATUS_CHAT_FAILED, DOT_STATE.ERROR);
+            this.setStatusClass("lilbee-status-error");
+            return;
+        }
+        this.setStatusReady();
+    }
+
+    /** Follow the cold-load stream while the engine is loading, and drop it as
+     *  soon as it is not. Only `loading` has progress to report. */
+    private syncWarmStream(): void {
+        if (this.chatStatus !== CHAT_STATUS.LOADING) {
+            this.warmController?.abort();
+            this.warmController = null;
+            return;
+        }
+        if (this.warmController) return;
+        const controller = new AbortController();
+        this.warmController = controller;
+        void this.consumeWarmStream(controller);
+    }
+
+    private async consumeWarmStream(controller: AbortController): Promise<void> {
+        try {
+            for await (const event of this.api.warmStream(controller.signal)) {
+                if (event.event !== SSE_EVENT.WARM) continue;
+                if (this.warmController !== controller) return;
+                this.paintWarmProgress(event.data as WarmProgress);
+            }
+        } catch {
+            // Stream refused or dropped: the health probe still drives the pill.
+        } finally {
+            if (this.warmController === controller) this.warmController = null;
+        }
+    }
+
+    /** Paint one warm snapshot onto the status pill. */
+    private paintWarmProgress(snapshot: WarmProgress): void {
+        if (this.chatStatus !== CHAT_STATUS.LOADING) return;
+        this.updateStatusBar(warmStatusText(snapshot), DOT_STATE.PRIMARY);
+        this.setStatusClass("lilbee-status-starting");
     }
 
     notifyChatStart(): void {
@@ -2090,7 +2144,7 @@ export default class LilbeePlugin extends Plugin {
             const models = await this.api.listModels();
             if (models.chat.active === this.activeModel) return;
             this.activeModel = models.chat.active;
-            if (!this.chatWarming) this.setStatusReady();
+            if (this.chatStatus !== CHAT_STATUS.LOADING) this.setStatusReady();
         } catch {
             // best-effort; the next probe tick retries
         }
@@ -2108,11 +2162,11 @@ export default class LilbeePlugin extends Plugin {
 
         // Check wiki feature status
         try {
-            const status = await this.api.status();
-            if (status.isOk()) {
+            const wiki = await this.api.wikiStatus();
+            if (wiki.isOk()) {
                 this.wikiEnabled = this.settings.wikiEnabled;
-                this.wikiPageCount = status.value.wiki?.page_count ?? 0;
-                this.wikiDraftCount = status.value.wiki?.draft_count ?? 0;
+                this.wikiPageCount = wiki.value.pages;
+                this.wikiDraftCount = wiki.value.drafts;
             }
         } catch {
             // wiki detection is best-effort
@@ -2158,12 +2212,21 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
-    /** Block chat and ingest while the fleet is (re)loading (chat_ready:false), so
-     *  requests never hit a half-built fleet. Public so the chat view gates on it too. */
+    /** Block chat and ingest only while a request cannot be served. Public so the
+     *  chat view gates on it too.
+     *
+     *  `not_started` passes: the server warms the engine on the next request, so
+     *  blocking here would withhold the one call that loads the model. */
     assertFleetReady(): boolean {
-        if (!this.chatWarming) return true;
-        new Notice(MESSAGES.NOTICE_FLEET_WARMING);
-        return false;
+        if (this.chatStatus === CHAT_STATUS.LOADING) {
+            new Notice(MESSAGES.NOTICE_FLEET_WARMING);
+            return false;
+        }
+        if (this.chatStatus === CHAT_STATUS.ERROR) {
+            new Notice(MESSAGES.NOTICE_FLEET_ERROR(this.chatError), NOTICE_DURATION_MS);
+            return false;
+        }
+        return true;
     }
 
     /** Saved conversations need the /api/sessions routes, which pre-0.6.90 servers don't have. */

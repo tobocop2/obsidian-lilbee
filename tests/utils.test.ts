@@ -23,6 +23,7 @@ import {
     noticeServerUnreachableIfApplicable,
     percentFromSse,
     percentOfBytes,
+    warmStatusText,
     relativeTimeFromIso,
     sessionTokenInvalidMessage,
     setDeterminateProgress,
@@ -625,5 +626,37 @@ describe("setDeterminateProgress", () => {
 
         expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(false);
         expect(fill.style.width).toBe("42%");
+    });
+});
+
+describe("warmStatusText", () => {
+    const snapshot = (over: Record<string, unknown>) =>
+        ({
+            phase: "starting",
+            model_ref: null,
+            bytes_done: 0,
+            bytes_total: 0,
+            detail: null,
+            error: null,
+            elapsed_s: 0,
+            ...over,
+        }) as Parameters<typeof warmStatusText>[0];
+
+    it("reports a byte percentage while weights are read", () => {
+        expect(warmStatusText(snapshot({ phase: "reading_weights", bytes_done: 3, bytes_total: 4 }))).toContain("75%");
+    });
+
+    it("drops the percentage when the server reports no total", () => {
+        const text = warmStatusText(snapshot({ phase: "reading_weights", bytes_done: 3, bytes_total: 0 }));
+        expect(text).toBe(MESSAGES.STATUS_WARM_READING_UNSIZED);
+    });
+
+    it("names the engine load, which has no byte signal", () => {
+        expect(warmStatusText(snapshot({ phase: "loading_engine" }))).toBe(MESSAGES.STATUS_WARM_LOADING_ENGINE);
+    });
+
+    it("falls back to the starting label for every other phase", () => {
+        expect(warmStatusText(snapshot({ phase: "starting" }))).toBe(MESSAGES.STATUS_WARM_STARTING);
+        expect(warmStatusText(snapshot({ phase: "ready" }))).toBe(MESSAGES.STATUS_WARM_STARTING);
     });
 });
