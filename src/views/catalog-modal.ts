@@ -536,7 +536,8 @@ export class CatalogModal extends Modal {
     private renderLibraryTab(): void {
         /* v8 ignore next 2 */
         if (!this.resultsEl) return;
-        const installed = this.entries.filter((e) => e.installed);
+        // Hosted rows are installed=true server-side; the Library is the on-disk view.
+        const installed = localRowsOnly(this.entries).filter((e) => e.installed);
         if (installed.length === 0) {
             this.resultsEl.createDiv({
                 cls: "lilbee-catalog-empty",

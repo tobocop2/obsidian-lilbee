@@ -161,7 +161,11 @@ export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
 }
 
 export function yourCollectionRail(entries: CatalogEntry[]): CatalogEntry[] {
-    return entries.filter((e) => e.installed).slice(0, DISCOVER_RAIL_LIMIT);
+    // Hosted rows report installed=true because they are usable, not because
+    // they are on disk. "Your collection" answers what this machine holds.
+    return localRowsOnly(entries)
+        .filter((e) => e.installed)
+        .slice(0, DISCOVER_RAIL_LIMIT);
 }
 
 /**
