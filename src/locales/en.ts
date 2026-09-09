@@ -1083,7 +1083,7 @@ export const MESSAGES = {
     LABEL_WIKI_ENABLE_TOGGLE: "Enable wiki",
     DESC_WIKI_ENABLE_TOGGLE: "Generate AI-written summaries of your documents. This feature is in beta.",
     LABEL_WIKI_STATUS: "Wiki status",
-    DESC_WIKI_STATUS_COUNTS: (pages: number, drafts: number) => `Enabled — ${pages} pages, ${drafts} drafts`,
+    DESC_WIKI_STATUS_COUNTS: (pages: number, drafts: number) => `Enabled: ${pages} pages, ${drafts} drafts`,
     LABEL_WIKI_PRUNE_RAW: "Remove source duplicates",
     LABEL_WIKI_FAITHFULNESS: "Summary accuracy",
     LABEL_WIKI_SEARCH_MODE: "Default search mode",

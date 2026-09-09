@@ -8,6 +8,7 @@ import { App, MockElement, Setting, setApiVersion } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
 import { DEFAULT_SETTINGS, CAPABILITY, MEMORY_CONFIG_KEY, SERVER_MODE, type LilbeeSettings } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import { formatDiskSize } from "../src/utils";
 import { err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
@@ -135,6 +136,7 @@ type Definition = {
     type?: string;
     heading?: string;
     name?: string;
+    aliases?: string[];
     items?: Definition[];
     visible?: () => boolean;
     render?: (setting: Setting, group: { listEl: MockElement }) => void;
@@ -214,6 +216,34 @@ async function namesFromDisplay(tab: LilbeeSettingTab): Promise<string[]> {
 
 function makeTab(settings: Partial<LilbeeSettings> = {}, overrides: Record<string, unknown> = {}) {
     return new LilbeeSettingTab(new App() as never, makePlugin(settings, overrides));
+}
+
+/** The description each row renders, keyed by its name, so a row that reports a size can be read. */
+function descriptionsFromDefinitions(tab: LilbeeSettingTab): Map<string, string> {
+    const names = new Map<unknown, string>();
+    const descs = new Map<unknown, string>();
+    const originalName = Setting.prototype.setName;
+    const originalDesc = Setting.prototype.setDesc;
+    Setting.prototype.setName = function (name: string) {
+        names.set(this, name);
+        return originalName.call(this, name);
+    };
+    Setting.prototype.setDesc = function (desc: string) {
+        descs.set(this, desc);
+        return originalDesc.call(this, desc);
+    };
+    try {
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+    } finally {
+        Setting.prototype.setName = originalName;
+        Setting.prototype.setDesc = originalDesc;
+    }
+    const paired = new Map<string, string>();
+    for (const [setting, name] of names) {
+        const desc = descs.get(setting);
+        if (desc !== undefined) paired.set(name, desc);
+    }
+    return paired;
 }
 
 describe("declarative setting definitions", () => {
@@ -303,6 +333,27 @@ describe("declarative setting definitions", () => {
         renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
         expect(container.find("lilbee-storage-report")).toBeTruthy();
         expect(container.find("lilbee-uninstall-callout")).toBeTruthy();
+    });
+
+    it("sizes the uninstall row from the storage report the first time it renders", () => {
+        const tab = makeTab();
+        const descs = descriptionsFromDefinitions(tab);
+        expect(descs.get(MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(6)));
+    });
+
+    it("draws the wiki toggle above the rows it controls, on both paths", async () => {
+        setApiVersion(LEGACY_VERSION);
+        const displayed = await namesFromDisplay(makeTab({ wikiEnabled: true }));
+
+        setApiVersion(DEFINITIONS_VERSION);
+        const declared = collectNames(makeTab({ wikiEnabled: true }).getSettingDefinitions() as Definition[]);
+
+        for (const names of [displayed, declared]) {
+            const toggle = names.indexOf(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE);
+            const firstSubSetting = names.indexOf(MESSAGES.LABEL_WIKI_STATUS);
+            expect(toggle).toBeGreaterThan(-1);
+            expect(firstSubSetting).toBeGreaterThan(toggle);
+        }
     });
 
     it("renders the update progress panel beside the version row", () => {
@@ -395,9 +446,7 @@ describe("visibility predicates", () => {
         const tab = makeTab();
         const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_FLASH_ATTENTION);
 
-        // Obsidian indexes the definitions once when the tab is added, before any
-        // config has loaded. A row hidden then is excluded from search, which is
-        // the defect this path exists to fix.
+        // The config has not loaded when a search runs, and search skips a hidden row.
         expect(row?.visible?.()).toBe(true);
 
         (tab as any).serverConfig = { something_else: true };
@@ -446,6 +495,22 @@ describe("visibility predicates", () => {
         (tab as any).crawlerBrowserReady = false;
         expect(row?.visible?.()).toBe(true);
     });
+
+    it("keeps every hidden wiki row findable through the toggle that reveals it", () => {
+        const tab = makeTab({ wikiEnabled: false });
+        const rows = findGroup(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_WIKI_SECTION)?.items ?? [];
+        const hidden = rows.filter((row) => row.visible?.() === false).map((row) => row.name);
+
+        expect(hidden.length).toBeGreaterThan(5);
+        expect(rows.find((row) => row.name === MESSAGES.LABEL_WIKI_ENABLE_TOGGLE)?.aliases).toEqual(hidden);
+    });
+
+    it("keeps the browser install offer findable through the row that triggers it", () => {
+        const tab = makeTab();
+        const items = tab.getSettingDefinitions() as Definition[];
+        expect(findRow(items, MESSAGES.LABEL_CRAWL_BROWSER_SETUP)?.visible?.()).toBe(false);
+        expect(findRow(items, MESSAGES.LABEL_CRAWL_RENDER_MODE)?.aliases).toContain(MESSAGES.LABEL_CRAWL_BROWSER_SETUP);
+    });
 });
 
 describe("refreshing the tab", () => {
@@ -467,7 +532,12 @@ describe("refreshing the tab", () => {
         setApiVersion(DEFINITIONS_VERSION);
         const tab = makeTab();
         tab.refresh();
-        expect(tab.settingItems.length).toBeGreaterThan(10);
+        const stored = collectNames(tab.settingItems as Definition[]);
+        expect(stored).toEqual(collectNames(tab.getSettingDefinitions() as Definition[]));
+        expect(stored).toContain(MESSAGES.LABEL_WIKI_SECTION);
+        expect(stored).toContain(MESSAGES.LABEL_CRAWLING);
+        expect(stored).toContain(MESSAGES.LABEL_UNINSTALL_SERVER);
+        expect(stored.length).toBeGreaterThan(50);
     });
 
     it("re-renders through display() below 1.13", () => {
