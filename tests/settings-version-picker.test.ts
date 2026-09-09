@@ -155,7 +155,8 @@ describe("server version picker with the real release list", () => {
 
     async function renderPicker(includeDevBuilds: boolean): Promise<CapturedDropdown> {
         const tab = makeTab(includeDevBuilds);
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const host = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(host), host);
         await new Promise((resolve) => setTimeout(resolve, 0));
         return dropdown;
     }
@@ -177,7 +178,8 @@ describe("server version picker with the real release list", () => {
             getSharedGpuDetection: () => null,
         } as unknown as LilbeePlugin;
         const tab = new LilbeeSettingTab(new App(), plugin);
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const host = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(host), host);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(descs[descs.length - 1]).toContain("Running the ROCm build.");
@@ -195,7 +197,8 @@ describe("server version picker with the real release list", () => {
             }),
         } as unknown as LilbeePlugin;
         const tab = new LilbeeSettingTab(new App(), plugin);
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const host = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(host), host);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(descs[descs.length - 1]).toContain("Running the default build.");
@@ -210,7 +213,8 @@ describe("server version picker with the real release list", () => {
             getSharedGpuDetection: () => null,
         } as unknown as LilbeePlugin;
         const tab = new LilbeeSettingTab(new App(), plugin);
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const host = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(host), host);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(descs[descs.length - 1]).not.toContain("build.");
@@ -226,9 +230,11 @@ describe("server version picker with the real release list", () => {
 
     it("fetches the release list only once across repeated renders", async () => {
         const tab = makeTab(false);
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const first = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(first), first);
         await new Promise((resolve) => setTimeout(resolve, 0));
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const second = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(second), second);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(fetchStub).toHaveBeenCalledTimes(1);
@@ -247,7 +253,8 @@ describe("server version picker with the real release list", () => {
         fetchStub.mockRejectedValue(new Error("network down"));
         const tab = makeTab(false);
         const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
-        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        const host = new MockElement() as unknown as HTMLElement;
+        (tab as any).applyVersionRow(new Setting(host), host);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         const retry = buttons.find((b) => b.labels.includes("Retry"));

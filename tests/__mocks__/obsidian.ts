@@ -666,10 +666,36 @@ export class Plugin {
     });
 }
 
+/**
+ * The app version tests run against. Defaults below 1.13.0, so a tab under test takes the
+ * display() path; tests that exercise the definitions raise it with setApiVersion().
+ */
+let mockApiVersion = "1.12.0";
+
+export function setApiVersion(version: string): void {
+    mockApiVersion = version;
+}
+
+function compareVersions(a: string, b: string): number {
+    const left = a.split(".").map(Number);
+    const right = b.split(".").map(Number);
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+        const diff = (left[i] ?? 0) - (right[i] ?? 0);
+        if (diff !== 0) return diff;
+    }
+    return 0;
+}
+
+export function requireApiVersion(version: string): boolean {
+    return compareVersions(mockApiVersion, version) >= 0;
+}
+
 export class PluginSettingTab {
     app: App;
     plugin: Plugin;
     containerEl: MockElement;
+    /** What the last update() stored, as Obsidian 1.13 does. */
+    settingItems: unknown[] = [];
 
     constructor(app: App, plugin: Plugin) {
         this.app = app;
@@ -682,6 +708,15 @@ export class PluginSettingTab {
     }
     hide(): void {
         /* noop */
+    }
+    getSettingDefinitions(): unknown[] {
+        return [];
+    }
+    update(): void {
+        this.settingItems = this.getSettingDefinitions();
+    }
+    refreshDomState(): void {
+        /* noop: Obsidian re-evaluates visible and disabled predicates here */
     }
 }
 
