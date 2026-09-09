@@ -138,6 +138,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private chatModeSelectEl: HTMLSelectElement | null = null;
     private apiKeysContainerEl: HTMLElement | null = null;
     private crawlingContainerEl: HTMLElement | null = null;
+    private crawlerBrowserSetupEl: HTMLElement | null = null;
     private wikiContainerEl: HTMLElement | null = null;
     /** Last successful release-list fetch; failures are not cached, so a retry always refetches. */
     private releasesCache: { at: number; releases: ReleaseInfo[] } | null = null;
@@ -200,14 +201,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async applyCapabilityGating(): Promise<void> {
-        const [apiKeys, crawling, wiki] = await Promise.all([
+        const [apiKeys, crawling, crawlingBrowser, wiki] = await Promise.all([
             this.plugin.api.getCapability(CAPABILITY.API_KEYS),
             this.plugin.api.getCapability(CAPABILITY.CRAWLING),
+            this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER),
             this.plugin.api.getCapability(CAPABILITY.WIKI),
         ]);
         if (!apiKeys && this.apiKeysContainerEl) this.apiKeysContainerEl.hide();
         if (!crawling && this.crawlingContainerEl) this.crawlingContainerEl.hide();
         if (!wiki && this.wikiContainerEl) this.wikiContainerEl.hide();
+        // The offer belongs inside a visible Crawling section, never on its own.
+        if (crawling && !crawlingBrowser && this.crawlerBrowserSetupEl) this.crawlerBrowserSetupEl.show();
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -2441,6 +2445,65 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
+    /** Apply a render-mode choice, fetching Chromium first when browser mode needs it. */
+    private async applyCrawlRenderMode(dropdown: { setValue: (v: string) => unknown }, value: string): Promise<void> {
+        // The choice can arrive before the gating probe lands, so read the capability now.
+        if (
+            value === CRAWL_RENDER_MODE.BROWSER &&
+            !(await this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER))
+        ) {
+            // Choosing browser mode is the request for a browser, so fetch it rather than refuse.
+            if (!(await this.plugin.installCrawlerBrowser())) {
+                dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
+                return;
+            }
+            this.crawlerBrowserSetupEl?.hide();
+        }
+        try {
+            await this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: value });
+            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_RENDER_MODE));
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_RENDER_MODE));
+        }
+    }
+
+    /** The render-mode row, in its own div so hide-until-supported targets just this row. */
+    private renderCrawlRenderMode(containerEl: HTMLElement): void {
+        const renderModeContainer = containerEl.createDiv();
+        const renderModeSetting = new Setting(renderModeContainer)
+            .setName(MESSAGES.LABEL_CRAWL_RENDER_MODE)
+            .setDesc(MESSAGES.DESC_CRAWL_RENDER_MODE)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(CRAWL_RENDER_MODE.HTTP, MESSAGES.LABEL_CRAWL_RENDER_MODE_HTTP);
+                dropdown.addOption(CRAWL_RENDER_MODE.BROWSER, MESSAGES.LABEL_CRAWL_RENDER_MODE_BROWSER);
+                dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
+                dropdown.onChange((value) => this.applyCrawlRenderMode(dropdown, value));
+                this.serverConfigDropdowns.set(CONFIG_KEY.CRAWL_RENDER_MODE, dropdown);
+            });
+        this.appendResetAffordance(renderModeSetting, CONFIG_KEY.CRAWL_RENDER_MODE, MESSAGES.LABEL_CRAWL_RENDER_MODE);
+        renderModeContainer.hide();
+        this.serverConfigHideableEls.set(CONFIG_KEY.CRAWL_RENDER_MODE, renderModeContainer);
+    }
+
+    /** The Chromium install offer, hidden until the capability probe says it is needed. */
+    private renderCrawlerBrowserSetup(containerEl: HTMLElement): void {
+        const browserSetupContainer = containerEl.createDiv();
+        new Setting(browserSetupContainer)
+            .setName(MESSAGES.LABEL_CRAWL_BROWSER_SETUP)
+            .setDesc(MESSAGES.DESC_CRAWL_BROWSER_SETUP)
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_INSTALL_CHROMIUM).onClick(async () => {
+                    btn.setDisabled(true);
+                    const installed = await this.plugin.installCrawlerBrowser();
+                    btn.setDisabled(false);
+                    if (!installed) return;
+                    browserSetupContainer.hide();
+                }),
+            );
+        browserSetupContainer.hide();
+        this.crawlerBrowserSetupEl = browserSetupContainer;
+    }
+
     private renderCrawlingSettings(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_CRAWLING).setHeading();
 
@@ -2612,29 +2675,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.appendResetAffordance(numSetting, numField.key, numField.name);
         }
 
-        // Wrap the render-mode row in its own child div so the hide-until-supported
-        // toggle targets just this row, not the capability-gated crawling container.
-        const renderModeContainer = containerEl.createDiv();
-        const renderModeSetting = new Setting(renderModeContainer)
-            .setName(MESSAGES.LABEL_CRAWL_RENDER_MODE)
-            .setDesc(MESSAGES.DESC_CRAWL_RENDER_MODE)
-            .addDropdown((dropdown) => {
-                dropdown.addOption(CRAWL_RENDER_MODE.HTTP, MESSAGES.LABEL_CRAWL_RENDER_MODE_HTTP);
-                dropdown.addOption(CRAWL_RENDER_MODE.BROWSER, MESSAGES.LABEL_CRAWL_RENDER_MODE_BROWSER);
-                dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
-                dropdown.onChange(async (value) => {
-                    try {
-                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_RENDER_MODE));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_RENDER_MODE));
-                    }
-                });
-                this.serverConfigDropdowns.set(CONFIG_KEY.CRAWL_RENDER_MODE, dropdown);
-            });
-        this.appendResetAffordance(renderModeSetting, CONFIG_KEY.CRAWL_RENDER_MODE, MESSAGES.LABEL_CRAWL_RENDER_MODE);
-        renderModeContainer.hide();
-        this.serverConfigHideableEls.set(CONFIG_KEY.CRAWL_RENDER_MODE, renderModeContainer);
+        this.renderCrawlRenderMode(containerEl);
+        this.renderCrawlerBrowserSetup(containerEl);
 
         const patternsSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)
@@ -2835,6 +2877,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.setDisabled(this.plugin.settings.serverMode !== SERVER_MODE.MANAGED);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.storeContentInVault = value;
+                    // Flipping the toggle is the way out of a refused move.
+                    this.plugin.settings.rejectedStorageMove = null;
                     await this.plugin.saveSettings();
                     // Both directions move content; off is not a no-op.
                     void this.plugin.configureManagedStorage();

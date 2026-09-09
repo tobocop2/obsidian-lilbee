@@ -17,7 +17,7 @@ import {
     reloadClaudian,
     type AgentWireOutcome,
 } from "./agent-integration";
-import { LilbeeClient, SessionTokenError } from "./api";
+import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from "./api";
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
@@ -37,8 +37,10 @@ import {
     DEFAULT_SETTINGS,
     DOT_STATE,
     ENSURE_SOURCE,
+    CAPABILITY,
     ERROR_NAME,
     LOGS_DIR,
+    LOG_FILE,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
     MODEL_TASK,
@@ -67,10 +69,12 @@ import {
     type SetupOutcome,
     type ServerState,
     type ServerVariant,
+    type StorageMoveTarget,
     type SetupDonePayload,
     type SetupProgressPayload,
     type SetupStartPayload,
     INDETERMINATE_PROGRESS,
+    type AddDone,
     type SyncDone,
     type SSEEvent,
     type WarmProgress,
@@ -89,6 +93,7 @@ import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
+    extractServerErrorDetail,
     extractSseErrorMessage,
     formatDiskSize,
     isVersionOlder,
@@ -157,7 +162,7 @@ function formatSetupDetail(downloaded: number, total: number | null): string {
     return MESSAGES.STATUS_TASK_SETUP_PROGRESS.replace("{downloaded}", dlMB).replace("{total}", totalMB);
 }
 
-function summarizeSyncResult(done: SyncDone): string {
+function summarizeSyncResult(done: AddDone): string {
     const parts: string[] = [];
     if (done.added.length > 0) parts.push(`${done.added.length} added`);
     if (done.updated.length > 0) parts.push(`${done.updated.length} updated`);
@@ -165,6 +170,7 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
+    if (done.tracked.length > 0) parts.push(`${done.tracked.length} already tracked`);
     return parts.join(", ");
 }
 
@@ -233,13 +239,14 @@ export class FileProgressTracker {
     }
 }
 
-export function parseAddDoneEvent(data: unknown): SyncDone | null {
+export function parseAddDoneEvent(data: unknown): AddDone | null {
     if (!data || typeof data !== "object") return null;
     const obj = data as Record<string, unknown>;
-    if (obj.sync && typeof obj.sync === "object") {
-        return coerceSyncDone(obj.sync as Record<string, unknown>);
-    }
-    return coerceSyncDone(obj);
+    // `tracked` sits on the add envelope beside `sync`, never inside it.
+    const tracked = Array.isArray(obj.tracked) ? (obj.tracked as string[]) : [];
+    const sync = obj.sync && typeof obj.sync === "object" ? (obj.sync as Record<string, unknown>) : obj;
+    const done = coerceSyncDone(sync);
+    return done === null ? null : { ...done, tracked };
 }
 
 function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
@@ -318,6 +325,8 @@ export default class LilbeePlugin extends Plugin {
     vaultRegistry: VaultRegistry | null = null;
     vaultId = "";
     syncController: AbortController | null = null;
+    /** An automatic sync requested while another ran; the running one carries it. */
+    private deferredSync: { options?: SyncOptions } | null = null;
     private pendingSyncCount = 0;
     private pendingHintTimeout: number | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
@@ -927,63 +936,98 @@ export default class LilbeePlugin extends Plugin {
         this.refreshSettingsTab();
     }
 
-    /**
-     * Tell the managed server to store content under the vault.
-     *
-     * PATCHes ``documents_dir`` to ``<vault>/lilbee`` and ``vault_base`` to the
-     * vault root. Server performs a locked relocation if paths changed, then
-     * stamps ``vault_path`` on every Source response so chat-chip clicks can
-     * deep-link into the local editor. No-op when the toggle is off, the
-     * server is external, or the current values already match.
-     */
-    /** Where the managed server keeps content when it is not stored in the vault. */
-    private serverOwnedDocumentsDir(): string | null {
+    /** This vault's server data directory, or null before the registry loads. */
+    private ownDataDir(): string | null {
         const registry = this.vaultRegistry;
-        if (!registry) return null;
-        return node.join(registry.resolveDataDir(this.vaultId), "documents");
+        return registry ? registry.resolveDataDir(this.vaultId) : null;
     }
 
+    /** Where the managed server keeps content when it is not stored in the vault. */
+    private serverOwnedDocumentsDir(): string | null {
+        const dataDir = this.ownDataDir();
+        return dataDir === null ? null : node.join(dataDir, "documents");
+    }
+
+    /** Tell the managed server where to keep content: under the vault, or in its own data dir. */
     async configureManagedStorage(): Promise<void> {
         if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
+        const target = this.wantedStorageLayout();
+        if (target === null) return;
+        if (this.alreadyRefusedStorage(target)) {
+            this.journal.lifecycle("storage move skipped: the server already refused this layout");
+            return;
+        }
+        if (await this.serverStorageMatches(target)) return;
+        await this.sendStorageMove(target);
+    }
 
-        // Off is a real destination, not a no-op: leaving documents_dir inside
-        // the vault means content keeps landing there after the user opted out.
-        // The server refuses to reset this field (its default is a sentinel), so
-        // the way back is an explicit path to the server's own data dir.
+    /** The layout the plugin wants, or null while the data dir is unknown. */
+    private wantedStorageLayout(): StorageMoveTarget | null {
+        // The server refuses to reset documents_dir, so opting out names its data dir explicitly.
         const storeInVault = this.settings.storeContentInVault;
         const vaultBase = this.getVaultBasePath();
-        const desiredDocsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();
-        const desiredVaultBase = storeInVault ? vaultBase : null;
-        if (desiredDocsDir === null) return;
+        const documentsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();
+        if (documentsDir === null) return null;
+        return { documentsDir, vaultBase: storeInVault ? vaultBase : null };
+    }
 
+    /** True when the server already refused this exact layout. */
+    private alreadyRefusedStorage(target: StorageMoveTarget): boolean {
+        const refused = this.settings.rejectedStorageMove;
+        return (
+            refused !== null && refused.documentsDir === target.documentsDir && refused.vaultBase === target.vaultBase
+        );
+    }
+
+    /** True when the server already has this layout. An unreadable config counts as a match. */
+    private async serverStorageMatches(target: StorageMoveTarget): Promise<boolean> {
         let current: Record<string, unknown>;
         try {
             current = await this.api.config();
         } catch (err) {
             console.error("[lilbee] could not read server config for vault setup", err);
-            return;
+            return true;
         }
-
         const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
         const currentVault = typeof current.vault_base === "string" ? current.vault_base : null;
-        if (currentDocs === desiredDocsDir && currentVault === desiredVaultBase) {
-            return;
-        }
+        return currentDocs === target.documentsDir && currentVault === target.vaultBase;
+    }
 
+    /** Move the server's storage, clearing any remembered refusal once it lands. */
+    private async sendStorageMove(target: StorageMoveTarget): Promise<void> {
         const notice = new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZING, NOTICE_PERMANENT);
         try {
             await this.api.updateConfig({
-                documents_dir: desiredDocsDir,
-                vault_base: desiredVaultBase,
+                documents_dir: target.documentsDir,
+                vault_base: target.vaultBase,
             });
             notice.hide();
+            this.settings.rejectedStorageMove = null;
+            await this.persistAll();
             new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZED);
         } catch (err) {
             notice.hide();
-            const detail = errorMessage(err, String(err));
-            new Notice(`${MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED}${detail}`, NOTICE_ERROR_DURATION_MS);
-            console.error("[lilbee] storage reorganisation failed", err);
+            await this.reportStorageMoveFailure(target, err);
         }
+    }
+
+    /** Say why a move failed, and remember a layout the server itself refused. */
+    private async reportStorageMoveFailure(target: StorageMoveTarget, err: unknown): Promise<void> {
+        // Only a 4xx is a refusal; a 5xx or an unanswered request is retried next start.
+        const message = errorMessage(err, String(err));
+        const answered = hasStatusLine(err);
+        const refused = isClientError(err);
+        if (refused) {
+            this.settings.rejectedStorageMove = target;
+            await this.persistAll();
+        }
+
+        // A status line is not a reason: show the server's detail when it answered.
+        const reason = answered ? extractServerErrorDetail(message) : message;
+        const dataDir = this.ownDataDir();
+        const logPath = dataDir === null ? null : node.join(dataDir, LOGS_DIR, LOG_FILE.SERVER);
+        new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED(reason, logPath, !refused), NOTICE_ERROR_DURATION_MS);
+        console.error("[lilbee] storage reorganisation failed", err);
     }
 
     /** True when the shared bin dir holds a server binary this vault can run. */
@@ -1023,7 +1067,7 @@ export default class LilbeePlugin extends Plugin {
         // ask it to exit before deleting the tree out from under it.
         if (owner !== null) await askServerToExit(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
 
-        executeUninstall(plan);
+        await executeUninstall(plan, registry.sharedRoot, ownDataDir);
 
         registry.saveConfig({
             ...registry.loadConfig(),
@@ -1951,14 +1995,10 @@ export default class LilbeePlugin extends Plugin {
         if (health?.isOk()) {
             this.healthFailureStreak = 0;
             if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
+            // Only a reconnect refetches the model: a restarted server may be on a different one.
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
-            } else {
-                // Keep the status-bar model in sync with out-of-band changes
-                // (CLI/TUI/another client switching the chat model) while the
-                // server stays connected.
-                void this.refreshActiveModel();
             }
             this.reflectChatStatus(health.value);
             return;
@@ -2169,20 +2209,6 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         new ModelInfoModal(this.app, this, entry).open();
-    }
-
-    /** Lightweight active-model resync used on every healthy probe tick, so the
-     *  status bar reflects an out-of-band chat-model change. Cheaper than
-     *  fetchActiveModel (no wiki/reasoning work); repaints only on a change. */
-    private async refreshActiveModel(): Promise<void> {
-        try {
-            const models = await this.api.listModels();
-            if (models.chat.active === this.activeModel) return;
-            this.activeModel = models.chat.active;
-            if (this.chatStatus !== CHAT_STATUS.LOADING) this.setStatusReady();
-        } catch {
-            // best-effort; the next probe tick retries
-        }
     }
 
     async fetchActiveModel(): Promise<void> {
@@ -2489,7 +2515,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         const total = files.length;
-        const merged: SyncDone = {
+        const merged: AddDone = {
             added: [],
             updated: [],
             removed: [],
@@ -2497,6 +2523,7 @@ export default class LilbeePlugin extends Plugin {
             failed: [],
             skipped: [],
             held_out: [],
+            tracked: [],
         };
         let done = 0;
         for (const batch of batches) {
@@ -2510,6 +2537,7 @@ export default class LilbeePlugin extends Plugin {
                         merged.failed.push(...parsed.failed);
                         merged.skipped.push(...parsed.skipped);
                         merged.held_out.push(...parsed.held_out);
+                        merged.tracked.push(...parsed.tracked);
                         merged.unchanged += parsed.unchanged;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {
@@ -2553,7 +2581,7 @@ export default class LilbeePlugin extends Plugin {
 
         try {
             const progress = new FileProgressTracker();
-            let syncResult: SyncDone | null = null;
+            let syncResult: AddDone | null = null;
             const controller = this.syncController;
             const rawStream = makeStream
                 ? makeStream(controller.signal)
@@ -3022,6 +3050,63 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Download Chromium so the crawler can render with a browser. True once it is installed. */
+    async installCrawlerBrowser(): Promise<boolean> {
+        const taskId = this.taskQueue.enqueue(MESSAGES.TASK_CRAWLER_BROWSER_SETUP, TASK_TYPE.SETUP);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return false;
+        }
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
+        try {
+            const error = await this.drainCrawlerSetup(taskId, controller.signal);
+            if (error !== null) {
+                this.taskQueue.fail(taskId, error);
+                new Notice(MESSAGES.ERROR_CRAWLER_SETUP_FAILED.replace("{error}", error));
+                return false;
+            }
+            this.taskQueue.complete(taskId);
+            this.api.invalidateCapability(CAPABILITY.CRAWLING_BROWSER);
+            new Notice(MESSAGES.NOTICE_CRAWLER_BROWSER_READY, NOTICE_DURATION_MS);
+            return true;
+        } catch (err) {
+            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+            this.taskQueue.fail(taskId, msg);
+            new Notice(MESSAGES.ERROR_CRAWLER_SETUP_FAILED.replace("{error}", msg));
+            return false;
+        }
+    }
+
+    /** A download with no announced total stays indeterminate rather than dividing by zero. */
+    private renderSetupProgress(taskId: string, d: SetupProgressPayload): void {
+        const pct = d.total_bytes ? (d.downloaded_bytes / d.total_bytes) * 100 : -1;
+        this.taskQueue.update(taskId, pct, formatSetupDetail(d.downloaded_bytes, d.total_bytes));
+    }
+
+    /** Renders the setup stream onto `taskId`. Returns null on success, else the error text. */
+    private async drainCrawlerSetup(taskId: string, signal: AbortSignal): Promise<string | null> {
+        let outcome: string | null = MESSAGES.ERROR_CRAWLER_SETUP_INCOMPLETE;
+        for await (const event of this.api.setupCrawler(signal)) {
+            switch (event.event) {
+                case SSE_EVENT.SETUP_START: {
+                    const d = event.data as SetupStartPayload;
+                    this.taskQueue.update(taskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                    break;
+                }
+                case SSE_EVENT.SETUP_PROGRESS:
+                    this.renderSetupProgress(taskId, event.data as SetupProgressPayload);
+                    break;
+                case SSE_EVENT.SETUP_DONE: {
+                    const d = event.data as SetupDonePayload;
+                    outcome = d.success ? null : (d.error ?? MESSAGES.ERROR_UNKNOWN);
+                    break;
+                }
+            }
+        }
+        return outcome;
+    }
+
     async runCrawl(
         url: string,
         depth: number | null,
@@ -3061,9 +3146,7 @@ export default class LilbeePlugin extends Plugin {
                     }
                     case SSE_EVENT.SETUP_PROGRESS: {
                         if (setupTaskId === null) break;
-                        const d = event.data as SetupProgressPayload;
-                        const pct = d.total_bytes ? (d.downloaded_bytes / d.total_bytes) * 100 : -1;
-                        this.taskQueue.update(setupTaskId, pct, formatSetupDetail(d.downloaded_bytes, d.total_bytes));
+                        this.renderSetupProgress(setupTaskId, event.data as SetupProgressPayload);
                         break;
                     }
                     case SSE_EVENT.SETUP_DONE: {
@@ -3122,9 +3205,10 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
-        // One sync at a time; only a user trigger reports a pending one.
+        // One sync at a time: a user trigger reports the running one, an automatic one defers.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
             if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
+            else this.deferredSync = { options };
             return;
         }
         const taskId = this.taskQueue.enqueue(syncTaskLabel(options), TASK_TYPE.SYNC);
@@ -3137,7 +3221,7 @@ export default class LilbeePlugin extends Plugin {
 
         try {
             const progress = new FileProgressTracker();
-            let syncResult: SyncDone | null = null;
+            let syncResult: AddDone | null = null;
             const controller = this.syncController;
             const rawStream = this.api.syncStream(controller.signal, options);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
@@ -3217,6 +3301,15 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             this.syncController = null;
             this.schedulePendingSyncHint();
+            this.runDeferredSync();
         }
+    }
+
+    /** Runs the sync deferred during this one; the sync task is terminal before this fires. */
+    private runDeferredSync(): void {
+        const deferred = this.deferredSync;
+        if (!deferred) return;
+        this.deferredSync = null;
+        void this.triggerSync(deferred.options, SYNC_TRIGGER.AUTOMATIC);
     }
 }

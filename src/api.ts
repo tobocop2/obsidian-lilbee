@@ -1,10 +1,12 @@
 import {
     CAPABILITY,
+    CRAWLER_STATUS_FIELD,
     bearerHeaders,
     JSON_HEADERS,
     OCTET_STREAM_HEADERS,
     REQUEST_OUTCOME,
     SEARCH_CHUNK_TYPE,
+    SERVER_STATUS_PREFIX,
     SSE_EVENT,
     ERROR_NAME,
 } from "./types";
@@ -17,6 +19,8 @@ import type {
     Capability,
     CatalogResponse,
     ConfigResponse,
+    CrawlerStatusField,
+    CrawlerStatusResponse,
     ConfigUpdateResponse,
     ConversationState,
     CrawlRenderMode,
@@ -116,6 +120,32 @@ export class RateLimitedError extends Error {
     }
 }
 
+const HTTP_SERVER_ERROR = 500;
+
+/** True when the error carries the status line `assertOk` writes, so the server answered. */
+export function hasStatusLine(error: unknown): error is Error {
+    return error instanceof Error && error.message.startsWith(SERVER_STATUS_PREFIX);
+}
+
+/** The status in that line, or null when it carries no number to read. */
+function httpStatusOf(error: unknown): number | null {
+    if (!hasStatusLine(error)) return null;
+    const status = parseInt(error.message.slice(SERVER_STATUS_PREFIX.length + 1), 10);
+    return Number.isNaN(status) ? null : status;
+}
+
+/** True when the server rejected the request itself, so re-sending it unchanged will not help. */
+export function isClientError(error: unknown): boolean {
+    const status = httpStatusOf(error);
+    return status !== null && status < HTTP_SERVER_ERROR;
+}
+
+/** True when the server failed rather than refused. An unreadable status is not a failure. */
+function isServerError(error: unknown): boolean {
+    const status = httpStatusOf(error);
+    return status !== null && status >= HTTP_SERVER_ERROR;
+}
+
 /**
  * True when a `fetchResult` error came from a specific HTTP status. `assertOk`
  * formats non-ok responses as `Server responded <status>: <body>`, so callers
@@ -123,7 +153,7 @@ export class RateLimitedError extends Error {
  * failure) can branch on the status without a bespoke error type per route.
  */
 export function isHttpStatus(error: Error, status: number): boolean {
-    return error.message.startsWith(`Server responded ${status}`);
+    return httpStatusOf(error) === status;
 }
 
 /**
@@ -244,7 +274,7 @@ export class LilbeeClient {
         }
         if (!res.ok) {
             const text = await res.text().catch(() => "");
-            throw new Error(`Server responded ${res.status}: ${text}`);
+            throw new Error(`${SERVER_STATUS_PREFIX} ${res.status}: ${text}`);
         }
         return res;
     }
@@ -350,12 +380,9 @@ export class LilbeeClient {
                     this.recordOutcome(REQUEST_OUTCOME.SERVER_ERROR);
                     throw err;
                 }
-                if (err instanceof Error && err.message.startsWith("Server responded")) {
-                    // A 4xx is a reachable server rejecting this request (validation,
-                    // not-found, conflict) that the caller handles — don't flag a
-                    // global server error. Only 5xx flips the status to error.
-                    const status = parseInt(err.message.slice("Server responded ".length), 10);
-                    this.recordOutcome(status >= 500 ? REQUEST_OUTCOME.SERVER_ERROR : REQUEST_OUTCOME.OK);
+                if (hasStatusLine(err)) {
+                    // A 4xx is the caller's to handle, not a global server fault; only a 5xx is.
+                    this.recordOutcome(isServerError(err) ? REQUEST_OUTCOME.SERVER_ERROR : REQUEST_OUTCOME.OK);
                     throw err;
                 }
                 // An abort is the caller's decision, never a server fault. The
@@ -413,7 +440,9 @@ export class LilbeeClient {
             case CAPABILITY.API_KEYS:
                 return this.probeLitellmInstalled();
             case CAPABILITY.CRAWLING:
-                return this.probeCrawlerInstalled();
+                return this.probeCrawlerInstalled(CRAWLER_STATUS_FIELD.PACKAGE);
+            case CAPABILITY.CRAWLING_BROWSER:
+                return this.probeCrawlerInstalled(CRAWLER_STATUS_FIELD.WITH_BROWSER);
             case CAPABILITY.WIKI:
                 return this.probeWikiEnabled();
         }
@@ -425,10 +454,10 @@ export class LilbeeClient {
         return body.error === null || body.error === undefined;
     }
 
-    private async probeCrawlerInstalled(): Promise<boolean> {
+    private async probeCrawlerInstalled(field: CrawlerStatusField): Promise<boolean> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/setup/crawler/status`);
-        const body = (await res.json()) as { package_installed?: boolean };
-        return body.package_installed === true;
+        const body = (await res.json()) as CrawlerStatusResponse;
+        return body[field] === true;
     }
 
     private async probeWikiEnabled(): Promise<boolean> {
@@ -766,6 +795,15 @@ export class LilbeeClient {
                 body: JSON.stringify(body),
                 signal,
             },
+            { stream: true },
+        );
+        yield* this.parseSSE(res);
+    }
+
+    async *setupCrawler(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/setup/crawler`,
+            { method: "POST", signal },
             { stream: true },
         );
         yield* this.parseSSE(res);

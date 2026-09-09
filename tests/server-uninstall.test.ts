@@ -1,10 +1,12 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
-const { rmSync, existsSync, readdirSync, statSync } = vi.hoisted(() => ({
+const { rmSync, existsSync, readdirSync, statSync, execFile, installed } = vi.hoisted(() => ({
     rmSync: vi.fn(),
     existsSync: vi.fn(),
     readdirSync: vi.fn(),
     statSync: vi.fn(),
+    execFile: vi.fn(),
+    installed: vi.fn(),
 }));
 
 vi.mock("../src/node", () => ({
@@ -13,11 +15,19 @@ vi.mock("../src/node", () => ({
         existsSync,
         readdirSync,
         statSync,
+        execFile,
         join: (...parts: string[]) => parts.join("/"),
         homedir: () => "/home/u",
     },
 }));
 
+vi.mock("../src/server-binary", () => ({
+    ServerBinary: vi.fn().mockImplementation(function () {
+        return { installed };
+    }),
+}));
+
+import { ServerBinary } from "../src/server-binary";
 import { executeUninstall, planUninstall } from "../src/server-uninstall";
 import { UNINSTALL_TARGET } from "../src/types";
 
@@ -53,6 +63,9 @@ let restorePlatform: () => void = () => {};
 beforeEach(() => {
     vi.clearAllMocks();
     restorePlatform = stubPlatform("linux");
+    installed.mockReturnValue({ path: "/root/bin/v0.6.90/lilbee" });
+    execFile.mockResolvedValue({ stdout: "", stderr: "" });
+    rmSync.mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -136,11 +149,13 @@ describe("planUninstall", () => {
 });
 
 describe("executeUninstall", () => {
-    it("removes every planned path recursively and tolerates missing ones", () => {
+    const DELETED = ["/root/bin", "/root/models", "/root/vaults/abc", "/home/u/.cache/lilbee"];
+
+    it("removes every planned path recursively and tolerates missing ones", async () => {
         mountFiles({});
         const plan = planUninstall("/root", "/root/vaults/abc");
 
-        executeUninstall(plan);
+        await executeUninstall(plan, "/root", "/root/vaults/abc");
 
         expect(rmSync.mock.calls).toEqual([
             ["/root/bin", { recursive: true, force: true }],
@@ -148,5 +163,73 @@ describe("executeUninstall", () => {
             ["/root/vaults/abc", { recursive: true, force: true }],
             ["/home/u/.cache/lilbee", { recursive: true, force: true }],
         ]);
+    });
+
+    it("stops the shared engine and waits for it before deleting anything", async () => {
+        mountFiles({});
+        const order: string[] = [];
+        let finishStop!: () => void;
+        execFile.mockImplementation(() => {
+            order.push("engine stop");
+            return new Promise((resolve) => {
+                finishStop = () => resolve({ stdout: "", stderr: "" });
+            });
+        });
+        rmSync.mockImplementation((path: string) => {
+            order.push(`rm ${path}`);
+        });
+        const plan = planUninstall("/root", "/root/vaults/abc");
+
+        const uninstall = executeUninstall(plan, "/root", "/root/vaults/abc");
+        await Promise.resolve();
+
+        // The engine holds the model files open, so nothing may be deleted while it runs.
+        expect(order).toEqual(["engine stop"]);
+
+        finishStop();
+        await uninstall;
+
+        expect(order).toEqual(["engine stop", ...DELETED.map((path) => `rm ${path}`)]);
+    });
+
+    it("asks the installed binary to stop the machine engine and this vault's own", async () => {
+        mountFiles({});
+
+        await executeUninstall(planUninstall("/root", "/root/vaults/abc"), "/root", "/root/vaults/abc");
+
+        expect(ServerBinary).toHaveBeenCalledWith("/root/bin");
+        expect(execFile).toHaveBeenCalledWith(
+            "/root/bin/v0.6.90/lilbee",
+            ["--data-dir", "/root/vaults/abc", "engine", "stop"],
+            { timeout: 15_000 },
+        );
+    });
+
+    it("deletes anyway when an older binary refuses the command", async () => {
+        mountFiles({});
+        execFile.mockRejectedValue(Object.assign(new Error("No such command 'engine'."), { code: 2 }));
+
+        await executeUninstall(planUninstall("/root", "/root/vaults/abc"), "/root", "/root/vaults/abc");
+
+        expect(rmSync.mock.calls.map(([path]) => path)).toEqual(DELETED);
+    });
+
+    it("deletes anyway when the stop hangs past its bound", async () => {
+        mountFiles({});
+        execFile.mockRejectedValue(Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM" }));
+
+        await executeUninstall(planUninstall("/root", "/root/vaults/abc"), "/root", "/root/vaults/abc");
+
+        expect(rmSync.mock.calls.map(([path]) => path)).toEqual(DELETED);
+    });
+
+    it("runs nothing when no binary is installed", async () => {
+        mountFiles({});
+        installed.mockReturnValue(null);
+
+        await executeUninstall(planUninstall("/root", "/root/vaults/abc"), "/root", "/root/vaults/abc");
+
+        expect(execFile).not.toHaveBeenCalled();
+        expect(rmSync.mock.calls.map(([path]) => path)).toEqual(DELETED);
     });
 });

@@ -38,10 +38,20 @@ describe("UninstallModal", () => {
 
         expect(texts).toContain("Server executable");
         expect(texts).toContain("412 MB");
-        expect(texts).toContain("Downloaded models");
+        expect(texts).toContain("Models shared by every vault on this computer");
         expect(texts).toContain("12.4 GB");
-        expect(texts).toContain("Search index for this vault");
+        expect(texts).toContain("This vault's index, saved chats, and logs");
         expect(texts).toContain("820 MB");
+    });
+
+    it("says the saved chats go and the models are shared by every vault", () => {
+        const texts = collectTexts(open().contentEl as unknown as MockElement);
+
+        expect(texts).toContain(
+            "This removes what lilbee downloaded or built. It deletes this vault's saved chats and the models " +
+                "that every vault on this computer shares. You cannot undo it, but you can install the server " +
+                "again at any time.",
+        );
     });
 
     it("promises the vault is untouched", () => {

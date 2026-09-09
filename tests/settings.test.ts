@@ -181,6 +181,7 @@ function makePlugin(
         triggerSync,
         runWikiLint,
         runWikiPrune,
+        installCrawlerBrowser: vi.fn().mockResolvedValue(true),
         initWikiSync,
         reconcileWiki,
         configureManagedStorage,
@@ -302,8 +303,12 @@ interface Captured {
     dropdownByName: Map<string, DropdownOnChange>;
     textAreaByName: Map<string, TextOnChange>;
     sliderByName: Map<string, SliderOnChange>;
+    /** Description text each row was given, keyed by the row's display name. */
+    descByName: Map<string, string>;
     /** Every value pushed into a row's slider via setValue, in call order. */
     sliderSetValuesByName: Map<string, number[]>;
+    /** Every value pushed into a row's dropdown via setValue, in call order. */
+    dropdownSetValuesByName: Map<string, string[]>;
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
     blurHandlers: BlurCapture[];
@@ -347,11 +352,19 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const textAreaByName = new Map<string, TextOnChange>();
     const sliderByName = new Map<string, SliderOnChange>();
     const sliderSetValuesByName = new Map<string, number[]>();
+    const dropdownSetValuesByName = new Map<string, string[]>();
+    const descByName = new Map<string, string>();
     let currentName = "";
     const origSetName = Setting.prototype.setName;
     Setting.prototype.setName = function (name: string) {
         currentName = typeof name === "string" ? name : String(name);
         return origSetName.call(this, name);
+    };
+
+    const origSetDesc = Setting.prototype.setDesc;
+    Setting.prototype.setDesc = function (desc: string) {
+        if (currentName) descByName.set(currentName, desc);
+        return origSetDesc.call(this, desc);
     };
 
     const origAddText = Setting.prototype.addText;
@@ -436,6 +449,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+        const name = currentName;
         const options: Record<string, string> = {};
         const setValues: string[] = [];
         const fakeDropdown = {
@@ -461,6 +475,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         cb(fakeDropdown);
         dropdownOptions.push(options);
         dropdownSetValues.push(setValues);
+        if (name) dropdownSetValuesByName.set(name, setValues);
         return this;
     };
 
@@ -527,6 +542,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         fn();
     } finally {
         Setting.prototype.setName = origSetName;
+        Setting.prototype.setDesc = origSetDesc;
         Setting.prototype.addText = origAddText;
         (Setting.prototype as any).addTextArea = origAddTextArea;
         Setting.prototype.addSlider = origAddSlider;
@@ -542,7 +558,9 @@ function captureSettingCallbacks(fn: () => void): Captured {
         dropdownByName,
         textAreaByName,
         sliderByName,
+        descByName,
         sliderSetValuesByName,
+        dropdownSetValuesByName,
         textOnChanges,
         textAreaOnChanges,
         blurHandlers,
@@ -834,6 +852,20 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.settings.storeContentInVault).toBe(false);
             // Off is a destination, not a no-op: the server has to be told.
             expect((plugin as any).configureManagedStorage).toHaveBeenCalled();
+        });
+
+        it("clears a refused layout so the move is tried again", async () => {
+            const plugin = makePlugin({
+                serverMode: "managed",
+                storeContentInVault: false,
+                rejectedStorageMove: { documentsDir: "/test/vault/lilbee", vaultBase: "/test/vault" },
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)!(true);
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
         });
 
         it("is disabled and marks the row in external mode", async () => {
@@ -1167,9 +1199,9 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Setup wizard + Start + Server version + Refresh + Browse Catalog + Wiki Lint + Wiki Prune
-            // + Export diagnostics + Reset all + Uninstall server = 10
-            expect(buttonOnClicks.length).toBe(10);
+            // Setup wizard + Start + Server version + Refresh + Browse Catalog + Install Chromium
+            // + Wiki Lint + Wiki Prune + Export diagnostics + Reset all + Uninstall server = 11
+            expect(buttonOnClicks.length).toBe(11);
             // Refresh is the fourth button (index 3)
             await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
@@ -4615,6 +4647,127 @@ describe("managed mode settings", () => {
             expect((tab as any).apiKeysContainerEl?.style.display).not.toBe("none");
         });
 
+        it("fetches Chromium when browser render mode is chosen without it", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            plugin.installCrawlerBrowser = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).not.toBe("none");
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+
+            // Choosing browser mode is the request for a browser, so it is fetched
+            // and the mode applies, rather than being refused.
+            expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("fetches Chromium when browser render mode is chosen before the probe lands", async () => {
+            const plugin = makePlugin();
+            let releaseProbe = (): void => {};
+            const probed = new Promise<void>((resolve) => {
+                releaseProbe = resolve;
+            });
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => {
+                if (cap !== "crawling_browser") return true;
+                await probed;
+                return false;
+            });
+            plugin.installCrawlerBrowser = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            // The user reaches the dropdown while the capability probe is still in flight.
+            const choice = captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            releaseProbe();
+            await choice;
+
+            expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("falls back to HTTP when the Chromium fetch fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            plugin.installCrawlerBrowser = vi.fn().mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+
+            expect(plugin.api.updateConfig).not.toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+            const setValues = captured.dropdownSetValuesByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!;
+            expect(setValues[setValues.length - 1]).toBe("http");
+        });
+
+        it("hides the Chromium install offer when the server can already render with a browser", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).toBe("none");
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("accepts browser render mode after the Chromium install succeeds", async () => {
+            const plugin = makePlugin();
+            let chromium = false;
+            // The install invalidates the cached capability, so the next probe sees Chromium.
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) =>
+                cap === "crawling_browser" ? chromium : true,
+            );
+            plugin.installCrawlerBrowser = vi.fn(async () => {
+                chromium = true;
+                return true;
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            await clickButton(captured, MESSAGES.LABEL_CRAWL_BROWSER_SETUP);
+            expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).toBe("none");
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("keeps the Chromium install offer up when the install fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            (plugin.installCrawlerBrowser as any).mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            await clickButton(captured, MESSAGES.LABEL_CRAWL_BROWSER_SETUP);
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).not.toBe("none");
+        });
+
+        it("leaves the Chromium install offer hidden when the whole crawling section is gated off", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).crawlerBrowserSetupEl?.style.display).toBe("none");
+        });
+
         it("calls invalidateCapability(API_KEYS) after a key save so the catalog refresh can pick up the new state", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
@@ -7709,6 +7862,24 @@ describe("managed-mode uninstall section", () => {
         expect(uninstall?.text).toBe("Uninstall server");
         const callout = tab.containerEl.find("lilbee-uninstall-callout");
         expect(callout?.textContent).toContain("Removing the plugin does not remove the server");
+        expect(callout?.textContent).toContain(
+            "The executable, this vault's index and saved chats, and the shared model cache live outside your vault.",
+        );
+    });
+
+    it("names the saved chats and the shared models in the uninstall row description", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        (tab as any).storageTotalBytes = 13_632_000_000;
+
+        const captured = captureSettingCallbacks(() => tab.display());
+
+        expect(captured.descByName.get(MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(
+            "Deletes the executable, this vault's index and saved chats, and the models every vault on this " +
+                "computer shares. Frees 13.6 GB. Your notes are not touched.",
+        );
     });
 
     it("uninstalls and reports the freed space when the user confirms", async () => {

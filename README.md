@@ -381,7 +381,7 @@ The download streams to disk and reports its progress as a percentage. Every ser
 
 In **managed mode** (the default) the plugin downloaded a server executable and a model cache. Both live outside your vault, and Obsidian doesn't know about either, so removing the plugin won't remove them.
 
-Open Settings → lilbee → **Uninstall server** first. It deletes the executable, the downloaded models, and this vault's search index, and it tells you how much space that frees before you confirm. Your notes are never touched. Then remove the plugin the usual way, from **Community plugins**.
+Open Settings → lilbee → **Uninstall server** first. It deletes the executable, this vault's index and saved chats, and the models every vault on this computer shares. It tells you how much space that frees before you confirm. Your notes are never touched. Then remove the plugin the usual way, from **Community plugins**.
 
 Uninstalling the server doesn't disable the plugin. Settings shows an **Install server** button, and lilbee stays quiet until you click it.
 

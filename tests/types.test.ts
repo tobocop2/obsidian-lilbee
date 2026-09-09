@@ -75,6 +75,7 @@ describe("DEFAULT_SETTINGS", () => {
             "agentIntegration",
             "includeDevBuilds",
             "reasoningDefaulted",
+            "rejectedStorageMove",
             "manualToken",
             "searchChunkType",
             "serverMode",

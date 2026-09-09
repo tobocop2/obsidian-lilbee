@@ -250,11 +250,13 @@ export const KEY_STATUS = {
     MISSING_KEY: "missing_key",
 } as const satisfies Record<string, KeyStatus>;
 
-export type Capability = "api_keys" | "crawling" | "wiki";
+export type Capability = "api_keys" | "crawling" | "crawling_browser" | "wiki";
 
 export const CAPABILITY = {
     API_KEYS: "api_keys",
+    // CRAWLING is the crawler package; CRAWLING_BROWSER also needs Playwright Chromium.
     CRAWLING: "crawling",
+    CRAWLING_BROWSER: "crawling_browser",
     WIKI: "wiki",
 } as const satisfies Record<string, Capability>;
 
@@ -343,6 +345,12 @@ export interface SyncDone {
     failed: string[];
     skipped: string[];
     held_out: SkippedSource[];
+}
+
+/** An add stream's terminal summary: the sync it ran, plus the add-only outcomes. */
+export interface AddDone extends SyncDone {
+    /** Sources the knowledge base already tracks, so nothing was registered. Needs no user action. */
+    tracked: string[];
 }
 
 /** Recovery options for a sync. Both default off (a plain incremental sync). */
@@ -493,6 +501,9 @@ export const SERVER_MODE = {
     MANAGED: "managed",
     EXTERNAL: "external",
 } as const satisfies Record<string, ServerMode>;
+
+/** How the API client opens the message it throws for a non-ok response. */
+export const SERVER_STATUS_PREFIX = "Server responded";
 
 /** Three-way result of the managed-mode consent modal. */
 export type ManagedConsentResultKind = "download" | "external" | "cancel";
@@ -650,6 +661,12 @@ export const DEFAULT_AGENT_INTEGRATION: AgentIntegrationSettings = {
 /** Below this the agent runs out of room mid-task, so the settings row warns. */
 export const AGENT_MIN_CONTEXT_TOKENS = 20_000;
 
+/** Where the plugin wants the managed server to keep content. */
+export interface StorageMoveTarget {
+    documentsDir: string;
+    vaultBase: string | null;
+}
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -668,6 +685,8 @@ export interface LilbeeSettings {
      * external servers keep their own documents_dir.
      */
     storeContentInVault: boolean;
+    /** The storage layout the server refused; no move is sent while it still matches. */
+    rejectedStorageMove: StorageMoveTarget | null;
     lastCatalogTab: CatalogTab;
     /**
      * Filesystem root that holds the shared lilbee binary, models cache, and
@@ -707,6 +726,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiVaultFolder: "lilbee-wiki",
     manualToken: "",
     storeContentInVault: true,
+    rejectedStorageMove: null,
     lastCatalogTab: "discover",
     sharedRoot: "",
     reasoningDefaulted: false,
@@ -903,6 +923,19 @@ export interface WikiPagePayload {
     current: number;
     total: number;
 }
+
+export interface CrawlerStatusResponse {
+    installed: boolean;
+    package_installed: boolean;
+}
+
+export type CrawlerStatusField = keyof CrawlerStatusResponse;
+
+/** `PACKAGE` is the bundled crawler package; `WITH_BROWSER` also requires Chromium. */
+export const CRAWLER_STATUS_FIELD = {
+    PACKAGE: "package_installed",
+    WITH_BROWSER: "installed",
+} as const satisfies Record<string, CrawlerStatusField>;
 
 export interface SetupStartPayload {
     component: string;
@@ -1335,6 +1368,8 @@ export interface PlacementResponse {
     unplaceable: string[];
     manual: boolean;
     spec_json: string | null;
+    /** A saved manual spec this hardware no longer satisfies; it reapplies once it fits. */
+    rejected_spec_json: string | null;
     /** Host-level fix instruction, present only when GPU monitoring is degraded. */
     notice?: GpuNotice;
 }

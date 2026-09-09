@@ -3,6 +3,7 @@
  * shared model cache, and one vault's index. Never touches the Obsidian vault.
  */
 import { node } from "./node";
+import { ServerBinary } from "./server-binary";
 import { dirSizeBytes } from "./storage-stats";
 import { sharedBinDir, sharedModelsDir } from "./vault-registry";
 import {
@@ -45,8 +46,28 @@ export function planUninstall(sharedRoot: string, vaultDataDir: string): Uninsta
     return { targets, totalBytes: targets.reduce((sum, t) => sum + t.bytes, 0) };
 }
 
-/** Delete every planned path. Missing paths are not an error. */
-export function executeUninstall(plan: UninstallPlan): void {
+/** How long the stop may run before the child is killed and the uninstall goes on. */
+const ENGINE_STOP_TIMEOUT_MS = 15_000;
+
+/** Stop args for the shared engine; the data dir precedes the command, as the binary requires. */
+function engineStopArgs(vaultDataDir: string): string[] {
+    return ["--data-dir", vaultDataDir, "engine", "stop"];
+}
+
+/** Stop the shared engine, which holds the model files open. Every failure is ignored. */
+async function stopSharedEngine(sharedRoot: string, vaultDataDir: string): Promise<void> {
+    const binary = new ServerBinary(sharedBinDir(sharedRoot)).installed();
+    if (binary === null) return;
+    try {
+        await node.execFile(binary.path, engineStopArgs(vaultDataDir), { timeout: ENGINE_STOP_TIMEOUT_MS });
+    } catch {
+        // An engine that will not stop is not a reason to refuse the uninstall.
+    }
+}
+
+/** Stop the engine before deleting: Windows cannot delete a file a live engine holds open. */
+export async function executeUninstall(plan: UninstallPlan, sharedRoot: string, vaultDataDir: string): Promise<void> {
+    await stopSharedEngine(sharedRoot, vaultDataDir);
     for (const t of plan.targets) {
         node.rmSync(t.path, { recursive: true, force: true });
     }

@@ -3,13 +3,18 @@ import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
 import {
+    CAPABILITY,
     CHAT_STATUS,
     DEFAULT_SHARED_CONFIG,
     INDETERMINATE_PROGRESS,
+    LOGS_DIR,
+    LOG_FILE,
     SETUP_OUTCOME,
     SSE_EVENT,
     SYNC_TRIGGER,
 } from "../src/types";
+import { HEALTH_PROBE_INTERVAL_MS } from "../src/utils";
+import { displayLabelForRef } from "../src/utils/model-ref";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -25,7 +30,9 @@ import { ok, err } from "../src/result";
 vi.mock("../src/diagnostics-export", () => ({
     exportDiagnostics: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../src/api", () => ({
+vi.mock("../src/api", async (importOriginal) => ({
+    // The status helpers stay real: main.ts classifies a failed config PATCH with them.
+    ...(await importOriginal<typeof import("../src/api")>()),
     SessionTokenError: class SessionTokenError extends Error {
         readonly status: number;
         constructor(status: number, body: string) {
@@ -708,6 +715,7 @@ describe("LilbeePlugin", () => {
                             failed: [],
                             skipped: [],
                             held_out: [{ filename: `${batch[0].name}.pdf`, reason: "no text extracted" }],
+                            tracked: [`${batch[0].name}.tracked`],
                         },
                     };
                 })(),
@@ -729,6 +737,9 @@ describe("LilbeePlugin", () => {
                 "f0.py.pdf",
                 "f90.py.pdf",
             ]);
+            // Every batch's tracked names survive the merge; the sibling path must
+            // not drop what the single-request path reports.
+            expect(dones[0].data.tracked).toEqual(["f0.py.tracked", "f90.py.tracked"]);
         });
 
         it("uploadInBatches ignores an unparseable done from a batch", async () => {
@@ -1594,6 +1605,34 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
             expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
             expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
+        });
+
+        it("carries the options of a deferred automatic sync into the follow-up run", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            let releaseFirstSync!: () => void;
+            const firstSyncHeld = new Promise<void>((resolve) => (releaseFirstSync = resolve));
+            let started!: () => void;
+            const syncRunning = new Promise<void>((resolve) => (started = resolve));
+            let calls = 0;
+            plugin.api.syncStream = vi.fn().mockImplementation(() => {
+                const call = ++calls;
+                return (async function* () {
+                    if (call === 1) {
+                        started();
+                        await firstSyncHeld;
+                    }
+                })();
+            });
+
+            const firstSync = plugin.triggerSync();
+            await syncRunning;
+            await plugin.triggerSync({ forceRebuild: true }, SYNC_TRIGGER.AUTOMATIC);
+            releaseFirstSync();
+            await firstSync;
+
+            const secondCall = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[1];
+            expect(secondCall?.[1]).toEqual({ forceRebuild: true });
         });
 
         it("shows Notice with all stats when done event has populated arrays", async () => {
@@ -2640,6 +2679,46 @@ describe("LilbeePlugin", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("adding test.md"))).toBe(true);
             expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(true);
+        });
+
+        it("addToLilbee reports already-tracked sources as their own outcome, not as failures", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            // The real /api/add terminal frame: tracked lives on the AddSummary
+            // envelope, beside the nested sync summary, not inside it.
+            async function* trackedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: [],
+                        skipped: [],
+                        tracked: ["notes"],
+                        errors: [],
+                        sync: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 3,
+                            relocated: [],
+                            failed: [],
+                            skipped: [],
+                            held_out: [],
+                            truncated: 0,
+                        },
+                        already_ingesting: [],
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(trackedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            const summary = Notice.instances.map((n) => n.message).find((m) => m.includes("already tracked"));
+            expect(summary).toBe("lilbee: 1 already tracked");
+            expect(summary).not.toContain("failed");
+            expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(false);
         });
 
         it("addToLilbee falls back to path when name is undefined", async () => {
@@ -3909,6 +3988,54 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
+        it("indexes pages crawled during a running sync without any further user action", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            // Stand-in server: a sync indexes the pages that exist when it starts,
+            // so a sync already running cannot see pages a later crawl writes.
+            const crawled: string[] = [];
+            const indexed: string[] = [];
+            let firstSyncStarted!: () => void;
+            const syncRunning = new Promise<void>((resolve) => (firstSyncStarted = resolve));
+            let releaseFirstSync!: () => void;
+            const firstSyncHeld = new Promise<void>((resolve) => (releaseFirstSync = resolve));
+            let secondSyncDone!: () => void;
+            const secondSyncFinished = new Promise<void>((resolve) => (secondSyncDone = resolve));
+            let syncCalls = 0;
+            plugin.api.syncStream = vi.fn().mockImplementation(() => {
+                const plan = [...crawled];
+                const call = ++syncCalls;
+                return (async function* () {
+                    if (call === 1) {
+                        firstSyncStarted();
+                        await firstSyncHeld;
+                    }
+                    indexed.push(...plan);
+                    if (call === 2) secondSyncDone();
+                })();
+            });
+
+            const firstSync = plugin.triggerSync();
+            await syncRunning;
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    crawled.push("https://example.com/a");
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/a" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            releaseFirstSync();
+            await firstSync;
+
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(2);
+            await secondSyncFinished;
+            expect(indexed).toEqual(["https://example.com/a"]);
+        });
+
         it("forwards null depth/max_pages to api.crawl for unbounded crawls", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -4149,6 +4276,134 @@ describe("LilbeePlugin", () => {
             expect(setupTasks[0]!.status).toBe("done");
             expect(crawlTasks.length).toBe(1);
             expect(crawlTasks[0]!.status).toBe("done");
+        });
+
+        it("installCrawlerBrowser drives the setup stream and reports success", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.invalidateCapability = vi.fn();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 90_000_000,
+                            total_bytes: 180_000_000,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(true);
+
+            const setupTasks = plugin.taskQueue.completed.filter((t) => t.type === "setup");
+            expect(setupTasks.length).toBe(1);
+            expect(setupTasks[0]!.status).toBe("done");
+            expect(plugin.api.invalidateCapability).toHaveBeenCalledWith(CAPABILITY.CRAWLING_BROWSER);
+        });
+
+        it("installCrawlerBrowser reports an indeterminate download with no total", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.invalidateCapability = vi.fn();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 5_000_000,
+                            total_bytes: null,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(true);
+            expect(plugin.taskQueue.completed.filter((t) => t.type === "setup")[0]!.status).toBe("done");
+        });
+
+        it("installCrawlerBrowser fails the task and reports the server error", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.invalidateCapability = vi.fn();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    yield {
+                        event: SSE_EVENT.SETUP_DONE,
+                        data: { component: "chromium", success: false, error: "no disk space" },
+                    };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+
+            const setup = plugin.taskQueue.completed.find((t) => t.type === "setup");
+            expect(setup?.status).toBe("failed");
+            expect(Notice.instances.some((n: any) => n.message.includes("no disk space"))).toBe(true);
+            expect(plugin.api.invalidateCapability).not.toHaveBeenCalled();
+        });
+
+        it("installCrawlerBrowser falls back to a generic error when the server sends none", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: false, error: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")?.error).toBe(MESSAGES.ERROR_UNKNOWN);
+        });
+
+        it("installCrawlerBrowser fails the task when the stream throws", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    throw new Error("connection reset");
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")?.error).toContain("connection reset");
+        });
+
+        it("installCrawlerBrowser reports a full queue instead of starting a download", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin.taskQueue, "enqueue").mockReturnValue(null);
+            plugin.api.setupCrawler = vi.fn();
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.api.setupCrawler).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+        });
+
+        it("installCrawlerBrowser ends without a setup_done when the stream closes early", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.setupCrawler = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                })(),
+            );
+
+            await expect(plugin.installCrawlerBrowser()).resolves.toBe(false);
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")?.status).toBe("failed");
         });
 
         it("ignores setup_progress when no setup_start was seen", async () => {
@@ -4488,6 +4743,7 @@ describe("LilbeePlugin", () => {
                 failed: ["d"],
                 skipped: ["e"],
                 held_out: [{ filename: "f", reason: "no text extracted" }],
+                tracked: [],
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -4499,13 +4755,16 @@ describe("LilbeePlugin", () => {
                 failed: [],
                 skipped: [],
                 held_out: [],
+                tracked: [],
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
+            // `tracked` sits on the envelope, not inside `sync`.
             expect(
                 parseAddDoneEvent({
                     copied: [],
                     skipped: [],
+                    tracked: ["already-there"],
                     errors: [],
                     sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [], skipped: ["z.pdf"] },
                 }),
@@ -4517,6 +4776,7 @@ describe("LilbeePlugin", () => {
                 failed: [],
                 skipped: ["z.pdf"],
                 held_out: [],
+                tracked: ["already-there"],
             });
 
             // Malformed inputs return null.
@@ -4627,56 +4887,42 @@ describe("LilbeePlugin", () => {
             expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
         });
 
-        it("refreshActiveModel repaints the status bar when the model changed out of band", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "old-model";
-            (plugin as any).chatStatus = CHAT_STATUS.READY;
-            plugin.api.listModels = vi
-                .fn()
-                .mockResolvedValue({ chat: { active: "Qwen/Qwen3-235B-A22B", catalog: [], installed: [] } });
-            await (plugin as any).refreshActiveModel();
-            expect(plugin.activeModel).toBe("Qwen/Qwen3-235B-A22B");
-            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
-        });
-
-        it("refreshActiveModel is a no-op when the active model is unchanged", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "same-model";
-            const setReady = vi.spyOn(plugin as any, "setStatusReady");
-            plugin.api.listModels = vi
-                .fn()
-                .mockResolvedValue({ chat: { active: "same-model", catalog: [], installed: [] } });
-            await (plugin as any).refreshActiveModel();
-            expect(setReady).not.toHaveBeenCalled();
-        });
-
-        it("refreshActiveModel updates the field but does not force ready while warming", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "old";
-            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
-            const setReady = vi.spyOn(plugin as any, "setStatusReady");
-            plugin.api.listModels = vi.fn().mockResolvedValue({ chat: { active: "new", catalog: [], installed: [] } });
-            await (plugin as any).refreshActiveModel();
-            expect(plugin.activeModel).toBe("new");
-            expect(setReady).not.toHaveBeenCalled();
-        });
-
-        it("refreshActiveModel swallows listModels errors", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "keep";
-            plugin.api.listModels = vi.fn().mockRejectedValue(new Error("down"));
-            await (plugin as any).refreshActiveModel();
-            expect(plugin.activeModel).toBe("keep");
-        });
-
-        it("a healthy probe resyncs the active model while the server stays connected", async () => {
+        it("asks for health and nothing else on every tick", async () => {
+            vi.useFakeTimers();
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).serverUnreachable = false;
+            plugin.activeModel = "Qwen/Qwen3-4B";
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { chat_ready: true } });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "Qwen/Qwen3-4B", catalog: [], installed: [] } });
+            await vi.advanceTimersByTimeAsync(HEALTH_PROBE_INTERVAL_MS * 5);
+            expect(plugin.api.health).toHaveBeenCalledTimes(5);
+            expect(plugin.api.listModels).not.toHaveBeenCalled();
+            vi.useRealTimers();
+        });
+
+        it("shows a newly activated model without a probe having run", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).chatStatus = CHAT_STATUS.READY;
+            plugin.api.health = vi.fn();
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "Qwen/Qwen3-235B-A22B", catalog: [], installed: [] } });
+            await plugin.fetchActiveModel();
+            expect(plugin.activeModel).toBe("Qwen/Qwen3-235B-A22B");
+            expect((plugin.statusBarEl as any)?.textContent).toContain(displayLabelForRef("Qwen/Qwen3-235B-A22B"));
+            expect(plugin.api.health).not.toHaveBeenCalled();
+        });
+
+        it("refetches the model on a reconnect, so a restarted server cannot leave a stale label", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).serverUnreachable = true;
             plugin.activeModel = "old";
             plugin.api.health = vi
                 .fn()
@@ -8687,8 +8933,171 @@ describe("LilbeePlugin", () => {
             );
             await plugin.configureManagedStorage();
             const messages = Notice.instances.map((n) => n.message);
-            expect(messages.some((m) => m.startsWith(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED))).toBe(true);
+            expect(messages.some((m) => m.includes("Could not move lilbee storage."))).toBe(true);
             expect(messages.some((m) => m.includes("disk full"))).toBe(true);
+            // The server never answered, so there is no refusal to remember.
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+            expect(messages.some((m) => m.includes("will not try again"))).toBe(false);
+        });
+
+        it("shows the server's own reason and the server log instead of the status code", async () => {
+            const updateConfig = vi
+                .fn()
+                .mockRejectedValue(new Error('Server responded 500: {"detail":"the target folder is read-only"}'));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            const message = Notice.instances.map((n) => n.message).find((m) => m.includes("Could not move"));
+            expect(message).toContain("the target folder is read-only");
+            expect(message).toContain(`${LOGS_DIR}/${LOG_FILE.SERVER}`);
+            expect(message).not.toContain("500");
+        });
+
+        it("drops a status line that carries no reason and still names the server log", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("Server responded 500: Internal server error"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            const message = Notice.instances.map((n) => n.message).find((m) => m.includes("Could not move"));
+            expect(message).not.toContain("500");
+            expect(message).toContain(`${LOGS_DIR}/${LOG_FILE.SERVER}`);
+        });
+
+        it("names the data directory generically when the registry is unavailable", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("Server responded 500: nope"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            (plugin as any).vaultRegistry = null;
+            await plugin.configureManagedStorage();
+            const message = Notice.instances.map((n) => n.message).find((m) => m.includes("Could not move"));
+            expect(message).toContain(LOG_FILE.SERVER);
+            expect(message).toContain("data directory");
+        });
+
+        it("re-sends the move at the next start after the server answered 503", async () => {
+            const updateConfig = vi
+                .fn()
+                .mockRejectedValue(
+                    new Error('Server responded 503: {"detail":"Close the program that holds config.toml open."}'),
+                );
+            const serverConfig = { documents_dir: "/old/docs", vault_base: null };
+            const first = await setupConfiguredPlugin(
+                {},
+                { config: vi.fn().mockResolvedValue(serverConfig), updateConfig },
+            );
+            await first.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            expect(first.settings.rejectedStorageMove).toBeNull();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes("Close the program that holds config.toml open."))).toBe(true);
+            expect(messages.some((m) => m.includes("will not try again"))).toBe(false);
+
+            const second = await setupConfiguredPlugin(
+                { ...first.settings },
+                { config: vi.fn().mockResolvedValue(serverConfig), updateConfig },
+            );
+            await second.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(2);
+        });
+
+        it("does not remember a refusal when the status line carries no number", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("Server responded"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes("will not try again"))).toBe(false);
+        });
+
+        it("does not re-send the move at the next start after a failure", async () => {
+            const updateConfig = vi
+                .fn()
+                .mockRejectedValue(new Error('Server responded 422: {"detail":"the move failed"}'));
+            const serverConfig = { documents_dir: "/old/docs", vault_base: null };
+            const first = await setupConfiguredPlugin(
+                {},
+                { config: vi.fn().mockResolvedValue(serverConfig), updateConfig },
+            );
+            await first.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+
+            const persisted = (first.saveData as any).mock.calls.at(-1)[0] as Record<string, unknown>;
+            expect(persisted.rejectedStorageMove).toEqual({
+                documentsDir: "/test/vault/lilbee",
+                vaultBase: "/test/vault",
+            });
+
+            Notice.clear();
+            const second = await setupConfiguredPlugin(persisted, {
+                config: vi.fn().mockResolvedValue(serverConfig),
+                updateConfig,
+            });
+            await second.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("re-sends the move when the wanted documents dir changes", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { rejectedStorageMove: { documentsDir: "/somewhere/else", vaultBase: "/test/vault" } },
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("re-sends the move when the wanted vault base changes", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { rejectedStorageMove: { documentsDir: "/test/vault/lilbee", vaultBase: "/other/vault" } },
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("forgets a refused layout once a move succeeds", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { rejectedStorageMove: { documentsDir: "/somewhere/else", vaultBase: null } },
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+            const persisted = (plugin.saveData as any).mock.calls.at(-1)[0] as Record<string, unknown>;
+            expect(persisted.rejectedStorageMove).toBeNull();
         });
 
         it("returns silently when fetching current config fails", async () => {

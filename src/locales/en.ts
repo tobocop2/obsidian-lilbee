@@ -10,7 +10,11 @@ import {
     SERVER_VARIANT,
     type ServerVariant,
     type WorkerRole,
+    LOG_FILE,
 } from "../types";
+
+/** The toggle a user flips to move lilbee content in or out of the vault. */
+const STORE_CONTENT_IN_VAULT_LABEL = "Store lilbee content in vault";
 
 /** How each server build is named in Settings and notices. */
 const SERVER_BUILD_LABEL: Record<ServerVariant, string> = {
@@ -269,6 +273,10 @@ export const MESSAGES = {
         "How pages are fetched. Lightweight is a fast HTTP fetch with no JavaScript. Browser runs Chromium so JavaScript-rendered pages work, at the cost of more memory and slower crawls.",
     LABEL_CRAWL_RENDER_MODE_HTTP: "Lightweight (HTTP, no JavaScript)",
     LABEL_CRAWL_RENDER_MODE_BROWSER: "Browser (Chromium, JavaScript)",
+    LABEL_CRAWL_BROWSER_SETUP: "Browser rendering",
+    DESC_CRAWL_BROWSER_SETUP:
+        "Browser render mode needs Chromium, which the server downloads once. The download is about 180 MB.",
+    BUTTON_INSTALL_CHROMIUM: "Install Chromium",
     LABEL_CRAWL_EXCLUDE_PATTERNS: "URL exclude patterns",
     DESC_CRAWL_EXCLUDE_PATTERNS:
         "Regex patterns that skip URLs at link-discovery during recursive crawls. One per line. Blank = no filtering.",
@@ -280,12 +288,24 @@ export const MESSAGES = {
         "Reset every server-backed setting to its default? API keys and local plugin preferences are preserved.",
     BUTTON_RESET_ALL: "Reset all",
     LABEL_ADVANCED: "Advanced",
-    LABEL_STORE_CONTENT_IN_VAULT: "Store lilbee content in vault",
+    LABEL_STORE_CONTENT_IN_VAULT: STORE_CONTENT_IN_VAULT_LABEL,
     DESC_STORE_CONTENT_IN_VAULT:
         "Materialize crawled pages and imported files inside your vault so you can browse them in Obsidian. Disabled for external servers — their files live on the server machine, not your computer.",
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
-    NOTICE_STORAGE_REORGANIZE_FAILED: "Could not move lilbee storage into your vault: ",
+    NOTICE_STORAGE_REORGANIZE_FAILED: (reason: string | null, logPath: string | null, willRetry: boolean): string =>
+        [
+            "Could not move lilbee storage.",
+            reason,
+            logPath === null
+                ? `Check ${LOG_FILE.SERVER} in the lilbee data directory.`
+                : `Check the server log at ${logPath}.`,
+            willRetry
+                ? null
+                : `lilbee will not try again until you toggle "${STORE_CONTENT_IN_VAULT_LABEL}" in settings.`,
+        ]
+            .filter((part): part is string => part !== null)
+            .join(" "),
     NOTICE_TAKE_OVER_SUCCESS: (vaultName: string): string => `lilbee switched from "${vaultName}" to this vault.`,
     NOTICE_TAKE_OVER_DECLINED: (vaultName: string): string =>
         `lilbee stays with "${vaultName}". This vault will run without managed lilbee until you take over or close the other vault.`,
@@ -493,11 +513,12 @@ export const MESSAGES = {
         "Obsidian does not manage the lilbee server executable or its models, this plugin does. " +
         "Removing the plugin from Obsidian's Community plugins pane leaves both on disk. Uninstall here first.",
     CALLOUT_UNINSTALL_FIRST:
-        "Removing the plugin does not remove the server. The executable, the downloaded models, and this vault's " +
-        "index live outside your vault, so Obsidian never touches them. Uninstall here before you remove the plugin " +
-        "and nothing is left behind.",
+        "Removing the plugin does not remove the server. The executable, this vault's index and saved chats, and " +
+        "the shared model cache live outside your vault. Obsidian never touches them. Uninstall here before you " +
+        "remove the plugin and nothing is left behind.",
     DESC_UNINSTALL_SERVER: (size: string) =>
-        `Deletes the executable, the models, and this vault's index. Frees ${size}. Your notes are not touched.`,
+        `Deletes the executable, this vault's index and saved chats, and the models every vault on this computer ` +
+        `shares. Frees ${size}. Your notes are not touched.`,
     DESC_INSTALL_SERVER: (size: string) =>
         `Downloads the lilbee server, about ${size}. Models are pulled on demand afterwards.`,
     DESC_SERVER_DOWNLOADING: "The lilbee server is downloading. Progress is in the status bar.",
@@ -506,11 +527,11 @@ export const MESSAGES = {
 
     CONFIRM_UNINSTALL_TITLE: "Uninstall the lilbee server?",
     CONFIRM_UNINSTALL_BODY:
-        "This removes everything lilbee downloaded or built for this vault. It cannot be undone, but you can " +
-        "install the server again at any time.",
+        "This removes what lilbee downloaded or built. It deletes this vault's saved chats and the models that " +
+        "every vault on this computer shares. You cannot undo it, but you can install the server again at any time.",
     LABEL_UNINSTALL_BINARY: "Server executable",
-    LABEL_UNINSTALL_MODELS: "Downloaded models",
-    LABEL_UNINSTALL_INDEX: "Search index for this vault",
+    LABEL_UNINSTALL_MODELS: "Models shared by every vault on this computer",
+    LABEL_UNINSTALL_INDEX: "This vault's index, saved chats, and logs",
     LABEL_UNINSTALL_CACHE: "Unpacked server files",
     LABEL_UNINSTALL_KEEP: "Your notes and attachments",
     LABEL_UNINSTALL_KEEP_VALUE: "untouched",
@@ -730,6 +751,9 @@ export const MESSAGES = {
     STATUS_TASK_BATCH: (current: number, total: number, file: string, status: string) =>
         `${status} ${current}/${total} ${file}`,
     STATUS_TASK_CRAWLER_PREPARING: "Preparing crawler…",
+    TASK_CRAWLER_BROWSER_SETUP: "Chromium setup",
+    NOTICE_CRAWL_BROWSER_MISSING: "Browser render mode needs Chromium. Install it first, then pick browser mode.",
+    NOTICE_CRAWLER_BROWSER_READY: "Chromium is ready. Browser render mode is now available.",
     STATUS_TASK_SETUP_PROGRESS: "chromium: {downloaded}/{total} MB",
     STATUS_TASK_SETUP_PROGRESS_INDETERMINATE: "chromium: {downloaded} MB",
     STATUS_INDEXING: "Indexing: {file}",
@@ -780,6 +804,7 @@ export const MESSAGES = {
     ERROR_CRAWLER_SETUP_FAILED:
         "Crawler setup failed: {error}. Run 'make crawl-setup' in the lilbee repo or 'lilbee setup crawler' to retry.",
     ERROR_CRAWLER_SETUP_FAILED_SHORT: "Chromium setup failed — see setup task",
+    ERROR_CRAWLER_SETUP_INCOMPLETE: "The server stopped the Chromium download before it finished.",
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
     ERROR_CHAT_FAILED: (reason: string) => `Chat failed: ${reason}`,
@@ -1210,6 +1235,11 @@ export const MESSAGES = {
     PLACEMENT_STATE_MANUAL: "manual",
     PLACEMENT_STATE_EDITED: "edited",
     PLACEMENT_STATE_APPLYING: "applying…",
+    PLACEMENT_STATE_SPEC_IGNORED: "auto, manual ignored",
+    PLACEMENT_SPEC_IGNORED:
+        "A saved manual placement does not fit this hardware, so auto placement is running instead. " +
+        "The saved placement stays and applies again once the hardware fits it. " +
+        "Clear it or save a new one if you do not want it back.",
     PLACEMENT_AUTO_MANAGED: "Auto-managed. The planner balances roles across your hardware.",
     PLACEMENT_EDIT: "Edit manually",
     PLACEMENT_PREVIEW: "Preview",

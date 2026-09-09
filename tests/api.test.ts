@@ -5,6 +5,15 @@ import type { Message, PlacementResponse, PlacementSpec } from "../src/types";
 const BASE_URL = "http://localhost:7433";
 
 /** Build a fake fetch response with a JSON body. */
+// Measured on a fresh pod running the release binary lilbee-linux-x86_64-cu124.
+const CRAWLER_STATUS_NO_CHROMIUM = {
+    installed: false,
+    package_installed: true,
+    chromium_installed: false,
+    component: "chromium",
+    browsers_path: "/root/.cache/ms-playwright",
+};
+
 function jsonResponse(data: unknown): Response {
     return {
         ok: true,
@@ -2453,6 +2462,22 @@ describe("setOutcomeCallback", () => {
         expect(outcomes).not.toContain("server_error");
     });
 
+    it("treats a status line with no number as reachable, not a server error", async () => {
+        fetchMock.mockRejectedValue(new Error("Server responded"));
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("ok");
+        expect(outcomes).not.toContain("server_error");
+    });
+
+    it("treats a status line with trailing junk as reachable, not a server error", async () => {
+        fetchMock.mockRejectedValue(new Error("Server respondedX"));
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("ok");
+        expect(outcomes).not.toContain("server_error");
+    });
+
     it("fires 'unreachable' when fetch keeps rejecting", async () => {
         fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
         const result = await client.health();
@@ -2489,6 +2514,19 @@ describe("getCapability()", () => {
         client.invalidateCapability("crawling");
         fetchMock.mockResolvedValueOnce(jsonResponse({ package_installed: false }));
         await expect(client.getCapability("crawling")).resolves.toBe(false);
+    });
+
+    it("CRAWLING_BROWSER is false on a server that has the package but no Chromium", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(CRAWLER_STATUS_NO_CHROMIUM));
+        await expect(client.getCapability("crawling")).resolves.toBe(true);
+        await expect(client.getCapability("crawling_browser")).resolves.toBe(false);
+    });
+
+    it("CRAWLING_BROWSER is true once Chromium is installed as well", async () => {
+        fetchMock.mockResolvedValue(
+            jsonResponse({ installed: true, package_installed: true, chromium_installed: true }),
+        );
+        await expect(client.getCapability("crawling_browser")).resolves.toBe(true);
     });
 
     it("WIKI returns the boolean from /api/config.wiki", async () => {
@@ -2593,6 +2631,7 @@ const PLACEMENT: PlacementResponse = {
     unplaceable: [],
     manual: false,
     spec_json: null,
+    rejected_spec_json: null,
 };
 
 describe("gpuStatsStream()", () => {
@@ -2721,6 +2760,31 @@ describe("crawl() include_subdomains", () => {
         await collect(client.crawl("https://x.com", undefined, 0, undefined, undefined, true));
         const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
         expect(body).toMatchObject({ url: "https://x.com", max_pages: 0, include_subdomains: true });
+    });
+});
+
+describe("setupCrawler()", () => {
+    it("POSTs to /setup/crawler and yields the setup events", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: setup_start\ndata: {"component":"chromium","size_estimate_bytes":157286400}\n\n',
+                'event: setup_done\ndata: {"component":"chromium","success":true,"error":null}\n\n',
+            ]),
+        );
+
+        const events = await collect(client.setupCrawler());
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/setup/crawler`, { method: "POST", headers: {} });
+        expect(events.map((e) => e.event)).toEqual(["setup_start", "setup_done"]);
+    });
+
+    it("passes the abort signal through so a download can be cancelled", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        const controller = new AbortController();
+
+        await collect(client.setupCrawler(controller.signal));
+
+        expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
     });
 });
 
