@@ -2783,7 +2783,7 @@ export default class LilbeePlugin extends Plugin {
         const setting = (this.app as unknown as { setting?: { activeTab?: unknown } }).setting;
         const activeTab = setting?.activeTab;
         if (activeTab instanceof LilbeeSettingTab) {
-            activeTab.render();
+            activeTab.refresh();
         }
     }
 
