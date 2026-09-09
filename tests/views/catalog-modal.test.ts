@@ -790,6 +790,45 @@ describe("CatalogModal", () => {
             modal.close();
             expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
         });
+
+        function secondRequest(plugin: ReturnType<typeof makePlugin>): Record<string, unknown> {
+            return plugin.api.catalog.mock.calls[1][0] as Record<string, unknown>;
+        }
+
+        it("asks for the next page window when a page comes back short with has_more true", async () => {
+            const plugin = makePlugin();
+            const shortPage = Array.from({ length: 17 }, (_, i) =>
+                makeEntry({ hf_repo: `owner/model-${i}-GGUF`, display_name: `Model ${i}` }),
+            );
+            plugin.api.catalog
+                .mockResolvedValueOnce(ok({ total: 40, limit: 20, offset: 0, models: shortPage, has_more: true }))
+                .mockResolvedValueOnce(ok({ total: 40, limit: 20, offset: 20, models: [], has_more: false }));
+            const modal = await openModal(plugin);
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
+            await tick();
+            await tick();
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
+            expect(secondRequest(plugin)).toMatchObject({ offset: 20, limit: 20 });
+            modal.close();
+        });
+
+        it("still advances past a page whose rows were all filtered out", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog
+                .mockResolvedValueOnce(ok({ total: 40, limit: 20, offset: 0, models: [], has_more: true }))
+                .mockResolvedValueOnce(
+                    ok({ total: 40, limit: 20, offset: 20, models: [makeEntry()], has_more: false }),
+                );
+            const modal = await openModal(plugin);
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
+            await tick();
+            await tick();
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
+            expect(secondRequest(plugin)).toMatchObject({ offset: 20, limit: 20 });
+            modal.close();
+        });
     });
 
     describe("search paging", () => {

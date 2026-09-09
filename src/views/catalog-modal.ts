@@ -441,7 +441,8 @@ export class CatalogModal extends Modal {
         // Some servers and frontier providers tag rows loosely, so the task is filtered again.
         const filtered = this.filterTask ? response.models.filter((m) => m.task === this.filterTask) : response.models;
         this.entries.push(...filtered);
-        this.offset += response.models.length;
+        // The server's window, not the rows received: a page can hold fewer rows than limit.
+        this.offset = response.offset + response.limit;
 
         this.updateHostedTabVisibility();
         this.renderResults();
