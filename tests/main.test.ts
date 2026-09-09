@@ -13,6 +13,8 @@ import {
     SSE_EVENT,
     SYNC_TRIGGER,
 } from "../src/types";
+import { HEALTH_PROBE_INTERVAL_MS } from "../src/utils";
+import { displayLabelForRef } from "../src/utils/model-ref";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -4834,56 +4836,42 @@ describe("LilbeePlugin", () => {
             expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
         });
 
-        it("refreshActiveModel repaints the status bar when the model changed out of band", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "old-model";
-            (plugin as any).chatStatus = CHAT_STATUS.READY;
-            plugin.api.listModels = vi
-                .fn()
-                .mockResolvedValue({ chat: { active: "Qwen/Qwen3-235B-A22B", catalog: [], installed: [] } });
-            await (plugin as any).refreshActiveModel();
-            expect(plugin.activeModel).toBe("Qwen/Qwen3-235B-A22B");
-            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
-        });
-
-        it("refreshActiveModel is a no-op when the active model is unchanged", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "same-model";
-            const setReady = vi.spyOn(plugin as any, "setStatusReady");
-            plugin.api.listModels = vi
-                .fn()
-                .mockResolvedValue({ chat: { active: "same-model", catalog: [], installed: [] } });
-            await (plugin as any).refreshActiveModel();
-            expect(setReady).not.toHaveBeenCalled();
-        });
-
-        it("refreshActiveModel updates the field but does not force ready while warming", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "old";
-            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
-            const setReady = vi.spyOn(plugin as any, "setStatusReady");
-            plugin.api.listModels = vi.fn().mockResolvedValue({ chat: { active: "new", catalog: [], installed: [] } });
-            await (plugin as any).refreshActiveModel();
-            expect(plugin.activeModel).toBe("new");
-            expect(setReady).not.toHaveBeenCalled();
-        });
-
-        it("refreshActiveModel swallows listModels errors", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.activeModel = "keep";
-            plugin.api.listModels = vi.fn().mockRejectedValue(new Error("down"));
-            await (plugin as any).refreshActiveModel();
-            expect(plugin.activeModel).toBe("keep");
-        });
-
-        it("a healthy probe resyncs the active model while the server stays connected", async () => {
+        it("asks for health and nothing else on every tick", async () => {
+            vi.useFakeTimers();
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).serverUnreachable = false;
+            plugin.activeModel = "Qwen/Qwen3-4B";
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { chat_ready: true } });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "Qwen/Qwen3-4B", catalog: [], installed: [] } });
+            await vi.advanceTimersByTimeAsync(HEALTH_PROBE_INTERVAL_MS * 5);
+            expect(plugin.api.health).toHaveBeenCalledTimes(5);
+            expect(plugin.api.listModels).not.toHaveBeenCalled();
+            vi.useRealTimers();
+        });
+
+        it("shows a newly activated model without a probe having run", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).chatStatus = CHAT_STATUS.READY;
+            plugin.api.health = vi.fn();
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "Qwen/Qwen3-235B-A22B", catalog: [], installed: [] } });
+            await plugin.fetchActiveModel();
+            expect(plugin.activeModel).toBe("Qwen/Qwen3-235B-A22B");
+            expect((plugin.statusBarEl as any)?.textContent).toContain(displayLabelForRef("Qwen/Qwen3-235B-A22B"));
+            expect(plugin.api.health).not.toHaveBeenCalled();
+        });
+
+        it("refetches the model on a reconnect, so a restarted server cannot leave a stale label", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).serverUnreachable = true;
             plugin.activeModel = "old";
             plugin.api.health = vi
                 .fn()

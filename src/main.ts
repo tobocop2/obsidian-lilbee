@@ -1993,14 +1993,11 @@ export default class LilbeePlugin extends Plugin {
         if (health?.isOk()) {
             this.healthFailureStreak = 0;
             if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
+            // Only a reconnect refetches the model: a restarted server may be
+            // on a different one. A steady probe asks for health and nothing else.
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
-            } else {
-                // Keep the status-bar model in sync with out-of-band changes
-                // (CLI/TUI/another client switching the chat model) while the
-                // server stays connected.
-                void this.refreshActiveModel();
             }
             this.reflectChatStatus(health.value);
             return;
@@ -2211,20 +2208,6 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         new ModelInfoModal(this.app, this, entry).open();
-    }
-
-    /** Lightweight active-model resync used on every healthy probe tick, so the
-     *  status bar reflects an out-of-band chat-model change. Cheaper than
-     *  fetchActiveModel (no wiki/reasoning work); repaints only on a change. */
-    private async refreshActiveModel(): Promise<void> {
-        try {
-            const models = await this.api.listModels();
-            if (models.chat.active === this.activeModel) return;
-            this.activeModel = models.chat.active;
-            if (this.chatStatus !== CHAT_STATUS.LOADING) this.setStatusReady();
-        } catch {
-            // best-effort; the next probe tick retries
-        }
     }
 
     async fetchActiveModel(): Promise<void> {
