@@ -34,6 +34,8 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         featured: true,
         downloads: 0,
         param_count: "0.6B",
+        // A live server reports fit on every row; the picks filter requires it.
+        fit: "fits",
         ...overrides,
     };
 }
@@ -3865,6 +3867,17 @@ describe("SetupWizard", () => {
             ]);
 
             expect(picks.map((m) => m.hf_repo)).toEqual(["org/Qwen3-Input-Guard", "Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("drops a model whose fit the server did not report", () => {
+            const known = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B", fit: "fits" });
+            const unknown = makeEntry({ hf_repo: "org/Mystery-70B", display_name: "Mystery 70B" });
+            delete (unknown as { fit?: unknown }).fit;
+
+            const picks = pickNativeChatModels([unknown, known]);
+
+            // An unknown size cannot be promised, so it is not a pick.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
         });
 
         it("shows the raw list rather than an empty grid when curation removes everything", () => {

@@ -142,8 +142,15 @@ const EXCLUDED_PICK_MARKER = new RegExp(
     "(^|[^a-z])(uncensored|abliterated|heretic|nsfw|rocm|cuda|vulkan|openvino|npu)",
 );
 
-/** A model the wizard is willing to recommend on a first run. */
+/**
+ * A model the wizard is willing to recommend on a first run.
+ *
+ * Matches the server TUI's own picks rail, which is the oracle: featured,
+ * supported, and a known fit that is not wont_run. A missing fit is excluded
+ * rather than allowed through, because an unknown size cannot be promised.
+ */
 function isFirstRunPick(model: FeaturedModel): boolean {
+    if (!model.fit) return false;
     if (model.fit === HARDWARE_FIT.WONT_RUN) return false;
     if (model.compat === MODEL_COMPAT.UNSUPPORTED) return false;
     return !EXCLUDED_PICK_MARKER.test(`${model.hf_repo} ${model.display_name}`.toLowerCase());
