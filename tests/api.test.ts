@@ -516,7 +516,7 @@ describe("uploadFiles()", () => {
 });
 
 describe("syncStream()", () => {
-    it("POSTs to /api/sync with empty body by default", async () => {
+    it("POSTs to /api/sync with only prune_ignored by default", async () => {
         fetchMock.mockResolvedValue(
             sseResponse(['event: progress\ndata: {"file":"a.md","status":"ingested","current":1,"total":1}\n\n']),
         );
@@ -526,9 +526,22 @@ describe("syncStream()", () => {
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sync`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
+            body: JSON.stringify({ prune_ignored: true }),
         });
         expect(events[0].event).toBe("progress");
+    });
+
+    it.each([
+        ["no options", undefined],
+        ["forceRebuild", { forceRebuild: true }],
+        ["retrySkipped", { retrySkipped: true }],
+    ])("sends prune_ignored true with %s so a .lilbeeignore governs the whole index", async (_label, options) => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.syncStream(undefined, options));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.prune_ignored).toBe(true);
     });
 
     it("never sends a legacy enable_ocr flag", async () => {
@@ -564,7 +577,7 @@ describe("syncStream()", () => {
         await collect(client.syncStream(undefined, { forceRebuild: true, retrySkipped: true }));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body).toEqual({ force_rebuild: true, retry_skipped: true });
+        expect(body).toEqual({ force_rebuild: true, retry_skipped: true, prune_ignored: true });
     });
 
     it("omits the recovery flags when they are false", async () => {
