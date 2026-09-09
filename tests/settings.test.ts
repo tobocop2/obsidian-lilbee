@@ -4647,9 +4647,10 @@ describe("managed mode settings", () => {
             expect((tab as any).apiKeysContainerEl?.style.display).not.toBe("none");
         });
 
-        it("offers the Chromium install and refuses browser render mode when Chromium is missing", async () => {
+        it("fetches Chromium when browser render mode is chosen without it", async () => {
             const plugin = makePlugin();
             (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            plugin.installCrawlerBrowser = vi.fn().mockResolvedValue(true);
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
@@ -4658,10 +4659,27 @@ describe("managed mode settings", () => {
             expect((tab as any).crawlerBrowserSetupEl?.style.display).not.toBe("none");
 
             await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+
+            // Choosing browser mode is the request for a browser, so it is fetched
+            // and the mode applies, rather than being refused.
+            expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("falls back to HTTP when the Chromium fetch fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            plugin.installCrawlerBrowser = vi.fn().mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+
             expect(plugin.api.updateConfig).not.toHaveBeenCalledWith({ crawl_render_mode: "browser" });
             const setValues = captured.dropdownSetValuesByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!;
             expect(setValues[setValues.length - 1]).toBe("http");
-            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_CRAWL_BROWSER_MISSING)).toBe(true);
         });
 
         it("hides the Chromium install offer when the server can already render with a browser", async () => {

@@ -2631,9 +2631,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
                 dropdown.onChange(async (value) => {
                     if (value === CRAWL_RENDER_MODE.BROWSER && !this.crawlerBrowserReady) {
-                        dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
-                        new Notice(MESSAGES.NOTICE_CRAWL_BROWSER_MISSING);
-                        return;
+                        // Choosing browser mode is the request for a browser. The
+                        // server fetches Chromium on demand and streams progress,
+                        // so fetch it here rather than refusing the choice.
+                        if (!(await this.plugin.installCrawlerBrowser())) {
+                            dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
+                            return;
+                        }
+                        this.crawlerBrowserReady = true;
+                        this.crawlerBrowserSetupEl?.hide();
                     }
                     try {
                         await this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: value });
