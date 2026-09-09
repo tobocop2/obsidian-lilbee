@@ -143,10 +143,7 @@ interface NumberFieldOpts {
     reindex?: boolean;
 }
 
-/**
- * One settings row. Both render paths read the same specs: display() builds each row into a
- * container, and getSettingDefinitions() turns each into a definition Obsidian can search.
- */
+/** One settings row, read by both paths: display() builds it, getSettingDefinitions() declares it. */
 interface RowSpec {
     name: string;
     desc: string;
@@ -156,6 +153,8 @@ interface RowSpec {
     visible?: () => boolean;
     /** False for rows that carry a section's own DOM rather than a setting a user searches for. */
     searchable?: boolean;
+    /** Extra search terms, so a row that reveals hidden rows answers for their names too. */
+    aliases?: string[];
     /** `container` is where a row that needs more than one element puts the rest. */
     apply: (setting: Setting, container: HTMLElement) => void;
 }
@@ -289,6 +288,130 @@ const CRAWL_FIELDS: CrawlField[] = [
         placeholder: "3",
         kind: "int",
         nullable: false,
+        min: 0,
+    },
+];
+
+/** A retrieval-advanced number typed into a text box. */
+interface RetrievalNumberField extends ConfigRowSpec {
+    kind: "number";
+    integer: boolean;
+    min: number;
+}
+
+interface RetrievalToggleField extends ConfigRowSpec {
+    kind: "toggle";
+}
+
+/** The full-text search language, which takes free text rather than a number or a toggle. */
+interface RetrievalLanguageField extends ConfigRowSpec {
+    kind: "language";
+}
+
+type RetrievalField = RetrievalNumberField | RetrievalToggleField | RetrievalLanguageField;
+
+const RETRIEVAL_ADVANCED_FIELDS: RetrievalField[] = [
+    {
+        kind: "number",
+        key: "candidate_multiplier",
+        name: MESSAGES.LABEL_CANDIDATE_MULTIPLIER,
+        desc: MESSAGES.DESC_CANDIDATE_MULTIPLIER,
+        integer: true,
+        min: 1,
+    },
+    {
+        kind: "number",
+        key: "min_relevance_score",
+        name: MESSAGES.LABEL_MIN_RELEVANCE_SCORE,
+        desc: MESSAGES.DESC_MIN_RELEVANCE_SCORE,
+        integer: false,
+        min: 0,
+    },
+    {
+        kind: "number",
+        key: "max_context_sources",
+        name: MESSAGES.LABEL_MAX_CONTEXT_SOURCES,
+        desc: MESSAGES.DESC_MAX_CONTEXT_SOURCES,
+        integer: true,
+        min: 1,
+    },
+    {
+        kind: "number",
+        key: "diversity_max_per_source",
+        name: MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
+        desc: MESSAGES.DESC_DIVERSITY_MAX_PER_SOURCE,
+        integer: true,
+        min: 1,
+    },
+    { kind: "toggle", key: "title_search", name: MESSAGES.LABEL_TITLE_SEARCH, desc: MESSAGES.DESC_TITLE_SEARCH },
+    {
+        kind: "number",
+        key: "title_search_weight",
+        name: MESSAGES.LABEL_TITLE_SEARCH_WEIGHT,
+        desc: MESSAGES.DESC_TITLE_SEARCH_WEIGHT,
+        integer: false,
+        min: 0,
+    },
+    {
+        kind: "toggle",
+        key: "adaptive_fusion",
+        name: MESSAGES.LABEL_ADAPTIVE_FUSION,
+        desc: MESSAGES.DESC_ADAPTIVE_FUSION,
+    },
+    {
+        kind: "number",
+        key: "adaptive_fusion_margin",
+        name: MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN,
+        desc: MESSAGES.DESC_ADAPTIVE_FUSION_MARGIN,
+        integer: false,
+        min: 0,
+    },
+    {
+        kind: "number",
+        key: "lexical_fusion_weight",
+        name: MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT,
+        desc: MESSAGES.DESC_LEXICAL_FUSION_WEIGHT,
+        integer: false,
+        min: 0,
+    },
+    {
+        kind: "number",
+        key: "neighbor_expansion",
+        name: MESSAGES.LABEL_NEIGHBOR_EXPANSION,
+        desc: MESSAGES.DESC_NEIGHBOR_EXPANSION,
+        integer: true,
+        min: 0,
+    },
+    {
+        kind: "toggle",
+        key: "filter_structural_chunks",
+        name: MESSAGES.LABEL_FILTER_STRUCTURAL_CHUNKS,
+        desc: MESSAGES.DESC_FILTER_STRUCTURAL_CHUNKS,
+    },
+    {
+        kind: "number",
+        key: "rerank_min_score",
+        name: MESSAGES.LABEL_RERANK_MIN_SCORE,
+        desc: MESSAGES.DESC_RERANK_MIN_SCORE,
+        integer: false,
+        min: 0,
+    },
+    { kind: "language", key: "fts_language", name: MESSAGES.LABEL_FTS_LANGUAGE, desc: MESSAGES.DESC_FTS_LANGUAGE },
+    // Indexing-side quality: these only take effect on documents ingested after the change.
+    {
+        kind: "toggle",
+        key: "contextual_enrichment",
+        name: MESSAGES.LABEL_CONTEXTUAL_ENRICHMENT,
+        desc: MESSAGES.DESC_CONTEXTUAL_ENRICHMENT,
+    },
+    { kind: "toggle", key: "embed_titles", name: MESSAGES.LABEL_EMBED_TITLES, desc: MESSAGES.DESC_EMBED_TITLES },
+    { kind: "toggle", key: "token_sizing", name: MESSAGES.LABEL_TOKEN_SIZING, desc: MESSAGES.DESC_TOKEN_SIZING },
+    {
+        kind: "number",
+        key: "mmr_lambda",
+        name: MESSAGES.LABEL_MMR_LAMBDA,
+        desc: MESSAGES.DESC_MMR_LAMBDA,
+        integer: false,
         min: 0,
     },
 ];
@@ -453,10 +576,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.revealServerUpdate();
     }
 
-    /**
-     * True from 1.13.0 on, where Obsidian renders this tab from the definitions and stops
-     * calling display(). The store ruleset only recognises a literal version here.
-     */
+    /** True from 1.13.0 on; the store ruleset only recognises a literal version here. */
     private usesDefinitions(): boolean {
         return requireApiVersion("1.13.0");
     }
@@ -503,6 +623,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             },
         };
         if (row.searchable === false) definition.searchable = false;
+        if (row.aliases !== undefined) definition.aliases = row.aliases;
         if (key !== undefined || visible !== undefined) {
             definition.visible = (): boolean =>
                 (key === undefined || this.serverReports(key)) && (visible === undefined || visible());
@@ -612,15 +733,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
-            this.renderUninstallSection(containerEl, this.storageTotalBytes);
+            this.renderUninstallSection(containerEl);
         }
         this.loadTabState();
     }
 
-    /**
-     * The 1.13 render path. Obsidian calls this on every display and once for search indexing,
-     * and stops calling display() while it returns anything.
-     */
+    /** The 1.13 render path: Obsidian renders and search-indexes from this instead of calling display(). */
     getSettingDefinitions(): SettingDefinitionItem[] {
         const items: SettingDefinitionItem[] = [
             this.definitionOf({
@@ -664,7 +782,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.groupOf(MESSAGES.LABEL_FLEET, this.rowsFleet(), { help: MESSAGES.LABEL_FLEET_HELP }),
         ];
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
-            items.push(...this.defsUninstall(this.storageTotalBytes));
+            items.push(...this.defsUninstall());
         }
         return items;
     }
@@ -1266,18 +1384,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /**
      * Managed mode only: Obsidian never removes the server this plugin downloaded.
-     * Sized from the storage report so the model cache is walked once per render;
-     * the delete plan is built when the button is clicked.
+     * The delete plan is built when the button is clicked.
      */
-    private renderUninstallSection(containerEl: HTMLElement, totalBytes: number): void {
+    private renderUninstallSection(containerEl: HTMLElement): void {
         const heading = new Setting(containerEl).setName(MESSAGES.LABEL_UNINSTALL).setHeading();
         heading.settingEl.addClass("lilbee-danger-heading");
         heading.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
         this.renderUninstallCallout(containerEl);
-        this.applyUninstallServerRow(new Setting(containerEl), totalBytes);
+        this.applyUninstallServerRow(new Setting(containerEl));
     }
 
-    private defsUninstall(totalBytes: number): SettingDefinitionItem[] {
+    private defsUninstall(): SettingDefinitionItem[] {
         return [
             {
                 type: "group",
@@ -1293,8 +1410,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.definitionOf(
                         this.localRow(
                             MESSAGES.LABEL_UNINSTALL_SERVER,
-                            MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(totalBytes)),
-                            (setting) => this.applyUninstallServerRow(setting, totalBytes),
+                            MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(this.storageTotalBytes)),
+                            (setting) => this.applyUninstallServerRow(setting),
                         ),
                     ),
                 ],
@@ -1309,10 +1426,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         callout.createEl("p", { text: MESSAGES.CALLOUT_UNINSTALL_FIRST });
     }
 
-    private applyUninstallServerRow(setting: Setting, totalBytes: number): void {
+    /** Reads the total at render time, which the storage report row sets when it renders above this one. */
+    private applyUninstallServerRow(setting: Setting): void {
         setting
             .setName(MESSAGES.LABEL_UNINSTALL_SERVER)
-            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(totalBytes)))
+            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(this.storageTotalBytes)))
             .addButton((btn) => {
                 btn.setButtonText(MESSAGES.BUTTON_UNINSTALL_SERVER).onClick(() => void this.confirmUninstall());
                 btn.buttonEl.addClass("mod-warning");
@@ -1735,64 +1853,72 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private loadServerDefaults(): void {
         this.plugin.api
             .config()
-            .then((cfg: ConfigResponse) => {
-                // Populate editable server-config inputs with the current server values
-                // and surface them as placeholders so users see what's effective when
-                // they clear an override.
-                for (const [key, inputEl] of this.serverConfigInputs) {
-                    const v = cfg[key];
-                    if (v === undefined) continue;
-                    const formatted =
-                        typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "";
-                    inputEl.value = formatted;
-                    if (formatted !== "") {
-                        inputEl.placeholder = formatted;
-                    }
-                }
-                for (const [key, toggle] of this.serverConfigToggles) {
-                    const v = cfg[key];
-                    if (typeof v === "boolean") this.setValueSilently(() => toggle.setValue(v));
-                }
-                for (const [key, slider] of this.serverConfigSliders) {
-                    const v = cfg[key];
-                    if (typeof v === "number") this.setValueSilently(() => slider.setValue(v));
-                }
-                for (const [key, textArea] of this.serverConfigTextAreas) {
-                    const v = cfg[key];
-                    if (Array.isArray(v)) {
-                        textArea.value = v.join("\n");
-                    }
-                }
-                for (const [key, dropdown] of this.serverConfigDropdowns) {
-                    const v = cfg[key];
-                    if (typeof v === "string") {
-                        dropdown.setValue(v);
-                    }
-                }
-                if (typeof cfg.rag_system_prompt === "string") {
-                    const ragInput = this.serverConfigInputs.get("rag_system_prompt");
-                    if (ragInput) {
-                        ragInput.placeholder = cfg.rag_system_prompt;
-                    }
-                }
-                if (typeof cfg.general_system_prompt === "string") {
-                    const generalInput = this.serverConfigInputs.get("general_system_prompt");
-                    if (generalInput) {
-                        generalInput.placeholder = cfg.general_system_prompt;
-                    }
-                }
-                const first = this.serverConfig === null;
-                this.serverConfig = cfg;
-                this.applyChatModeFromConfig(cfg);
-                this.applyHideableConfigFields(cfg);
-                if (!this.usesDefinitions()) return;
-                // The first config decides which rows exist and what they start at, so rebuild once.
-                if (first) this.refresh();
-                else this.refreshVisibility();
-            })
+            .then((cfg: ConfigResponse) => this.adoptServerConfig(cfg))
             .catch(() => {
-                // Connection status is shown via the Test button — no duplicate warning needed
+                // Connection status is shown via the Test button, so no duplicate warning here.
             });
+    }
+
+    /** Fills the rendered controls, then holds the config the row predicates read. */
+    private adoptServerConfig(cfg: ConfigResponse): void {
+        this.fillConfigInputs(cfg);
+        this.fillConfigComponents(cfg);
+        this.applyPromptPlaceholders(cfg);
+        const first = this.serverConfig === null;
+        this.serverConfig = cfg;
+        this.applyChatModeFromConfig(cfg);
+        this.applyHideableConfigFields(cfg);
+        if (!this.usesDefinitions()) return;
+        // The first config decides which rows exist and what they start at, so rebuild once.
+        if (first) this.refresh();
+        else this.refreshVisibility();
+    }
+
+    /** The server value fills the box and stays as the placeholder a cleared override falls back to. */
+    private fillConfigInputs(cfg: ConfigResponse): void {
+        for (const [key, inputEl] of this.serverConfigInputs) {
+            const v = cfg[key];
+            if (v === undefined) continue;
+            const formatted =
+                typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "";
+            inputEl.value = formatted;
+            if (formatted !== "") {
+                inputEl.placeholder = formatted;
+            }
+        }
+    }
+
+    private fillConfigComponents(cfg: ConfigResponse): void {
+        for (const [key, toggle] of this.serverConfigToggles) {
+            const v = cfg[key];
+            if (typeof v === "boolean") this.setValueSilently(() => toggle.setValue(v));
+        }
+        for (const [key, slider] of this.serverConfigSliders) {
+            const v = cfg[key];
+            if (typeof v === "number") this.setValueSilently(() => slider.setValue(v));
+        }
+        for (const [key, textArea] of this.serverConfigTextAreas) {
+            const v = cfg[key];
+            if (Array.isArray(v)) {
+                textArea.value = v.join("\n");
+            }
+        }
+        for (const [key, dropdown] of this.serverConfigDropdowns) {
+            const v = cfg[key];
+            if (typeof v === "string") {
+                dropdown.setValue(v);
+            }
+        }
+    }
+
+    private applyPromptPlaceholders(cfg: ConfigResponse): void {
+        for (const key of [CONFIG_KEY.RAG_SYSTEM_PROMPT, CONFIG_KEY.GENERAL_SYSTEM_PROMPT]) {
+            const value = cfg[key];
+            const input = this.serverConfigInputs.get(key);
+            if (typeof value === "string" && input) {
+                input.placeholder = value;
+            }
+        }
     }
 
     /** Send a system prompt to the server. An empty box means "use the default",
@@ -1830,15 +1956,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigHideableEls.set(key, el);
     }
 
-    /**
-     * True unless the connected server has reported a config it does not include this key in.
-     *
-     * Fails open, like `serverSupports`. Obsidian indexes the definitions once when the tab is
-     * added, and a row that is not visible then is excluded from search. The config has not
-     * loaded at that point, so failing closed made every server-backed row unsearchable, which
-     * is the defect this whole path exists to fix. A row that turns out to be unsupported is
-     * hidden on the first refresh after the config lands.
-     */
+    /** Fails open: settings search skips a hidden row, and the config that would unhide it loads late. */
     private serverReports(key: string): boolean {
         return this.serverConfig === null || this.serverConfig[key] !== undefined;
     }
@@ -2315,121 +2433,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private rowsRetrievalAdvanced(): RowSpec[] {
-        const fts: ConfigRowSpec = {
-            key: "fts_language",
-            name: MESSAGES.LABEL_FTS_LANGUAGE,
-            desc: MESSAGES.DESC_FTS_LANGUAGE,
-        };
-        return [
-            this.numberRow(
-                {
-                    key: "candidate_multiplier",
-                    name: MESSAGES.LABEL_CANDIDATE_MULTIPLIER,
-                    desc: MESSAGES.DESC_CANDIDATE_MULTIPLIER,
-                },
-                { integer: true, min: 1 },
-            ),
-            this.numberRow(
-                {
-                    key: "min_relevance_score",
-                    name: MESSAGES.LABEL_MIN_RELEVANCE_SCORE,
-                    desc: MESSAGES.DESC_MIN_RELEVANCE_SCORE,
-                },
-                { integer: false, min: 0 },
-            ),
-            this.numberRow(
-                {
-                    key: "max_context_sources",
-                    name: MESSAGES.LABEL_MAX_CONTEXT_SOURCES,
-                    desc: MESSAGES.DESC_MAX_CONTEXT_SOURCES,
-                },
-                { integer: true, min: 1 },
-            ),
-            this.numberRow(
-                {
-                    key: "diversity_max_per_source",
-                    name: MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
-                    desc: MESSAGES.DESC_DIVERSITY_MAX_PER_SOURCE,
-                },
-                { integer: true, min: 1 },
-            ),
-            this.toggleRow({
-                key: "title_search",
-                name: MESSAGES.LABEL_TITLE_SEARCH,
-                desc: MESSAGES.DESC_TITLE_SEARCH,
-            }),
-            this.numberRow(
-                {
-                    key: "title_search_weight",
-                    name: MESSAGES.LABEL_TITLE_SEARCH_WEIGHT,
-                    desc: MESSAGES.DESC_TITLE_SEARCH_WEIGHT,
-                },
-                { integer: false, min: 0 },
-            ),
-            this.toggleRow({
-                key: "adaptive_fusion",
-                name: MESSAGES.LABEL_ADAPTIVE_FUSION,
-                desc: MESSAGES.DESC_ADAPTIVE_FUSION,
-            }),
-            this.numberRow(
-                {
-                    key: "adaptive_fusion_margin",
-                    name: MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN,
-                    desc: MESSAGES.DESC_ADAPTIVE_FUSION_MARGIN,
-                },
-                { integer: false, min: 0 },
-            ),
-            this.numberRow(
-                {
-                    key: "lexical_fusion_weight",
-                    name: MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT,
-                    desc: MESSAGES.DESC_LEXICAL_FUSION_WEIGHT,
-                },
-                { integer: false, min: 0 },
-            ),
-            this.numberRow(
-                {
-                    key: "neighbor_expansion",
-                    name: MESSAGES.LABEL_NEIGHBOR_EXPANSION,
-                    desc: MESSAGES.DESC_NEIGHBOR_EXPANSION,
-                },
-                { integer: true, min: 0 },
-            ),
-            this.toggleRow({
-                key: "filter_structural_chunks",
-                name: MESSAGES.LABEL_FILTER_STRUCTURAL_CHUNKS,
-                desc: MESSAGES.DESC_FILTER_STRUCTURAL_CHUNKS,
-            }),
-            this.numberRow(
-                {
-                    key: "rerank_min_score",
-                    name: MESSAGES.LABEL_RERANK_MIN_SCORE,
-                    desc: MESSAGES.DESC_RERANK_MIN_SCORE,
-                },
-                { integer: false, min: 0 },
-            ),
-            this.localRow(fts.name, fts.desc, (setting) => this.applyFtsLanguageRow(setting, fts)),
-            // Indexing-side quality: these only take effect on documents ingested after the change.
-            this.toggleRow({
-                key: "contextual_enrichment",
-                name: MESSAGES.LABEL_CONTEXTUAL_ENRICHMENT,
-                desc: MESSAGES.DESC_CONTEXTUAL_ENRICHMENT,
-            }),
-            this.toggleRow({
-                key: "embed_titles",
-                name: MESSAGES.LABEL_EMBED_TITLES,
-                desc: MESSAGES.DESC_EMBED_TITLES,
-            }),
-            this.toggleRow({
-                key: "token_sizing",
-                name: MESSAGES.LABEL_TOKEN_SIZING,
-                desc: MESSAGES.DESC_TOKEN_SIZING,
-            }),
-            this.numberRow(
-                { key: "mmr_lambda", name: MESSAGES.LABEL_MMR_LAMBDA, desc: MESSAGES.DESC_MMR_LAMBDA },
-                { integer: false, min: 0 },
-            ),
-        ];
+        return RETRIEVAL_ADVANCED_FIELDS.map((field) => this.retrievalRow(field));
+    }
+
+    private retrievalRow(field: RetrievalField): RowSpec {
+        const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
+        if (field.kind === "toggle") return this.toggleRow(spec);
+        if (field.kind === "language")
+            return this.localRow(spec.name, spec.desc, (setting) => this.applyFtsLanguageRow(setting, spec));
+        return this.numberRow(spec, { integer: field.integer, min: field.min });
     }
 
     private renderRetrievalAdvanced(containerEl: HTMLElement): void {
@@ -2952,7 +2964,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
         return [
             ...CRAWL_FIELDS.map((field) => this.crawlRow(field)),
-            { ...renderMode, apply: (setting) => this.applyCrawlRenderModeRow(setting, renderMode) },
+            {
+                ...renderMode,
+                // Picking browser mode installs the browser, so this row carries the setup offer's search terms.
+                aliases: [MESSAGES.LABEL_CRAWL_BROWSER_SETUP],
+                apply: (setting) => this.applyCrawlRenderModeRow(setting, renderMode),
+            },
             {
                 name: MESSAGES.LABEL_CRAWL_BROWSER_SETUP,
                 desc: MESSAGES.DESC_CRAWL_BROWSER_SETUP,
@@ -3150,13 +3167,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ];
     }
 
-    /** The sub-settings sit above the enable toggle, which is where display() has always put them. */
+    /** The enable toggle leads the section, as display() draws it, and answers for the rows it hides. */
     private rowsWiki(): RowSpec[] {
+        const subSettings = this.rowsWikiSubSettings();
         return [
-            ...this.gated(this.rowsWikiSubSettings(), () => this.plugin.settings.wikiEnabled),
-            this.localRow(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE, MESSAGES.DESC_WIKI_ENABLE_TOGGLE, (setting) =>
-                this.applyWikiEnableRow(setting),
-            ),
+            {
+                ...this.localRow(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE, MESSAGES.DESC_WIKI_ENABLE_TOGGLE, (setting) =>
+                    this.applyWikiEnableRow(setting),
+                ),
+                aliases: subSettings.map((row) => row.name),
+            },
+            ...this.gated(subSettings, () => this.plugin.settings.wikiEnabled),
         ];
     }
 

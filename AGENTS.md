@@ -203,6 +203,11 @@ vi.mock("../src/server-manager", async (importOriginal) => {
 - `app.vault.on("create" | "modify" | "delete" | "rename", callback)` for vault events.
 - `Plugin.registerEvent()` for auto-cleanup of event listeners on unload.
 - `addStatusBarItem()` returns an element for status text; use `setText()`.
+- From 1.13, `display()` is not called while `getSettingDefinitions()` returns a non-empty array.
+- `update()` stores what `getSettingDefinitions()` returns; settings search reads that stored array, not a fresh call.
+- Settings search skips any definition whose `visible` predicate is false when the query runs, before it reads `searchable`.
+- `update()` rebuilds the definitions; `refreshDomState()` only re-evaluates the `visible` and `disabled` predicates.
+- A definition's `render` callback receives the `Setting` and its group; `group.listEl` is where extra elements go.
 
 ## Build
 

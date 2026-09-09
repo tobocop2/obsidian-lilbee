@@ -941,6 +941,20 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
 
+        it("clears the default placeholder when the server reports an empty prompt", async () => {
+            // The only rendered value the prompt placeholder pass changes on its own: every other
+            // config shape is already covered by the input loop that runs before it.
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ rag_system_prompt: "" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect((tab as any).serverConfigInputs.get("rag_system_prompt").placeholder).toBe("");
+        });
+
         it("tolerates a config with system prompts when their inputs were never registered", async () => {
             // loadServerDefaults can run before the prompt inputs are captured;
             // the placeholder updates must be skipped rather than crash.
