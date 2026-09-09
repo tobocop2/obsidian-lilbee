@@ -3430,19 +3430,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(MESSAGES.LABEL_HF_TOKEN)
             .setDesc(MESSAGES.DESC_HF_TOKEN)
             .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_HF_TOKEN)
-                    .setValue(this.plugin.getSharedHfToken())
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        this.plugin.setSharedHfToken(trimmed);
-                        try {
-                            await this.plugin.api.updateConfig({ hf_token: trimmed });
-                            new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
-                        }
-                    });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_HF_TOKEN).setValue(this.plugin.getSharedHfToken());
                 text.inputEl.type = "password";
+                // Nothing reads the token back from the server, so re-entering the stored value must still send.
+                let edited = false;
+                text.inputEl.addEventListener("input", () => {
+                    edited = true;
+                });
+                const saveToken = async (): Promise<void> => {
+                    if (!edited) return;
+                    edited = false;
+                    const trimmed = text.inputEl.value.trim();
+                    try {
+                        await this.plugin.api.updateConfig({ hf_token: trimmed });
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
+                        // A refused save leaves unsaved work, so the next blur must retry it.
+                        edited = true;
+                        return;
+                    }
+                    // An edit that landed while the request was open owns the stored copy.
+                    if (text.inputEl.value.trim() !== trimmed) return;
+                    // The shared copy only mirrors a token the server took, clearing included.
+                    this.plugin.setSharedHfToken(trimmed);
+                    new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
+                };
+                text.inputEl.addEventListener("blur", () => void saveToken());
             });
     }
 
