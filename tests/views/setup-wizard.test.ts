@@ -3830,32 +3830,23 @@ describe("SetupWizard", () => {
     });
 
     describe("Our picks is curated", () => {
-        it("drops models the host cannot run", () => {
+        it("keeps a model the host cannot run for the row to substitute", () => {
             const picks = pickNativeChatModels([
                 makeEntry({ hf_repo: "a/huge", display_name: "Huge", fit: "wont_run" }),
                 makeEntry({ hf_repo: "a/small", display_name: "Small", fit: "fits" }),
             ]);
 
-            expect(picks.map((m) => m.hf_repo)).toEqual(["a/small"]);
+            // Ranking does not drop rows. The row replaces them, and keeps them when nothing replaces them.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["a/huge", "a/small"]);
         });
 
-        it("drops models the server says it cannot load", () => {
+        it("keeps a model the server says it cannot load for the row to substitute", () => {
             const picks = pickNativeChatModels([
                 makeEntry({ hf_repo: "x/Weird-Arch", display_name: "Weird", compat: "unsupported" }),
                 makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
             ]);
 
-            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
-        });
-
-        it("shows nothing rather than a model that will not run", () => {
-            const picks = pickNativeChatModels([
-                makeEntry({ hf_repo: "a/huge", display_name: "Huge", fit: "wont_run" }),
-                makeEntry({ hf_repo: "b/also-huge", display_name: "Also Huge", fit: "wont_run" }),
-            ]);
-
-            // The caller renders its own empty state; the full catalog is one button away.
-            expect(picks).toEqual([]);
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF", "x/Weird-Arch"]);
         });
 
         it("keeps a model the picks row has no opinion about beyond fit", () => {
@@ -3867,39 +3858,227 @@ describe("SetupWizard", () => {
             expect(picks.map((m) => m.hf_repo)).toEqual(["x/Qwen3-27B-Uncensored"]);
         });
 
-        it("drops a model whose fit the server did not report", () => {
+        it("the row is never empty when the server returned models", async () => {
+            // Every criterion fails and the wider catalog cannot answer: the row a substitute cannot replace stands.
+            const refused = makeEntry({
+                hf_repo: "org/Refused-A",
+                display_name: "Refused A",
+                fit: "wont_run",
+                compat: "unsupported",
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi
+                .fn()
+                .mockResolvedValueOnce(ok(makeCatalogResponse([refused])))
+                .mockResolvedValue(err(new Error("backfill unavailable")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect((wizard as any).featuredModels.map((m: CatalogEntry) => m.hf_repo)).toEqual(["org/Refused-A"]);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes(MESSAGES.WIZARD_NO_MODELS_OFFERED))).toBe(false);
+        });
+
+        it("keeps a model whose compat the server has not judged", () => {
+            const unknown = makeEntry({ hf_repo: "org/Unjudged-7B", display_name: "Unjudged 7B", fit: "fits" });
+            delete (unknown as { compat?: unknown }).compat;
+            const unsupported = makeEntry({
+                hf_repo: "org/Refused-7B",
+                display_name: "Refused 7B",
+                fit: "fits",
+                compat: "unsupported",
+            });
+
+            const picks = pickNativeChatModels([unknown, unsupported]);
+
+            // Ranking keeps every row it was given. What counts as refused is asserted where it is applied,
+            // in "substitutes only the row the server refused".
+            expect(picks.map((m) => m.hf_repo)).toEqual(["org/Unjudged-7B", "org/Refused-7B"]);
+        });
+
+        it("keeps a model whose fit the server did not report", () => {
             const known = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B", fit: "fits" });
             const unknown = makeEntry({ hf_repo: "org/Mystery-70B", display_name: "Mystery 70B" });
             delete (unknown as { fit?: unknown }).fit;
 
             const picks = pickNativeChatModels([unknown, known]);
 
-            // An unknown size cannot be promised, so it is not a pick.
-            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+            // Ranking keeps every row it was given, ordered by family preference. Whether an unreported
+            // fit costs a row its place is asserted in "keeps a row whose fit the server did not report".
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF", "org/Mystery-70B"]);
+        });
+    });
+
+    describe("The picks row substitutes what will not run", () => {
+        function catalogRow(i: number): CatalogEntry {
+            return makeEntry({ hf_repo: `org/Other-${i}-GGUF`, display_name: `Other ${i}`, featured: false });
+        }
+
+        function splitCatalog(featured: CatalogEntry[], wider: CatalogEntry[] | Error) {
+            return vi.fn((params?: { featured?: boolean }) => {
+                if (params?.featured) return Promise.resolve(ok(makeCatalogResponse(featured)));
+                if (wider instanceof Error) return Promise.resolve(err(wider));
+                return Promise.resolve(ok(makeCatalogResponse(wider)));
+            });
+        }
+
+        async function openPicksStep(catalog: ReturnType<typeof vi.fn>) {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = catalog;
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+            return { plugin, el: wizard.contentEl as unknown as MockElement };
+        }
+
+        function renderedRepos(el: MockElement): (string | undefined)[] {
+            return el.findAll("lilbee-model-card").map((c) => c.dataset.repo);
+        }
+
+        function featuredRow(size: number): CatalogEntry[] {
+            return Array.from({ length: size }, (_, i) => makeEntry({ hf_repo: `f/${i}`, display_name: `F ${i}` }));
+        }
+
+        it("replaces the rows that will not run with the most popular ones that do", async () => {
+            const featured = featuredRow(6).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+                makeEntry({ hf_repo: "f/weird", display_name: "Weird", compat: "unsupported" }),
+            );
+            const wider = [
+                ...featured,
+                catalogRow(0),
+                makeEntry({ hf_repo: "w/huge", display_name: "Wider huge", fit: "wont_run", featured: false }),
+                catalogRow(1),
+                catalogRow(2),
+            ];
+
+            const { plugin, el } = await openPicksStep(splitCatalog(featured, wider));
+
+            const repos = renderedRepos(el);
+            expect(repos.length).toBe(8);
+            expect(new Set(repos).size).toBe(8);
+            expect(repos).toEqual([...featuredRow(6).map((m) => m.hf_repo), "org/Other-0-GGUF", "org/Other-1-GGUF"]);
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
         });
 
-        it("drops a model whose compat the server reports as unknown", () => {
-            const supported = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" });
-            const unknown = makeEntry({
-                hf_repo: "org/Mystery-Arch",
-                display_name: "Mystery Arch",
-                compat: "unknown",
+        it("asks only for the featured list when every row runs", async () => {
+            const featured = featuredRow(8);
+
+            const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+
+            expect(renderedRepos(el)).toEqual(featured.map((m) => m.hf_repo));
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+        });
+
+        it("asks only for the featured list when the server reported no fits", async () => {
+            const featured = featuredRow(3).map((m) => {
+                delete (m as { fit?: unknown }).fit;
+                return m;
             });
 
-            const picks = pickNativeChatModels([unknown, supported]);
+            const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
 
-            // An unknown architecture cannot be promised to run, so it is not a pick.
-            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+            // An unknown fit is not a refusal, so there is nothing to replace and nothing to fetch.
+            expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/2"]);
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
         });
 
-        it("drops a model whose compat the server did not report", () => {
-            const supported = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" });
-            const missing = makeEntry({ hf_repo: "org/No-Compat", display_name: "No Compat" });
-            delete (missing as { compat?: unknown }).compat;
+        it("substitutes only the row the server refused", async () => {
+            const unjudged = makeEntry({ hf_repo: "f/unjudged", display_name: "Unjudged", fit: "fits" });
+            delete (unjudged as { compat?: unknown }).compat;
+            const refused = makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" });
+            const candidate = makeEntry({ hf_repo: "w/unjudged", display_name: "Wider unjudged", featured: false });
+            delete (candidate as { compat?: unknown }).compat;
 
-            const picks = pickNativeChatModels([missing, supported]);
+            const { el } = await openPicksStep(splitCatalog([unjudged, refused], [candidate, catalogRow(0)]));
 
-            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+            // An unjudged compat costs a row nothing, on the row itself and on what may replace one.
+            expect(renderedRepos(el)).toEqual(["f/unjudged", "w/unjudged"]);
+        });
+
+        it("keeps a row whose fit the server did not report", async () => {
+            const unreported = makeEntry({ hf_repo: "f/unreported", display_name: "Unreported" });
+            delete (unreported as { fit?: unknown }).fit;
+            const refused = makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" });
+            const candidate = makeEntry({ hf_repo: "w/unreported", display_name: "Wider unreported", featured: false });
+            delete (candidate as { fit?: unknown }).fit;
+
+            const { el } = await openPicksStep(splitCatalog([unreported, refused], [candidate, catalogRow(0)]));
+
+            // An unreported fit costs a row nothing either. Only a reported wont_run is replaced.
+            expect(renderedRepos(el)).toEqual(["f/unreported", "w/unreported"]);
+        });
+
+        it("does not substitute a frontier model whose key is missing", async () => {
+            const featured = featuredRow(1).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+            const needsKey = makeEntry({
+                hf_repo: "openai/gpt-5",
+                display_name: "GPT-5",
+                source: "frontier",
+                provider: "openai",
+                key_status: "missing_key",
+                featured: false,
+                installed: true,
+            });
+            delete (needsKey as { fit?: unknown }).fit;
+
+            const { el } = await openPicksStep(splitCatalog(featured, [needsKey, catalogRow(0)]));
+
+            // The user cannot use it without a key they have not set, so it is not offered in its place.
+            expect(renderedRepos(el)).toEqual(["f/0", "org/Other-0-GGUF"]);
+        });
+
+        it("substitutes a hosted model the user can already use", async () => {
+            const featured = featuredRow(1).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+            const ready = makeEntry({
+                hf_repo: "ollama/qwen3:4b",
+                display_name: "Qwen3 4B",
+                source: "ollama",
+                provider: "ollama",
+                key_status: null,
+                featured: false,
+                installed: true,
+            });
+            delete (ready as { fit?: unknown }).fit;
+
+            const { el } = await openPicksStep(splitCatalog(featured, [ready, catalogRow(0)]));
+
+            // A local server needs no key, so hosted rows are not excluded as a class.
+            expect(renderedRepos(el)).toEqual(["f/0", "ollama/qwen3:4b"]);
+        });
+
+        it("keeps a row it cannot replace when the wider catalog cannot be read", async () => {
+            const featured = featuredRow(2).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+
+            const { el } = await openPicksStep(splitCatalog(featured, new Error("connection refused")));
+
+            expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
+            expect(findButtons(el).some((b) => b.textContent === MESSAGES.BUTTON_RETRY)).toBe(false);
+        });
+
+        it("keeps a row it cannot replace when the wider catalog offers nothing that runs", async () => {
+            const featured = featuredRow(2).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+            const wider = [
+                ...featured,
+                makeEntry({ hf_repo: "w/huge", display_name: "Wider huge", fit: "wont_run", featured: false }),
+            ];
+
+            const { el } = await openPicksStep(splitCatalog(featured, wider));
+
+            expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
         });
     });
 

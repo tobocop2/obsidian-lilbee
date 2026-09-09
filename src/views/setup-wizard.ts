@@ -12,6 +12,7 @@ import type {
 import {
     CATALOG_TAB,
     HARDWARE_FIT,
+    HOSTED_SOURCES,
     LILBEE_REPO_URL,
     MANAGED_PHASE,
     MODEL_COMPAT,
@@ -24,6 +25,7 @@ import {
     MODEL_TASK,
 } from "../types";
 import { CatalogModal } from "./catalog-modal";
+import { isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 import {
@@ -130,12 +132,18 @@ const PREFERRED_FAMILIES = [
     "smollm",
 ];
 const MAX_FEATURED_PICKS = 8;
+/** Rows asked of the catalog per request: enough that the ones that run can replace the ones that do not. */
+const PICKS_CATALOG_LIMIT = 40;
 
-/** A first-run pick: supported compat and a known fit that is not wont_run, matching the server TUI's rail. */
-function isFirstRunPick(model: FeaturedModel): boolean {
-    if (!model.fit) return false;
-    if (model.fit === HARDWARE_FIT.WONT_RUN) return false;
-    return model.compat === MODEL_COMPAT.SUPPORTED;
+/** A row the server says will not run here: the fit it reported is wont_run, or it refuses the architecture. */
+function isUnrunnable(model: FeaturedModel): boolean {
+    return model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED;
+}
+
+/** A row the wizard can offer in place of another: it runs here, and a hosted row is ready without an API key of its own. */
+function canSubstitute(model: FeaturedModel): boolean {
+    if (isUnrunnable(model)) return false;
+    return !HOSTED_SOURCES.has(model.source) || isUsableHostedRow(model);
 }
 
 /**
@@ -180,8 +188,8 @@ const SERVER_SETUP_PHASES: {
 ];
 
 /**
- * Ranks the server's featured chat entries into the wizard's picks row, keeping
- * only those a first run should offer and leading with recognised families.
+ * Ranks the server's featured chat entries into the wizard's picks row, leading
+ * with recognised families.
  *
  * Never filters on `source`: a mis-configured server tags every featured model
  * as one source, which empties the row.
@@ -190,8 +198,7 @@ export function pickNativeChatModels(
     models: FeaturedModel[],
     filter: (m: FeaturedModel) => boolean = () => true,
 ): FeaturedModel[] {
-    // The row may come back empty; the caller has an empty state for that.
-    const eligible = models.filter(filter).filter(isFirstRunPick);
+    const eligible = models.filter(filter);
     const seen = new Set<string>();
     const ordered: FeaturedModel[] = [];
     for (const prefix of PREFERRED_FAMILIES) {
@@ -211,6 +218,27 @@ export function pickNativeChatModels(
         }
     }
     return ordered;
+}
+
+/**
+ * Puts the most popular candidates the wizard can offer in place of the rows
+ * that will not run, in the order the server returned them. Rows left without a
+ * substitute stay, behind the ones that run, so the row keeps its size.
+ *
+ * Nothing here drops a row, and ranking drops none either, so the picks row is
+ * empty only when the server returned nothing.
+ */
+function substituteUnrunnable(row: FeaturedModel[], candidates: FeaturedModel[]): FeaturedModel[] {
+    const unrunnable = row.filter(isUnrunnable);
+    const taken = new Set(row.map((m) => m.hf_repo));
+    const substitutes: FeaturedModel[] = [];
+    for (const m of candidates) {
+        if (substitutes.length >= unrunnable.length) break;
+        if (taken.has(m.hf_repo) || !canSubstitute(m)) continue;
+        substitutes.push(m);
+        taken.add(m.hf_repo);
+    }
+    return [...row.filter((m) => !isUnrunnable(m)), ...substitutes, ...unrunnable.slice(substitutes.length)];
 }
 
 export class SetupWizard extends Modal {
@@ -754,17 +782,11 @@ export class SetupWizard extends Modal {
         downloadBtn: HTMLButtonElement,
     ): Promise<void> {
         try {
-            // The server's featured list is the source of truth for the
-            // wizard's "Our picks" row. Do NOT filter by `source` here — a
-            // mis-configured server can tag every featured model as
-            // `source="litellm"`, which would empty the grid and leave the
-            // user stuck. `pickNativeChatModels` just reorders so recognised
-            // open-weight families (Gemma, Qwen, Llama) lead.
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.CHAT,
                 featured: true,
                 sort: FILTERS.SORT.DOWNLOADS,
-                limit: 40,
+                limit: PICKS_CATALOG_LIMIT,
             });
             if (result.isErr()) {
                 this.featuredModels = [];
@@ -774,7 +796,7 @@ export class SetupWizard extends Modal {
                 });
                 return;
             }
-            this.featuredModels = pickNativeChatModels(result.value.models);
+            this.featuredModels = await this.replaceUnrunnablePicks(pickNativeChatModels(result.value.models));
         } catch (e) {
             this.featuredModels = [];
             this.selectedModel = null;
@@ -806,6 +828,17 @@ export class SetupWizard extends Modal {
                 onClick: () => this.selectModel(grid, entry, downloadBtn),
             });
         }
+    }
+
+    /** Trades the rows that will not run for the most popular ones that do. The wider catalog is read only when there is something to trade. */
+    private async replaceUnrunnablePicks(row: FeaturedModel[]): Promise<FeaturedModel[]> {
+        if (!row.some(isUnrunnable)) return row;
+        const result = await this.plugin.api.catalog({
+            task: MODEL_TASK.CHAT,
+            sort: FILTERS.SORT.DOWNLOADS,
+            limit: PICKS_CATALOG_LIMIT,
+        });
+        return substituteUnrunnable(row, result.isOk() ? result.value.models : []);
     }
 
     /** Say why the grid is empty and let the user try again without restarting
