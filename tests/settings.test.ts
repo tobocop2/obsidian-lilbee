@@ -293,6 +293,8 @@ type BlurHandler = () => Promise<void>;
 interface BlurCapture {
     handler: BlurHandler;
     inputEl: { value: string };
+    /** Set the field's value and fire its input listener, as typing into it does. */
+    edit: (value: string) => void;
 }
 
 interface Captured {
@@ -312,6 +314,8 @@ interface Captured {
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
     blurHandlers: BlurCapture[];
+    /** Blur savers keyed by the row's display name. */
+    blurByName: Map<string, BlurCapture>;
     sliderOnChanges: SliderOnChange[];
     dropdownOnChanges: DropdownOnChange[];
     dropdownOptions: Array<Record<string, string>>;
@@ -347,6 +351,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     // the page, which is how one settings change takes 40 unrelated tests down.
     // Record each Setting's name so a test can ask for the row it means.
     const textByName = new Map<string, TextOnChange>();
+    const blurByName = new Map<string, BlurCapture>();
     const toggleByName = new Map<string, ToggleOnChange>();
     const dropdownByName = new Map<string, DropdownOnChange>();
     const textAreaByName = new Map<string, TextOnChange>();
@@ -376,9 +381,16 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const origAddExtraButton = (Setting.prototype as any).addExtraButton;
 
     Setting.prototype.addText = function (cb: (text: any) => void) {
+        const name = currentName;
+        const listeners = new Map<string, () => void>();
         const fakeText = {
             setPlaceholder: () => fakeText,
-            setValue: () => fakeText,
+            // Obsidian's TextComponent writes through to the element, and rows seeded from
+            // stored state are only honest in a test if the element carries that value.
+            setValue: (v: string) => {
+                fakeText.inputEl.value = v;
+                return fakeText;
+            },
             onChange: (handler: TextOnChange) => {
                 textOnChanges.push(handler);
                 if (currentName) textByName.set(currentName, handler);
@@ -398,7 +410,19 @@ function captureSettingCallbacks(fn: () => void): Captured {
                     return this.attributes[name] ?? null;
                 },
                 addEventListener: (event: string, handler: BlurHandler) => {
-                    if (event === "blur") blurHandlers.push({ handler, inputEl: fakeText.inputEl });
+                    listeners.set(event, handler);
+                    if (event === "blur") {
+                        const capture: BlurCapture = {
+                            handler,
+                            inputEl: fakeText.inputEl,
+                            edit: (value: string) => {
+                                fakeText.inputEl.value = value;
+                                listeners.get("input")?.();
+                            },
+                        };
+                        blurHandlers.push(capture);
+                        blurByName.set(name, capture);
+                    }
                 },
             },
         };
@@ -564,6 +588,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         textOnChanges,
         textAreaOnChanges,
         blurHandlers,
+        blurByName,
         sliderOnChanges,
         dropdownOnChanges,
         dropdownOptions,
@@ -656,9 +681,10 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // sharedRoot + 9 generation + 5 retrieval-advanced + 5 ingest + 2 worker-pool
-            // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken
+            // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
-            expect(textOnChanges.length).toBe(51);
+            // The API-key rows and the HF token row save on blur, so they register no onChange.
+            expect(textOnChanges.length).toBe(50);
         });
     });
 
@@ -4315,31 +4341,69 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("HuggingFace token onChange", () => {
-        // After generation (9) + retrieval-advanced (5) + ingest (4)
-        // + worker-pool (2) + crawling (10) + wikiVaultFolder (1) + rerank_candidates (1) = 32,
-        // hfToken is at index 32.
+    describe("HuggingFace token save", () => {
+        function tokenField(captured: Captured): BlurCapture {
+            return captured.blurByName.get(MESSAGES.LABEL_HF_TOKEN)!;
+        }
+
+        async function blurField(field: BlurCapture): Promise<void> {
+            // This describe has no Notice-clearing beforeEach, and the blur listener drops its promise.
+            Notice.clear();
+            void field.handler();
+            await new Promise((r) => setTimeout(r, 0));
+        }
+
+        /** Type *value* into the token field and blur it, as the API-key rows are driven. */
+        async function saveToken(captured: Captured, value: string): Promise<void> {
+            const field = tokenField(captured);
+            field.edit(value);
+            await blurField(field);
+        }
 
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
 
-            await textByName.get(MESSAGES.LABEL_HF_TOKEN)!("hf_test123");
+            await saveToken(captured, "hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.getSharedHfToken()).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
         });
 
-        it("saves empty token", async () => {
-            const plugin = makePlugin();
+        it("clears the stored token once the server accepts the empty value", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
 
-            await textByName.get(MESSAGES.LABEL_HF_TOKEN)!("");
+            await saveToken(captured, "");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "" });
             expect(plugin.getSharedHfToken()).toBe("");
+        });
+
+        it("does not call the server when the field is not edited", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            expect(field.inputEl.value).toBe("hf_stored");
+            await blurField(field);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_HF_TOKEN_SAVED)).toBe(false);
+        });
+
+        it("sends a re-entered token the server never received", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            await saveToken(captured, "hf_stored");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_stored" });
         });
 
         it("shows error notice on failure", async () => {
@@ -4347,12 +4411,89 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
 
-            await textByName.get(MESSAGES.LABEL_HF_TOKEN)!("hf_test123");
+            await saveToken(captured, "hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
+        });
+
+        it("leaves the stored token unchanged when the server rejects it", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            await saveToken(captured, "hf_rejected");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
+        });
+
+        it("keeps the stored token when the server rejects clearing it", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            await saveToken(captured, "");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "" });
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
+        });
+
+        it("sends again after a rejected save without another edit", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            await saveToken(captured, "hf_retry");
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+
+            await blurField(field);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(2);
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ hf_token: "hf_retry" });
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_FAILED_HF_TOKEN)).toBe(true);
+        });
+
+        it("keeps the newer token when an earlier save answers last", async () => {
+            const plugin = makePlugin();
+            const answer: Array<() => void> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () => new Promise<void>((resolve) => answer.push(() => resolve())),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            field.edit("hf_ab");
+            void field.handler();
+            field.edit("hf_abcdef");
+            void field.handler();
+            expect(answer).toHaveLength(2);
+
+            answer[1]!();
+            await new Promise((r) => setTimeout(r, 0));
+            answer[0]!();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.getSharedHfToken()).toBe("hf_abcdef");
+        });
+
+        it("never puts the token value in a notice", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            await saveToken(captured, "hf_secret");
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_FAILED_HF_TOKEN)).toBe(true);
+            expect(Notice.instances.every((n: any) => !n.message.includes("hf_secret"))).toBe(true);
         });
     });
 
