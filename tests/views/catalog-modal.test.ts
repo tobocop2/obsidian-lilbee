@@ -767,6 +767,139 @@ describe("CatalogModal", () => {
         });
     });
 
+    describe("search paging", () => {
+        type SearchInput = { value: string; trigger(event: string): void };
+
+        function searchBox(modal: CatalogModal): SearchInput {
+            return contentEl(modal).find("lilbee-catalog-search")! as unknown as SearchInput;
+        }
+
+        /** Type a term and run the search the debounce would have run. */
+        function typeSearch(modal: CatalogModal, term: string): void {
+            const box = searchBox(modal);
+            box.value = term;
+            box.trigger("input");
+            (modal as unknown as { resetAndFetch(): void }).resetAndFetch();
+        }
+
+        function deferred<T>() {
+            let settle!: (value: T) => void;
+            const promise = new Promise<T>((resolve) => {
+                settle = resolve;
+            });
+            return { promise, settle };
+        }
+
+        function calls(plugin: ReturnType<typeof makePlugin>): Record<string, unknown>[] {
+            return plugin.api.catalog.mock.calls.map((c: unknown[]) => c[0] as Record<string, unknown>);
+        }
+
+        function repos(modal: CatalogModal): string[] {
+            return (modal as unknown as { entries: CatalogEntry[] }).entries.map((e) => e.hf_repo);
+        }
+
+        function page(models: CatalogEntry[], has_more: boolean) {
+            return ok({ total: models.length, limit: 50, offset: 0, models, has_more });
+        }
+
+        const qwenRow = makeEntry({ hf_repo: "Qwen/Qwen3-8B-GGUF", display_name: "Qwen3 8B" });
+        const llamaRow = makeEntry({ hf_repo: "meta/Llama-3.1-8B-GGUF", display_name: "Llama 3.1 8B" });
+
+        it("asks for a whole result set on a search, not a browse page", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const browseLimit = calls(plugin)[0].limit as number;
+
+            plugin.api.catalog.mockClear();
+            typeSearch(modal, "qwen");
+            await tick();
+            await tick();
+
+            const searchCall = calls(plugin)[0];
+            expect(searchCall).toMatchObject({ search: "qwen", offset: 0 });
+            expect(searchCall.limit as number).toBeGreaterThan(browseLimit);
+            expect(searchCall.limit).toBe(50);
+            modal.close();
+        });
+
+        it("pages a search by its own offset and keeps its rows", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const firstPage = Array.from({ length: 50 }, (_, i) =>
+                makeEntry({ hf_repo: `owner/qwen-${i}-GGUF`, display_name: `Qwen ${i}` }),
+            );
+            plugin.api.catalog.mockClear();
+            plugin.api.catalog.mockResolvedValue(page(firstPage, true));
+            typeSearch(modal, "qwen");
+            await tick();
+            await tick();
+
+            plugin.api.catalog.mockResolvedValue(page([qwenRow], false));
+            const view = modal as unknown as { resultsEl: MockElement; onScroll(): void };
+            Object.assign(view.resultsEl, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            view.onScroll();
+            await tick();
+            await tick();
+
+            expect(calls(plugin)[1]).toMatchObject({ search: "qwen", offset: 50, limit: 50 });
+            expect(repos(modal)).toHaveLength(51);
+            modal.close();
+        });
+
+        it("restarts the result set when the term changes while a page is in flight", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const inFlight = deferred<ReturnType<typeof page>>();
+
+            plugin.api.catalog.mockClear();
+            plugin.api.catalog.mockReturnValueOnce(inFlight.promise);
+            typeSearch(modal, "qwen");
+            await tick();
+            expect(calls(plugin)[0]).toMatchObject({ search: "qwen" });
+
+            // The user keeps typing before the first page lands.
+            plugin.api.catalog.mockResolvedValue(page([llamaRow], false));
+            typeSearch(modal, "llama");
+            await tick();
+
+            inFlight.settle(
+                page(
+                    Array.from({ length: 50 }, () => qwenRow),
+                    true,
+                ),
+            );
+            await tick();
+            await tick();
+            await tick();
+
+            const forLlama = calls(plugin).filter((c) => c.search === "llama");
+            expect(forLlama).toHaveLength(1);
+            expect(forLlama[0]).toMatchObject({ offset: 0, limit: 50 });
+            expect(repos(modal)).toEqual([llamaRow.hf_repo]);
+            modal.close();
+        });
+
+        it("returns to browse pages when the search is cleared", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockResolvedValue(page([qwenRow], true));
+            typeSearch(modal, "qwen");
+            await tick();
+            await tick();
+
+            plugin.api.catalog.mockClear();
+            plugin.api.catalog.mockResolvedValue(page([llamaRow], false));
+            typeSearch(modal, "");
+            await tick();
+            await tick();
+
+            expect(calls(plugin)[0]).toMatchObject({ offset: 0, limit: 20 });
+            expect(calls(plugin)[0].search).toBeUndefined();
+            expect(repos(modal)).toEqual([llamaRow.hf_repo]);
+            modal.close();
+        });
+    });
+
     describe("pull / use / remove", () => {
         async function* emptyStream() {
             // no events
@@ -2310,7 +2443,7 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin);
             (modal as unknown as { resultsEl: unknown }).resultsEl = null;
             plugin.api.catalog.mockClear();
-            // resetAndFetch must not throw when resultsEl is null (415 false branch).
+            // resetAndFetch must not throw when resultsEl is null (clearResults false branch).
             (modal as unknown as { resetAndFetch(): void }).resetAndFetch();
             await tick();
             expect(plugin.api.catalog).toHaveBeenCalled();

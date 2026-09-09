@@ -1,6 +1,6 @@
 import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry, CatalogTab, CatalogViewMode, KeyStatus, ModelTask } from "../types";
+import type { CatalogEntry, CatalogResponse, CatalogTab, CatalogViewMode, KeyStatus, ModelTask } from "../types";
 import {
     CATALOG_SOURCE,
     CATALOG_TAB,
@@ -46,6 +46,8 @@ import {
 } from "./catalog-helpers";
 
 const PAGE_SIZE = 20;
+// Search matches are spread across the hub, not sitting at one offset.
+const SEARCH_PAGE_SIZE = 50;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 const DRAWER_BREAKPOINT_PX = 800;
 const DRAWER_FOCUS_DEBOUNCE_MS = 30;
@@ -98,6 +100,8 @@ export class CatalogModal extends Modal {
     private filterSort: SortFilter = FILTERS.SORT.FEATURED;
     private filterSearch = "";
     private offset = 0;
+    // The query the offset was fetched under.
+    private fetchedQuery = "";
     private hasMore = false;
     private isFetching = false;
     private entries: CatalogEntry[] = [];
@@ -409,48 +413,68 @@ export class CatalogModal extends Modal {
             this.viewMode === CATALOG_VIEW_MODE.GRID ? MESSAGES.LABEL_SWITCH_TO_LIST : MESSAGES.LABEL_SWITCH_TO_GRID;
     }
 
-    private resetAndFetch(): void {
-        this.offset = 0;
+    private clearResults(): void {
         this.entries = [];
         if (this.resultsEl) this.resultsEl.empty();
+    }
+
+    private resetAndFetch(): void {
+        this.offset = 0;
+        this.clearResults();
         void this.fetchPage();
     }
 
-    private async fetchPage(): Promise<void> {
-        if (this.isFetching) return;
-        this.isFetching = true;
+    private catalogParams(query: string): Parameters<typeof this.plugin.api.catalog>[0] {
         const params: Parameters<typeof this.plugin.api.catalog>[0] = {
-            limit: PAGE_SIZE,
+            limit: query ? SEARCH_PAGE_SIZE : PAGE_SIZE,
             offset: this.offset,
             sort: this.filterSort,
         };
         if (this.filterTask) params.task = this.filterTask;
         if (this.filterSize) params.size = this.filterSize;
-        if (this.filterSearch) params.search = this.filterSearch;
+        if (query) params.search = query;
+        return params;
+    }
 
+    private applyPage(response: CatalogResponse): void {
+        this.hasMore = response.has_more;
+        // Defensive client-side task filter — older server builds and some
+        // frontier providers tag rows loosely, leaking embedding/vision
+        // models into the chat tab and vice versa.
+        const filtered = this.filterTask ? response.models.filter((m) => m.task === this.filterTask) : response.models;
+        this.entries.push(...filtered);
+        this.offset += response.models.length;
+
+        this.updateHostedTabVisibility();
+        this.renderResults();
+    }
+
+    private async fetchPage(): Promise<void> {
+        if (this.isFetching) return;
+        const query = this.filterSearch;
+        // The offset belongs to one query; a different term restarts the result set.
+        if (query !== this.fetchedQuery) {
+            this.fetchedQuery = query;
+            this.offset = 0;
+            this.clearResults();
+        }
+        this.isFetching = true;
+
+        let superseded = false;
         try {
-            const result = await this.plugin.api.catalog(params);
+            const result = await this.plugin.api.catalog(this.catalogParams(query));
             if (result.isErr()) {
                 new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
-                return;
+            } else if (query !== this.filterSearch) {
+                // The term moved on while this page was in flight.
+                superseded = true;
+            } else {
+                this.applyPage(result.value);
             }
-
-            const response = result.value;
-            this.hasMore = response.has_more;
-            // Defensive client-side task filter — older server builds and some
-            // frontier providers tag rows loosely, leaking embedding/vision
-            // models into the chat tab and vice versa.
-            const filtered = this.filterTask
-                ? response.models.filter((m) => m.task === this.filterTask)
-                : response.models;
-            this.entries.push(...filtered);
-            this.offset += response.models.length;
-
-            this.updateHostedTabVisibility();
-            this.renderResults();
         } finally {
             this.isFetching = false;
         }
+        if (superseded) await this.fetchPage();
     }
 
     private renderResults(): void {
