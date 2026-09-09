@@ -1830,9 +1830,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigHideableEls.set(key, el);
     }
 
-    /** True once the connected server has reported a value for a config key. */
+    /**
+     * True unless the connected server has reported a config it does not include this key in.
+     *
+     * Fails open, like `serverSupports`. Obsidian indexes the definitions once when the tab is
+     * added, and a row that is not visible then is excluded from search. The config has not
+     * loaded at that point, so failing closed made every server-backed row unsearchable, which
+     * is the defect this whole path exists to fix. A row that turns out to be unsupported is
+     * hidden on the first refresh after the config lands.
+     */
     private serverReports(key: string): boolean {
-        return this.serverConfig !== null && this.serverConfig[key] !== undefined;
+        return this.serverConfig === null || this.serverConfig[key] !== undefined;
     }
 
     /** True until a capability probe says the connected server lacks the feature. */

@@ -391,10 +391,18 @@ describe("visibility predicates", () => {
         return items.find((item) => item.heading === heading);
     }
 
-    it("hides a server-config row until the server reports its key", () => {
+    it("keeps a server-config row searchable before the config loads, then hides it if unsupported", () => {
         const tab = makeTab();
         const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_FLASH_ATTENTION);
+
+        // Obsidian indexes the definitions once when the tab is added, before any
+        // config has loaded. A row hidden then is excluded from search, which is
+        // the defect this path exists to fix.
+        expect(row?.visible?.()).toBe(true);
+
+        (tab as any).serverConfig = { something_else: true };
         expect(row?.visible?.()).toBe(false);
+
         (tab as any).serverConfig = { flash_attention: true };
         expect(row?.visible?.()).toBe(true);
     });
