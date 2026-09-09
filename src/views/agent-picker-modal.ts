@@ -26,7 +26,8 @@ export class AgentPickerModal extends Modal {
     private resolver: ((r: AgentPickerResult) => void) | null = null;
     private resolved = false;
     private selected: AgentClient | null = null;
-    private remember = true;
+    // Off by default: one click on Connect must not both wire an integration and silence the question.
+    private remember = false;
     private cards: Map<AgentClient, HTMLElement> = new Map();
     /** Populated by renderFooter during onOpen, before the first select() call. */
     private connectBtn!: HTMLButtonElement;

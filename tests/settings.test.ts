@@ -4838,7 +4838,7 @@ describe("managed mode settings", () => {
             expect(buttonOnClicks.length).toBeGreaterThanOrEqual(2);
         });
 
-        it("wiki enable toggle saves setting and syncs runtime flag", async () => {
+        it("wiki enable toggle saves the setting", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
@@ -4858,7 +4858,6 @@ describe("managed mode settings", () => {
             }
             expect(wikiToggleIdx).not.toBe(-1);
             expect(plugin.settings.wikiEnabled).toBe(false);
-            expect((plugin as any).wikiEnabled).toBe(false);
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
 

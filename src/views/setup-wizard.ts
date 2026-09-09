@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import { SessionTokenError } from "../api";
+import { LilbeeClient, SessionTokenError } from "../api";
 import type {
     BatchProgressPayload,
     CatalogEntry,
@@ -11,8 +11,11 @@ import type {
 } from "../types";
 import {
     CATALOG_TAB,
+    HARDWARE_FIT,
+    HOSTED_SOURCES,
     LILBEE_REPO_URL,
     MANAGED_PHASE,
+    MODEL_COMPAT,
     SERVER_MODE,
     SERVER_STATE,
     SETUP_OUTCOME,
@@ -22,6 +25,7 @@ import {
     MODEL_TASK,
 } from "../types";
 import { CatalogModal } from "./catalog-modal";
+import { isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 import {
@@ -31,6 +35,7 @@ import {
     extractSseErrorMessage,
     getSystemMemoryGB,
     percentFromSse,
+    SERVER_PROBE_TIMEOUT_MS,
     setDeterminateProgress,
     sessionTokenInvalidMessage,
 } from "../utils";
@@ -127,6 +132,19 @@ const PREFERRED_FAMILIES = [
     "smollm",
 ];
 const MAX_FEATURED_PICKS = 8;
+/** Rows asked of the catalog per request: enough that the ones that run can replace the ones that do not. */
+const PICKS_CATALOG_LIMIT = 40;
+
+/** A row the server says will not run here: the fit it reported is wont_run, or it refuses the architecture. */
+function isUnrunnable(model: FeaturedModel): boolean {
+    return model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED;
+}
+
+/** A row the wizard can offer in place of another: it runs here, and a hosted row is ready without an API key of its own. */
+function canSubstitute(model: FeaturedModel): boolean {
+    if (isUnrunnable(model)) return false;
+    return !HOSTED_SOURCES.has(model.source) || isUsableHostedRow(model);
+}
 
 /**
  * The three visible phases of managed-server setup, in order. Each renders as a
@@ -170,17 +188,11 @@ const SERVER_SETUP_PHASES: {
 ];
 
 /**
- * Rank the server's featured chat entries into the wizard's "Our picks" row.
+ * Ranks the server's featured chat entries into the wizard's picks row, leading
+ * with recognised families.
  *
- * Deliberately does NOT filter by `source`. When a server is mis-configured
- * and tags every featured model as `source="litellm"` (a known transient bug
- * in older builds), filtering on source emptied the wizard grid. The featured
- * list itself is the source of truth — the server has already decided these
- * are the models a fresh user should see. We just reorder them so recognised
- * open-weight families (Gemma, Qwen, Llama, Phi) lead.
- *
- * Callers that genuinely need to hide a subset (e.g. API-only entries in a
- * different UI) can pass a custom `filter` predicate.
+ * Never filters on `source`: a mis-configured server tags every featured model
+ * as one source, which empties the row.
  */
 export function pickNativeChatModels(
     models: FeaturedModel[],
@@ -208,6 +220,27 @@ export function pickNativeChatModels(
     return ordered;
 }
 
+/**
+ * Puts the most popular candidates the wizard can offer in place of the rows
+ * that will not run, in the order the server returned them. Rows left without a
+ * substitute stay, behind the ones that run, so the row keeps its size.
+ *
+ * Nothing here drops a row, and ranking drops none either, so the picks row is
+ * empty only when the server returned nothing.
+ */
+function substituteUnrunnable(row: FeaturedModel[], candidates: FeaturedModel[]): FeaturedModel[] {
+    const unrunnable = row.filter(isUnrunnable);
+    const taken = new Set(row.map((m) => m.hf_repo));
+    const substitutes: FeaturedModel[] = [];
+    for (const m of candidates) {
+        if (substitutes.length >= unrunnable.length) break;
+        if (taken.has(m.hf_repo) || !canSubstitute(m)) continue;
+        substitutes.push(m);
+        taken.add(m.hf_repo);
+    }
+    return [...row.filter((m) => !isUnrunnable(m)), ...substitutes, ...unrunnable.slice(substitutes.length)];
+}
+
 export class SetupWizard extends Modal {
     private plugin: LilbeePlugin;
     private step = 0;
@@ -232,12 +265,25 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("lilbee-wizard");
+        // Obsidian renders Settings in front of the workspace, so a wizard opened from there sits behind it.
+        closeSettings(this.app);
+        this.plugin.setupWizardOpen = true;
         this.renderStep();
     }
 
     onClose(): void {
         this.pullController?.abort();
         this.syncController?.abort();
+        this.plugin.setupWizardOpen = false;
+        void this.plugin.resumeDeferredAgentPicker();
+        if (!this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+    }
+
+    /** Records setup as complete: the point from which the plugin starts itself on the next launch. */
+    private async markServerReady(): Promise<void> {
+        if (this.plugin.settings.setupCompleted) return;
+        this.plugin.settings.setupCompleted = true;
+        await this.plugin.saveSettings();
     }
 
     private renderStep(): void {
@@ -441,12 +487,11 @@ export class SetupWizard extends Modal {
                 nextBtn.disabled = true;
                 void this.startManagedAndAdvance(step, panel, setPhase, statusEl, nextBtn, selectExternal);
             } else {
-                this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
-                this.plugin.settings.manualToken = String(tokenInput.value || "").trim();
-                this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
+                const url = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
+                const token = String(tokenInput.value || "").trim();
                 statusEl.setText(MESSAGES.STATUS_CHECKING_CONNECTION);
                 nextBtn.disabled = true;
-                void this.checkExternalAndAdvance(statusEl, nextBtn);
+                void this.checkExternalAndAdvance(url, token, statusEl, nextBtn);
             }
         });
     }
@@ -501,6 +546,7 @@ export class SetupWizard extends Modal {
                 return;
             }
             setPhase(MANAGED_PHASE.READY);
+            await this.markServerReady();
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
@@ -601,23 +647,31 @@ export class SetupWizard extends Modal {
         return { panel, setPhase };
     }
 
-    private async checkExternalAndAdvance(statusEl: HTMLElement, nextBtn: HTMLElement): Promise<void> {
-        try {
-            await this.plugin.saveSettings();
-            // Repoint the existing client at the new URL and hand it the token
-            // the user just pasted. Updating in-place keeps test mocks intact
-            // and avoids churning listeners keyed on the old instance.
-            this.plugin.api.setBaseUrl(this.plugin.settings.serverUrl);
-            this.plugin.api.setToken(this.plugin.settings.manualToken || null);
-            const result = await this.plugin.api.health();
-            if (result.isErr()) throw result.error;
-            statusEl.setText("");
-            this.step = WIZARD_STEP.MODEL_PICKER;
-            this.renderStep();
-        } catch {
+    /** Checks the typed URL and token before anything is persisted: saving stops a running managed server. */
+    private async checkExternalAndAdvance(
+        url: string,
+        token: string,
+        statusEl: HTMLElement,
+        nextBtn: HTMLElement,
+    ): Promise<void> {
+        const reachable = await LilbeeClient.probe(`${url}/api/health`, SERVER_PROBE_TIMEOUT_MS, token || null);
+        if (!reachable) {
             statusEl.setText(MESSAGES.ERROR_COULD_NOT_CONNECT_EXT);
             (nextBtn as HTMLButtonElement).disabled = false;
+            return;
         }
+
+        this.plugin.settings.serverUrl = url;
+        this.plugin.settings.manualToken = token;
+        this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
+        await this.plugin.saveSettings();
+        // Update the client in place; listeners are keyed on the instance.
+        this.plugin.api.setBaseUrl(url);
+        this.plugin.api.setToken(token || null);
+        await this.markServerReady();
+        statusEl.setText("");
+        this.step = WIZARD_STEP.MODEL_PICKER;
+        this.renderStep();
     }
 
     /**
@@ -703,63 +757,65 @@ export class SetupWizard extends Modal {
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
         this.primaryBtn = downloadBtn;
         downloadBtn.addEventListener("click", () => {
-            if (!this.selectedModel) {
+            const model = this.selectedModel;
+            if (!model) {
                 statusEl.setText(MESSAGES.WIZARD_SELECT_MODEL);
                 return;
             }
-            downloadBtn.disabled = true;
             statusEl.setText("");
+            if (model.installed) {
+                downloadBtn.disabled = true;
+                void this.useInstalledModel(model, downloadBtn, statusEl);
+                return;
+            }
+            downloadBtn.disabled = true;
             void this.pullSelectedModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
-        void this.loadFeaturedModels(modelsContainer, memGB, statusEl);
+        void this.loadFeaturedModels(modelsContainer, memGB, statusEl, downloadBtn);
     }
 
     private async loadFeaturedModels(
         container: HTMLElement,
         memGB: number | null,
         statusEl: HTMLElement,
+        downloadBtn: HTMLButtonElement,
     ): Promise<void> {
         try {
-            // The server's featured list is the source of truth for the
-            // wizard's "Our picks" row. Do NOT filter by `source` here — a
-            // mis-configured server can tag every featured model as
-            // `source="litellm"`, which would empty the grid and leave the
-            // user stuck. `pickNativeChatModels` just reorders so recognised
-            // open-weight families (Gemma, Qwen, Llama) lead.
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.CHAT,
                 featured: true,
                 sort: FILTERS.SORT.DOWNLOADS,
-                limit: 40,
+                limit: PICKS_CATALOG_LIMIT,
             });
             if (result.isErr()) {
                 this.featuredModels = [];
                 this.selectedModel = null;
                 this.renderCatalogFailure(container, statusEl, result.error.message, () => {
-                    void this.loadFeaturedModels(container, memGB, statusEl);
+                    void this.loadFeaturedModels(container, memGB, statusEl, downloadBtn);
                 });
                 return;
             }
-            this.featuredModels = pickNativeChatModels(result.value.models);
+            this.featuredModels = await this.replaceUnrunnablePicks(pickNativeChatModels(result.value.models));
         } catch (e) {
             this.featuredModels = [];
             this.selectedModel = null;
             this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
-                void this.loadFeaturedModels(container, memGB, statusEl);
+                void this.loadFeaturedModels(container, memGB, statusEl, downloadBtn);
             });
             return;
         }
         if (this.featuredModels.length === 0) {
             this.selectedModel = null;
             this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
-                void this.loadFeaturedModels(container, memGB, statusEl);
+                void this.loadFeaturedModels(container, memGB, statusEl, downloadBtn);
             });
             return;
         }
 
         const recommended = recommendedIndex(this.featuredModels, memGB);
         this.selectedModel = this.featuredModels[recommended];
+        this.setPrimaryActionLabel(downloadBtn, this.selectedModel);
 
         this.renderSectionHeading(container, MESSAGES.LABEL_OUR_PICKS);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
@@ -767,10 +823,22 @@ export class SetupWizard extends Modal {
         for (let i = 0; i < this.featuredModels.length; i++) {
             const entry = this.featuredModels[i];
             renderModelCard(grid, entry, {
-                isActive: i === recommended,
-                onClick: () => this.selectModel(grid, entry),
+                // Recommended, not active: the wizard does not know what the server has loaded.
+                isSelected: i === recommended,
+                onClick: () => this.selectModel(grid, entry, downloadBtn),
             });
         }
+    }
+
+    /** Trades the rows that will not run for the most popular ones that do. The wider catalog is read only when there is something to trade. */
+    private async replaceUnrunnablePicks(row: FeaturedModel[]): Promise<FeaturedModel[]> {
+        if (!row.some(isUnrunnable)) return row;
+        const result = await this.plugin.api.catalog({
+            task: MODEL_TASK.CHAT,
+            sort: FILTERS.SORT.DOWNLOADS,
+            limit: PICKS_CATALOG_LIMIT,
+        });
+        return substituteUnrunnable(row, result.isOk() ? result.value.models : []);
     }
 
     /** Say why the grid is empty and let the user try again without restarting
@@ -787,13 +855,41 @@ export class SetupWizard extends Modal {
         const retryBtn = container.createEl("button", { text: MESSAGES.BUTTON_RETRY });
         retryBtn.addEventListener("click", () => {
             statusEl.setText("");
+            // The failed load disabled the primary action; the retry needs it back.
+            if (this.primaryBtn) this.primaryBtn.disabled = false;
             retry();
         });
         if (this.primaryBtn) this.primaryBtn.disabled = true;
     }
 
-    private selectModel(grid: HTMLElement, model: FeaturedModel): void {
+    /** A model already on disk is set, not fetched again. */
+    private async useInstalledModel(
+        model: FeaturedModel,
+        downloadBtn: HTMLElement,
+        statusEl: HTMLElement,
+    ): Promise<void> {
+        const setResult = await this.plugin.api.setChatModel(model.hf_repo);
+        if (setResult.isErr()) {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
+            statusEl.setText(setResult.error.message);
+            (downloadBtn as HTMLButtonElement).disabled = false;
+            return;
+        }
+        this.plugin.activeModel = model.hf_repo;
+        void this.plugin.fetchActiveModel();
+        this.pulledModelName = model.display_name;
+        this.step = WIZARD_STEP.EMBEDDING_PICKER;
+        this.renderStep();
+    }
+
+    /** The primary action names what it will do: fetch a model, or use one already here. */
+    private setPrimaryActionLabel(btn: HTMLButtonElement, model: FeaturedModel): void {
+        btn.setText(model.installed ? MESSAGES.BUTTON_USE_CONTINUE : MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+    }
+
+    private selectModel(grid: HTMLElement, model: FeaturedModel, downloadBtn: HTMLButtonElement): void {
         this.selectedModel = model;
+        this.setPrimaryActionLabel(downloadBtn, model);
         for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
             if (el.dataset.repo === model.hf_repo) {
@@ -974,7 +1070,7 @@ export class SetupWizard extends Modal {
         for (let i = 0; i < this.embeddingModels.length; i++) {
             const entry = this.embeddingModels[i];
             renderModelCard(grid, entry, {
-                isActive: i === defaultIdx,
+                isSelected: i === defaultIdx,
                 onClick: () => this.selectEmbedding(grid, entry),
             });
         }
@@ -1280,9 +1376,11 @@ export class SetupWizard extends Modal {
 
     next(): void {
         if (this.step === WIZARD_STEP.WELCOME) {
+            // The client is only pointed at an external server once setup has completed.
             const serverReady =
                 this.plugin.serverManager?.state === SERVER_STATE.READY ||
-                this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
+                (this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL && this.plugin.settings.setupCompleted);
+            if (serverReady) void this.markServerReady();
             this.step = serverReady ? WIZARD_STEP.MODEL_PICKER : WIZARD_STEP.SERVER_MODE;
         } else {
             this.step++;

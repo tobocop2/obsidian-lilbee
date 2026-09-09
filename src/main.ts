@@ -345,7 +345,13 @@ export default class LilbeePlugin extends Plugin {
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
-    wikiEnabled = false;
+    get wikiEnabled(): boolean {
+        return this.settings.wikiEnabled;
+    }
+    /** True while the setup wizard owns the screen; nothing else may take the foreground. */
+    setupWizardOpen = false;
+    /** Set when agent pairing wanted the screen and the wizard had it. */
+    private agentPickerDeferred = false;
     wikiPageCount = 0;
     wikiDraftCount = 0;
     wikiSync: WikiSync | null = null;
@@ -375,7 +381,6 @@ export default class LilbeePlugin extends Plugin {
     async onload(): Promise<void> {
         this.registerErrorCapture();
         await this.loadSettings();
-        this.wikiEnabled = this.settings.wikiEnabled;
 
         // Sweep up status-bar items + ribbon icons that prior dead lilbee
         // instances left behind. Each crashed/incompletely-unloaded reload
@@ -908,6 +913,11 @@ export default class LilbeePlugin extends Plugin {
     /** Offer the picker the first time lilbee sees an agent CLI on this machine. */
     private async maybeShowAgentPicker(): Promise<void> {
         if (this.settings.agentIntegration.pickerShown) return;
+        // The wizard re-offers pairing on close, so this defers the question rather than dropping it.
+        if (this.setupWizardOpen) {
+            this.agentPickerDeferred = true;
+            return;
+        }
         const index = await this.api.getAgentConfigIndex();
         if (index.isErr()) return;
         const detections = index.value.clients;
@@ -921,13 +931,18 @@ export default class LilbeePlugin extends Plugin {
             await this.persistAgentIntegration();
             return;
         }
-        // An unremembered choice wires this session only, so the picker can return.
-        if (choice.remember) {
-            this.settings.agentIntegration.agent = choice.client;
-            this.settings.agentIntegration.pickerShown = true;
-            await this.persistAgentIntegration();
-        }
+        // Connecting answers the question; `remember` decides only whether the selection is kept.
+        this.settings.agentIntegration.pickerShown = true;
+        if (choice.remember) this.settings.agentIntegration.agent = choice.client;
+        await this.persistAgentIntegration();
         await this.applyAgentWiring(choice.client);
+    }
+
+    /** Offer the agent pairing the setup wizard pushed aside, now that it has the screen back. */
+    async resumeDeferredAgentPicker(): Promise<void> {
+        if (!this.agentPickerDeferred) return;
+        this.agentPickerDeferred = false;
+        await this.runAgentBoot();
     }
 
     /** Agent settings never change the server mode, so they skip saveSettings' restart logic. */
@@ -2225,7 +2240,6 @@ export default class LilbeePlugin extends Plugin {
         try {
             const wiki = await this.api.wikiStatus();
             if (wiki.isOk()) {
-                this.wikiEnabled = this.settings.wikiEnabled;
                 this.wikiPageCount = wiki.value.pages;
                 this.wikiDraftCount = wiki.value.drafts;
             }

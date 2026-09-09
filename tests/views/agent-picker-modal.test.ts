@@ -96,25 +96,25 @@ describe("AgentPickerModal", () => {
         expect(cards(root)[0].classList.contains("selected")).toBe(true);
     });
 
-    it("resolves with the selected agent and remembers by default", async () => {
+    it("resolves with the selected agent and wires the session only, unless asked to remember", async () => {
         const { root, result } = openPicker([detection(AGENT_CLIENT.OPENCODE, true)]);
         connectButton(root).trigger("click");
 
         expect(await result).toEqual({
             kind: AGENT_PICKER_RESULT.CONNECT,
             client: AGENT_CLIENT.OPENCODE,
-            remember: true,
+            remember: false,
         });
     });
 
-    it("wires the session only when the user unchecks remember", async () => {
+    it("stops asking only when the user checks remember", async () => {
         const { root, result } = openPicker([detection(AGENT_CLIENT.OPENCODE, true)]);
         const checkbox = root.find("lilbee-agent-picker-remember")?.children[0] as MockElement;
-        checkbox.checked = false;
+        checkbox.checked = true;
         checkbox.trigger("change");
         connectButton(root).trigger("click");
 
-        expect(await result).toMatchObject({ remember: false });
+        expect(await result).toMatchObject({ remember: true });
     });
 
     it("dismisses on Not now", async () => {

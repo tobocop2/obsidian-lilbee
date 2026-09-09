@@ -464,3 +464,31 @@ describe("renderModelCard", () => {
         });
     });
 });
+
+describe("renderModelCard selection vs active", () => {
+    it("isSelected highlights the card without claiming the model is active", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry(), { isSelected: true }) as unknown as MockElement;
+
+        expect(card.classList.contains("is-selected")).toBe(true);
+        const label = card.find("lilbee-model-card-status-label");
+        expect(label?.textContent).not.toBe(MESSAGES.LABEL_ACTIVE);
+    });
+
+    it("isSelected leaves an installed model reading INSTALLED", () => {
+        const c = container();
+        const entry = makeEntry({ installed: true });
+        const card = renderModelCard(c, entry, { isSelected: true }) as unknown as MockElement;
+
+        const label = card.find("lilbee-model-card-status-label");
+        expect(label?.textContent).toBe(MESSAGES.LABEL_INSTALLED);
+    });
+
+    it("isActive still claims the ACTIVE label", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry(), { isActive: true }) as unknown as MockElement;
+
+        const label = card.find("lilbee-model-card-status-label");
+        expect(label?.textContent).toBe(MESSAGES.LABEL_ACTIVE);
+    });
+});

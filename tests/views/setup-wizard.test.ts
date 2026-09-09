@@ -4,7 +4,7 @@ import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
 import { getSystemMemoryGB } from "../../src/utils";
 import * as utils from "../../src/utils";
-import { SessionTokenError } from "../../src/api";
+import { LilbeeClient, SessionTokenError } from "../../src/api";
 import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
 import { ok, err } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
@@ -34,6 +34,9 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         featured: true,
         downloads: 0,
         param_count: "0.6B",
+        // A live server reports fit and compat on every row; the picks filter requires both.
+        fit: "fits",
+        compat: "supported",
         ...overrides,
     };
 }
@@ -81,6 +84,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         startManagedServer: vi.fn().mockResolvedValue(undefined),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
+        resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
+        setupWizardOpen: false,
         ...overrides,
     };
     // Default consent gate: delegate to startManagedServer (so per-test
@@ -156,7 +161,7 @@ describe("SetupWizard", () => {
         });
 
         it("marks previous slots as is-done and current as is-active on step 2 (Model)", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -183,7 +188,7 @@ describe("SetupWizard", () => {
         });
 
         it("marks prior slots done and last slot active on done step (step 6)", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 6;
@@ -235,7 +240,7 @@ describe("SetupWizard", () => {
         });
 
         it("welcome locality hint reflects external mode when chosen", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
 
@@ -270,7 +275,7 @@ describe("SetupWizard", () => {
 
         it("Get started advances to model picker when server is ready (external mode)", () => {
             const plugin = makePlugin({
-                settings: { serverMode: "external" },
+                settings: { serverMode: "external", setupCompleted: true },
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -382,7 +387,10 @@ describe("SetupWizard", () => {
         });
 
         it("pre-selects external when settings have external mode", () => {
-            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "external" } });
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "external", setupCompleted: true },
+            });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 1;
@@ -697,7 +705,8 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
         });
 
-        it("external mode: Next checks health and advances", async () => {
+        it("external mode: Next checks the connection and advances", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(true);
             const plugin = makePlugin({
                 serverManager: null,
                 settings: { serverMode: "managed" },
@@ -716,17 +725,18 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            expect(plugin.api.health).toHaveBeenCalled();
+            expect(probe).toHaveBeenCalled();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+            probe.mockRestore();
         });
 
-        it("external mode: handles health check failure", async () => {
+        it("external mode: handles a server that does not answer", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(false);
             const plugin = makePlugin({
                 serverManager: null,
                 settings: { serverMode: "managed" },
             });
-            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("connection refused")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -742,6 +752,7 @@ describe("SetupWizard", () => {
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Could not connect"))).toBe(true);
+            probe.mockRestore();
         });
 
         it("Back returns to welcome", () => {
@@ -810,7 +821,7 @@ describe("SetupWizard", () => {
                     display_name: "Qwen3 4B",
                 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -829,7 +840,7 @@ describe("SetupWizard", () => {
                 makeEntry({ name: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 }),
                 makeEntry({ name: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -844,7 +855,7 @@ describe("SetupWizard", () => {
 
         it("renders 'Our picks' section heading", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -858,7 +869,7 @@ describe("SetupWizard", () => {
 
         it("renders model cards in grid layout", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -875,7 +886,7 @@ describe("SetupWizard", () => {
                 makeEntry({ hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 }),
                 makeEntry({ hf_repo: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -891,7 +902,7 @@ describe("SetupWizard", () => {
         });
 
         it("shows error when catalog fetch fails", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -907,7 +918,7 @@ describe("SetupWizard", () => {
 
         it("sets empty featured models when catalog returns error result", async () => {
             const { err } = await import("../../src/result");
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("server error")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -926,7 +937,7 @@ describe("SetupWizard", () => {
                     display_name: "Qwen3 0.6B",
                 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -940,7 +951,7 @@ describe("SetupWizard", () => {
         });
 
         it("Download & continue requires model selection", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse([]));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -957,7 +968,7 @@ describe("SetupWizard", () => {
 
         it("pull progress with no percent and no total skips update", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -987,7 +998,7 @@ describe("SetupWizard", () => {
         });
 
         it("an empty featured list says so instead of rendering nothing", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1010,7 +1021,7 @@ describe("SetupWizard", () => {
 
         it("a thrown catalog error reports its reason and retries", async () => {
             const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockRejectedValue(new Error("socket hang up"));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1031,7 +1042,7 @@ describe("SetupWizard", () => {
 
         it("a failed catalog load drops a selection made before it", async () => {
             const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1053,7 +1064,7 @@ describe("SetupWizard", () => {
         });
 
         it("disables the model step's action even when an embedding is selected", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("offline")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1069,7 +1080,7 @@ describe("SetupWizard", () => {
         });
 
         it("a failed catalog load says so and offers a retry", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1083,7 +1094,7 @@ describe("SetupWizard", () => {
 
         it("retrying a failed catalog load renders the models", async () => {
             const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("connection refused")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1103,7 +1114,7 @@ describe("SetupWizard", () => {
         });
 
         it("the download button is disabled while no model can be selected", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("offline")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1117,7 +1128,7 @@ describe("SetupWizard", () => {
 
         it("a failed download does not set the model or advance the step", async () => {
             const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1146,7 +1157,7 @@ describe("SetupWizard", () => {
 
         it("a failed embedding download does not set the model or advance the step", async () => {
             const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1171,7 +1182,7 @@ describe("SetupWizard", () => {
 
         it("pull progress with current/total computes percentage", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1202,7 +1213,7 @@ describe("SetupWizard", () => {
 
         it("Download & continue uses hf_repo for both pull and setChatModel", async () => {
             const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1241,7 +1252,7 @@ describe("SetupWizard", () => {
 
         it("Download & continue pulls model and advances to sync step", async () => {
             const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1292,7 +1303,7 @@ describe("SetupWizard", () => {
 
         it("handles pull failure", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1316,7 +1327,7 @@ describe("SetupWizard", () => {
 
         it("pull surfaces token-stale message when stream throws SessionTokenError", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1341,7 +1352,7 @@ describe("SetupWizard", () => {
 
         it("SSE_EVENT.ERROR during pull shows notice and updates status", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1364,7 +1375,7 @@ describe("SetupWizard", () => {
 
         it("SSE_EVENT.ERROR with string data during pull updates status", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1387,7 +1398,7 @@ describe("SetupWizard", () => {
 
         it("SSE_EVENT.ERROR with empty object during pull uses fallback message", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1410,7 +1421,7 @@ describe("SetupWizard", () => {
 
         it("handles pull abort", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const abortErr = new Error("aborted");
             abortErr.name = "AbortError";
@@ -1434,7 +1445,7 @@ describe("SetupWizard", () => {
         });
 
         it("Back from model picker always returns to server mode (gives users a way to switch)", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse([]));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1468,7 +1479,7 @@ describe("SetupWizard", () => {
         it("Browse full catalog button opens CatalogModal", async () => {
             const { CatalogModal } = await import("../../src/views/catalog-modal");
             const entries = [];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -1484,7 +1495,7 @@ describe("SetupWizard", () => {
 
         it("Back cancels ongoing pull", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             let abortSignal: AbortSignal | null = null;
             plugin.api.pullModel = vi
@@ -1517,7 +1528,7 @@ describe("SetupWizard", () => {
         });
 
         it("Skip setup aborts active pull and closes wizard", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi
                 .fn()
                 .mockResolvedValue(
@@ -1543,7 +1554,7 @@ describe("SetupWizard", () => {
 
     describe("Step 3: Sync", () => {
         it("renders sync screen and starts syncing", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 10 } };
@@ -1567,7 +1578,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders BATCH_PROGRESS percent and per-file status during initial sync", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             let labelAtBatch = "";
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
@@ -1596,7 +1607,7 @@ describe("SetupWizard", () => {
         });
 
         it("sync abort shows notice", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const abortErr = new Error("aborted");
             abortErr.name = "AbortError";
             plugin.api.syncStream = vi.fn().mockReturnValue(
@@ -1615,7 +1626,7 @@ describe("SetupWizard", () => {
         });
 
         it("sync surfaces token-stale message when stream throws SessionTokenError", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     throw new SessionTokenError(401, "stale");
@@ -1634,7 +1645,7 @@ describe("SetupWizard", () => {
         });
 
         it("sync failure shows error message", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     throw new Error("network");
@@ -1652,7 +1663,7 @@ describe("SetupWizard", () => {
         });
 
         it("SSE_EVENT.ERROR during sync sets progress label and shows indexing failed", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.ERROR, data: { message: "sync exploded" } };
@@ -1670,7 +1681,7 @@ describe("SetupWizard", () => {
         });
 
         it("SSE_EVENT.ERROR with string data during sync shows indexing failed", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.ERROR, data: "raw sync error" };
@@ -1688,7 +1699,7 @@ describe("SetupWizard", () => {
         });
 
         it("SSE_EVENT.ERROR with empty object during sync uses fallback message", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.ERROR, data: {} };
@@ -1706,7 +1717,7 @@ describe("SetupWizard", () => {
         });
 
         it("Back from sync cancels and returns to model picker", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             let abortSignal: AbortSignal | null = null;
             plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 abortSignal = signal ?? null;
@@ -1730,7 +1741,7 @@ describe("SetupWizard", () => {
 
         it("Skip setup aborts sync and closes wizard", async () => {
             let _abortSignal: AbortSignal | null = null;
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 _abortSignal = signal ?? null;
                 return (async function* () {
@@ -1754,7 +1765,7 @@ describe("SetupWizard", () => {
 
     describe("Step 4: Wiki", () => {
         it("renders wiki step with title, description, pros and cons", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1773,7 +1784,7 @@ describe("SetupWizard", () => {
         });
 
         it("presents the wiki as optional rather than experimental", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1785,7 +1796,7 @@ describe("SetupWizard", () => {
         });
 
         it("says the build is GPU heavy and blocks chat, both on the page and in the tooltip", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1805,7 +1816,7 @@ describe("SetupWizard", () => {
         });
 
         it("leaves the wiki off unless the enable card is chosen", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1820,7 +1831,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders enable and disable option cards", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1863,7 +1874,7 @@ describe("SetupWizard", () => {
         });
 
         it("clicking enable selects it and deselects disable", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1891,7 +1902,7 @@ describe("SetupWizard", () => {
         });
 
         it("Next saves wikiEnabled=true to settings when enabled", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1914,7 +1925,7 @@ describe("SetupWizard", () => {
         });
 
         it("Next saves wikiEnabled=false to settings when disabled", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1930,7 +1941,7 @@ describe("SetupWizard", () => {
         });
 
         it("Back returns to sync step", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     await new Promise(() => {});
@@ -1950,7 +1961,7 @@ describe("SetupWizard", () => {
         });
 
         it("Skip setup closes the wizard", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
@@ -1964,7 +1975,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders step indicator on wiki step", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1978,7 +1989,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders pros list items", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -1990,7 +2001,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders cons list items", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -2005,7 +2016,7 @@ describe("SetupWizard", () => {
 
     describe("Step 5: Done", () => {
         it("renders done screen with summary", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "qwen3:8b";
@@ -2028,7 +2039,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders done screen without model/sync info if skipped", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 6;
@@ -2040,7 +2051,7 @@ describe("SetupWizard", () => {
         });
 
         it("Open chat marks setup complete and opens chat view", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
@@ -2062,7 +2073,7 @@ describe("SetupWizard", () => {
         // stacks it on the settings surface. Leaving settings open hides the
         // chat view the button just opened.
         it("Open chat closes the settings surface", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const app = plugin.app as unknown as App;
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -2082,7 +2093,7 @@ describe("SetupWizard", () => {
         // Dismissing settings is best-effort on an undocumented API; opening chat is the promise the
         // button makes, so it must survive an Obsidian that no longer exposes the settings surface.
         it("Open chat still opens the chat view when the settings surface is gone", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             (plugin.app as unknown as App).setting = undefined;
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -2100,7 +2111,7 @@ describe("SetupWizard", () => {
         });
 
         it("shows tips about what to try", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 6;
@@ -2113,7 +2124,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders 'Setup complete' section heading inside summary card", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 6;
@@ -2128,7 +2139,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders summary in summary-card div", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "test-model";
@@ -2141,7 +2152,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders tips with icon spans", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 6;
@@ -2178,7 +2189,7 @@ describe("SetupWizard", () => {
         });
 
         it("back() at step 0 stays at step 0", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.back();
@@ -2188,7 +2199,7 @@ describe("SetupWizard", () => {
         });
 
         it("back() at step 4 (sync) goes to step 3 (embedding picker)", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -2200,7 +2211,7 @@ describe("SetupWizard", () => {
         });
 
         it("back() at step 6 (done) goes to step 5 (wiki)", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 6;
@@ -2215,7 +2226,7 @@ describe("SetupWizard", () => {
         it("aborts pull controller on close", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             let capturedSignal: AbortSignal | null = null;
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi
                 .fn()
@@ -2242,7 +2253,7 @@ describe("SetupWizard", () => {
 
         it("aborts sync controller on close", async () => {
             let capturedSignal: AbortSignal | null = null;
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 capturedSignal = signal ?? null;
                 return (async function* () {
@@ -2267,7 +2278,7 @@ describe("SetupWizard", () => {
                 makeEntry({ name: "qwen/qwen3-0.6B", min_ram_gb: 4 }),
                 makeEntry({ name: "qwen/qwen3-4B", min_ram_gb: 8 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -2284,7 +2295,7 @@ describe("SetupWizard", () => {
     describe("Full flow integration", () => {
         it("complete flow: welcome -> model -> embed -> sync -> wiki -> done", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
@@ -2573,7 +2584,7 @@ describe("SetupWizard", () => {
 
     describe("sync with zero total_files", () => {
         it("handles FILE_START with total_files=0 without division error", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 0, total_files: 0 } };
@@ -2597,7 +2608,7 @@ describe("SetupWizard", () => {
 
     describe("pullSelectedModel early return", () => {
         it("returns early when selectedModel is null", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             // Call pullSelectedModel directly with no selected model
@@ -2610,7 +2621,7 @@ describe("SetupWizard", () => {
 
         it("surfaces notice and keeps step when setChatModel returns err after successful pull", async () => {
             Notice.clear();
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
@@ -2637,7 +2648,7 @@ describe("SetupWizard", () => {
 
     describe("Step 3: Embedding Picker", () => {
         it("renders embedding picker step", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -2650,7 +2661,7 @@ describe("SetupWizard", () => {
         });
 
         it("back from embedding picker goes to model picker and aborts pull", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -2672,7 +2683,7 @@ describe("SetupWizard", () => {
         });
 
         it("skip button closes wizard and aborts pull if running", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
@@ -2692,7 +2703,7 @@ describe("SetupWizard", () => {
         });
 
         it("download & continue with no selection advances to sync step", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
@@ -2724,7 +2735,7 @@ describe("SetupWizard", () => {
                     installed: true,
                 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
@@ -2758,7 +2769,7 @@ describe("SetupWizard", () => {
                     installed: true,
                 }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("activate fail")));
             plugin.api.syncStream = vi.fn().mockReturnValue(
@@ -2784,7 +2795,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel early return when selectedEmbedding is null", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).selectedEmbedding = null;
@@ -2794,7 +2805,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles pull failure", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     throw new Error("network error");
@@ -2815,7 +2826,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel surfaces token-stale message on SessionTokenError", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     throw new SessionTokenError(401, "stale");
@@ -2838,7 +2849,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles AbortError", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     const e = new Error("abort");
@@ -2861,7 +2872,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel succeeds and sets embedding model", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
@@ -2888,7 +2899,7 @@ describe("SetupWizard", () => {
 
         it("pullEmbeddingModel surfaces notice and keeps step when setEmbeddingModel returns err", async () => {
             Notice.clear();
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
@@ -2913,7 +2924,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles progress with current/total", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
@@ -2939,7 +2950,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles progress with no percent and no total", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.PROGRESS, data: {} };
@@ -2965,7 +2976,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles SSE error with string data", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.ERROR, data: "raw string error" };
@@ -2991,7 +3002,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles SSE error event", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.ERROR, data: { message: "pull failed" } };
@@ -3017,7 +3028,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel handles SSE error with empty object", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.ERROR, data: {} };
@@ -3043,7 +3054,7 @@ describe("SetupWizard", () => {
         });
 
         it("selectEmbedding updates selection on grid", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             const grid = new MockElement("div") as unknown as HTMLElement;
@@ -3060,7 +3071,7 @@ describe("SetupWizard", () => {
         });
 
         it("loadEmbeddingModels reports an empty list and retries", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3080,7 +3091,7 @@ describe("SetupWizard", () => {
         });
 
         it("loadEmbeddingModels retries after an isErr result", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("gateway timeout")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3100,7 +3111,7 @@ describe("SetupWizard", () => {
         });
 
         it("loadEmbeddingModels handles catalog error", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3122,7 +3133,7 @@ describe("SetupWizard", () => {
         });
 
         it("loadEmbeddingModels handles catalog isErr result", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("fail")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3137,7 +3148,7 @@ describe("SetupWizard", () => {
                 makeEntry({ name: "nomic-embed-text", hf_repo: "nomic/nomic-embed-text", task: "embedding" }),
                 makeEntry({ name: "bge-small", hf_repo: "bge/bge-small", task: "embedding" }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3166,7 +3177,7 @@ describe("SetupWizard", () => {
                 makeEntry({ name: "nomic-embed-text", hf_repo: "nomic/nomic-embed-text", task: "embedding" }),
                 makeEntry({ name: "bge-small", hf_repo: "bge/bge-small", task: "embedding" }),
             ];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -3197,7 +3208,7 @@ describe("SetupWizard", () => {
 
     describe("sync with FILE_START progress update", () => {
         it("updates progress bar during sync", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 3, total_files: 10 } };
@@ -3223,7 +3234,7 @@ describe("SetupWizard", () => {
 
     describe("done screen with processed files count", () => {
         it("shows files processed when sync result has additions", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "test-model";
@@ -3244,7 +3255,7 @@ describe("SetupWizard", () => {
         });
 
         it("does not show files processed when no additions or updates", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).syncResult = {
@@ -3268,7 +3279,7 @@ describe("SetupWizard", () => {
         // The step container gets a semantic data-step attribute that drives
         // per-step CSS (rail color, badge color, progress accent).
         it("tags the step container with its semantic data-step key", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
@@ -3299,7 +3310,7 @@ describe("SetupWizard", () => {
         });
 
         it("renders a step header badge with tabular step number + uppercase label", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 2;
@@ -3324,7 +3335,7 @@ describe("SetupWizard", () => {
         });
 
         it("adds the hero rail to every rendered step", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
@@ -3348,7 +3359,7 @@ describe("SetupWizard", () => {
     describe("progress panel", () => {
         function setupModelPickerActive() {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             // pullModel returns a no-yield async iterator so the method resolves quickly.
             plugin.api.pullModel = vi.fn().mockReturnValue({
@@ -3416,7 +3427,7 @@ describe("SetupWizard", () => {
         });
 
         it("sync step progress fill starts out indeterminate", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             // Block forever so the sync step stays on screen.
             plugin.api.syncStream = vi.fn().mockReturnValue({
                 async *[Symbol.asyncIterator]() {
@@ -3458,7 +3469,7 @@ describe("SetupWizard", () => {
 
     describe("Wiki step disclosure", () => {
         it("nests pros and cons inside a <details> tradeoffs element", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -3473,7 +3484,7 @@ describe("SetupWizard", () => {
         });
 
         it("uses the localised tradeoffs summary label", () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 5;
@@ -3489,7 +3500,7 @@ describe("SetupWizard", () => {
         it("model picker omits the RAM banner when system memory is unknown", async () => {
             const spy = vi.spyOn(utils, "getSystemMemoryGB").mockReturnValue(null);
             try {
-                const plugin = makePlugin({ settings: { serverMode: "external" } });
+                const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
                 plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
                 const wizard = new SetupWizard(plugin.app as any, plugin as any);
                 wizard.open();
@@ -3505,7 +3516,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullSelectedModel ignores SSE events that are neither progress nor error", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.DONE, data: {} };
@@ -3528,7 +3539,7 @@ describe("SetupWizard", () => {
         });
 
         it("pullEmbeddingModel ignores SSE events that are neither progress nor error", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.DONE, data: {} };
@@ -3557,7 +3568,7 @@ describe("SetupWizard", () => {
         });
 
         it("sync EMBED event without a file name leaves the label unchanged", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.EMBED, data: {} };
@@ -3579,7 +3590,7 @@ describe("SetupWizard", () => {
         });
 
         it("sync that ends without a DONE event still advances and leaves syncResult unset", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 1 } };
@@ -3595,6 +3606,613 @@ describe("SetupWizard", () => {
             expect((wizard as any).syncResult ?? null).toBeNull();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
+        });
+    });
+
+    describe("Setup is complete once a server answers", () => {
+        it("managed: records setup as complete when the server reaches ready", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("managed: leaves setup incomplete when the server never starts", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                ensureManagedConsentThenStart: vi.fn().mockResolvedValue({ kind: "canceled" }),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.setupCompleted).toBe(false);
+        });
+
+        it("external: records setup as complete once the server answers", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(true);
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[1].trigger("click");
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+            probe.mockRestore();
+        });
+
+        it("skipping after the server is up keeps the plugin configured", async () => {
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+            wizard.skip();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(false);
+        });
+
+        it("records setup when welcome skips the server step on a running managed server", () => {
+            const plugin = makePlugin({
+                serverManager: { state: "ready" },
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.next();
+
+            expect(plugin.settings.setupCompleted).toBe(true);
+        });
+
+        it("sends a stored external preference to the server step, not past it", () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "external", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.next();
+
+            // Until setup completes the plugin has not pointed its client at a
+            // server, so the model step could not load anything.
+            expect((wizard as any).step).toBe(WIZARD_STEP.SERVER_MODE);
+            expect(plugin.settings.setupCompleted).toBe(false);
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+        });
+
+        it("re-running setup on a configured vault does not rewrite the flag", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: true },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+        });
+
+        it("says what an early exit costs when no server was ever chosen", () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.skip();
+
+            expect(plugin.settings.setupCompleted).toBe(false);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(true);
+        });
+    });
+
+    describe("External mode is checked before it is persisted", () => {
+        it("keeps the working configuration when the external server does not answer", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(false);
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[1].trigger("click");
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.settings.serverMode).toBe("managed");
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+            expect(plugin.api.setBaseUrl).not.toHaveBeenCalled();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Could not connect"))).toBe(true);
+            probe.mockRestore();
+        });
+
+        it("probes the typed URL and token, not the stored ones", async () => {
+            const probe = vi.spyOn(LilbeeClient, "probe").mockResolvedValue(true);
+            const plugin = makePlugin({ serverManager: null, settings: { serverMode: "managed" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[1].trigger("click");
+            const inputs = el.findAll("lilbee-wizard-url-input");
+            inputs[0].value = "http://10.0.0.4:9000";
+            inputs[1].value = "tok-abc";
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(probe).toHaveBeenCalledWith("http://10.0.0.4:9000/api/health", expect.any(Number), "tok-abc");
+            expect(plugin.settings.serverUrl).toBe("http://10.0.0.4:9000");
+            expect(plugin.settings.manualToken).toBe("tok-abc");
+            expect(plugin.settings.serverMode).toBe("external");
+            probe.mockRestore();
+        });
+    });
+
+    describe("Retrying a failed catalog load", () => {
+        it("gives the primary action back when the retry succeeds", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi
+                .fn()
+                .mockResolvedValueOnce(err(new Error("connection refused")))
+                .mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === MESSAGES.BUTTON_DOWNLOAD_CONTINUE)!;
+            expect(downloadBtn.disabled).toBe(true);
+
+            findButtons(el)
+                .find((b) => b.textContent === MESSAGES.BUTTON_RETRY)!
+                .trigger("click");
+            await tick();
+
+            expect(downloadBtn.disabled).toBe(false);
+        });
+    });
+
+    describe("Our picks is curated", () => {
+        it("keeps a model the host cannot run for the row to substitute", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "a/huge", display_name: "Huge", fit: "wont_run" }),
+                makeEntry({ hf_repo: "a/small", display_name: "Small", fit: "fits" }),
+            ]);
+
+            // Ranking does not drop rows. The row replaces them, and keeps them when nothing replaces them.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["a/huge", "a/small"]);
+        });
+
+        it("keeps a model the server says it cannot load for the row to substitute", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Weird-Arch", display_name: "Weird", compat: "unsupported" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
+            ]);
+
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF", "x/Weird-Arch"]);
+        });
+
+        it("keeps a model the picks row has no opinion about beyond fit", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Qwen3-27B-Uncensored", display_name: "Qwen3 27B Uncensored", fit: "fits" }),
+            ]);
+
+            // Fit is the only rule. Content is not judged by matching names.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["x/Qwen3-27B-Uncensored"]);
+        });
+
+        it("the row is never empty when the server returned models", async () => {
+            // Every criterion fails and the wider catalog cannot answer: the row a substitute cannot replace stands.
+            const refused = makeEntry({
+                hf_repo: "org/Refused-A",
+                display_name: "Refused A",
+                fit: "wont_run",
+                compat: "unsupported",
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi
+                .fn()
+                .mockResolvedValueOnce(ok(makeCatalogResponse([refused])))
+                .mockResolvedValue(err(new Error("backfill unavailable")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect((wizard as any).featuredModels.map((m: CatalogEntry) => m.hf_repo)).toEqual(["org/Refused-A"]);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes(MESSAGES.WIZARD_NO_MODELS_OFFERED))).toBe(false);
+        });
+
+        it("keeps a model whose compat the server has not judged", () => {
+            const unknown = makeEntry({ hf_repo: "org/Unjudged-7B", display_name: "Unjudged 7B", fit: "fits" });
+            delete (unknown as { compat?: unknown }).compat;
+            const unsupported = makeEntry({
+                hf_repo: "org/Refused-7B",
+                display_name: "Refused 7B",
+                fit: "fits",
+                compat: "unsupported",
+            });
+
+            const picks = pickNativeChatModels([unknown, unsupported]);
+
+            // Ranking keeps every row it was given. What counts as refused is asserted where it is applied,
+            // in "substitutes only the row the server refused".
+            expect(picks.map((m) => m.hf_repo)).toEqual(["org/Unjudged-7B", "org/Refused-7B"]);
+        });
+
+        it("keeps a model whose fit the server did not report", () => {
+            const known = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B", fit: "fits" });
+            const unknown = makeEntry({ hf_repo: "org/Mystery-70B", display_name: "Mystery 70B" });
+            delete (unknown as { fit?: unknown }).fit;
+
+            const picks = pickNativeChatModels([unknown, known]);
+
+            // Ranking keeps every row it was given, ordered by family preference. Whether an unreported
+            // fit costs a row its place is asserted in "keeps a row whose fit the server did not report".
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF", "org/Mystery-70B"]);
+        });
+    });
+
+    describe("The picks row substitutes what will not run", () => {
+        function catalogRow(i: number): CatalogEntry {
+            return makeEntry({ hf_repo: `org/Other-${i}-GGUF`, display_name: `Other ${i}`, featured: false });
+        }
+
+        function splitCatalog(featured: CatalogEntry[], wider: CatalogEntry[] | Error) {
+            return vi.fn((params?: { featured?: boolean }) => {
+                if (params?.featured) return Promise.resolve(ok(makeCatalogResponse(featured)));
+                if (wider instanceof Error) return Promise.resolve(err(wider));
+                return Promise.resolve(ok(makeCatalogResponse(wider)));
+            });
+        }
+
+        async function openPicksStep(catalog: ReturnType<typeof vi.fn>) {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = catalog;
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+            return { plugin, el: wizard.contentEl as unknown as MockElement };
+        }
+
+        function renderedRepos(el: MockElement): (string | undefined)[] {
+            return el.findAll("lilbee-model-card").map((c) => c.dataset.repo);
+        }
+
+        function featuredRow(size: number): CatalogEntry[] {
+            return Array.from({ length: size }, (_, i) => makeEntry({ hf_repo: `f/${i}`, display_name: `F ${i}` }));
+        }
+
+        it("replaces the rows that will not run with the most popular ones that do", async () => {
+            const featured = featuredRow(6).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+                makeEntry({ hf_repo: "f/weird", display_name: "Weird", compat: "unsupported" }),
+            );
+            const wider = [
+                ...featured,
+                catalogRow(0),
+                makeEntry({ hf_repo: "w/huge", display_name: "Wider huge", fit: "wont_run", featured: false }),
+                catalogRow(1),
+                catalogRow(2),
+            ];
+
+            const { plugin, el } = await openPicksStep(splitCatalog(featured, wider));
+
+            const repos = renderedRepos(el);
+            expect(repos.length).toBe(8);
+            expect(new Set(repos).size).toBe(8);
+            expect(repos).toEqual([...featuredRow(6).map((m) => m.hf_repo), "org/Other-0-GGUF", "org/Other-1-GGUF"]);
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
+        });
+
+        it("asks only for the featured list when every row runs", async () => {
+            const featured = featuredRow(8);
+
+            const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+
+            expect(renderedRepos(el)).toEqual(featured.map((m) => m.hf_repo));
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+        });
+
+        it("asks only for the featured list when the server reported no fits", async () => {
+            const featured = featuredRow(3).map((m) => {
+                delete (m as { fit?: unknown }).fit;
+                return m;
+            });
+
+            const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+
+            // An unknown fit is not a refusal, so there is nothing to replace and nothing to fetch.
+            expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/2"]);
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+        });
+
+        it("substitutes only the row the server refused", async () => {
+            const unjudged = makeEntry({ hf_repo: "f/unjudged", display_name: "Unjudged", fit: "fits" });
+            delete (unjudged as { compat?: unknown }).compat;
+            const refused = makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" });
+            const candidate = makeEntry({ hf_repo: "w/unjudged", display_name: "Wider unjudged", featured: false });
+            delete (candidate as { compat?: unknown }).compat;
+
+            const { el } = await openPicksStep(splitCatalog([unjudged, refused], [candidate, catalogRow(0)]));
+
+            // An unjudged compat costs a row nothing, on the row itself and on what may replace one.
+            expect(renderedRepos(el)).toEqual(["f/unjudged", "w/unjudged"]);
+        });
+
+        it("keeps a row whose fit the server did not report", async () => {
+            const unreported = makeEntry({ hf_repo: "f/unreported", display_name: "Unreported" });
+            delete (unreported as { fit?: unknown }).fit;
+            const refused = makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" });
+            const candidate = makeEntry({ hf_repo: "w/unreported", display_name: "Wider unreported", featured: false });
+            delete (candidate as { fit?: unknown }).fit;
+
+            const { el } = await openPicksStep(splitCatalog([unreported, refused], [candidate, catalogRow(0)]));
+
+            // An unreported fit costs a row nothing either. Only a reported wont_run is replaced.
+            expect(renderedRepos(el)).toEqual(["f/unreported", "w/unreported"]);
+        });
+
+        it("does not substitute a frontier model whose key is missing", async () => {
+            const featured = featuredRow(1).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+            const needsKey = makeEntry({
+                hf_repo: "openai/gpt-5",
+                display_name: "GPT-5",
+                source: "frontier",
+                provider: "openai",
+                key_status: "missing_key",
+                featured: false,
+                installed: true,
+            });
+            delete (needsKey as { fit?: unknown }).fit;
+
+            const { el } = await openPicksStep(splitCatalog(featured, [needsKey, catalogRow(0)]));
+
+            // The user cannot use it without a key they have not set, so it is not offered in its place.
+            expect(renderedRepos(el)).toEqual(["f/0", "org/Other-0-GGUF"]);
+        });
+
+        it("substitutes a hosted model the user can already use", async () => {
+            const featured = featuredRow(1).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+            const ready = makeEntry({
+                hf_repo: "ollama/qwen3:4b",
+                display_name: "Qwen3 4B",
+                source: "ollama",
+                provider: "ollama",
+                key_status: null,
+                featured: false,
+                installed: true,
+            });
+            delete (ready as { fit?: unknown }).fit;
+
+            const { el } = await openPicksStep(splitCatalog(featured, [ready, catalogRow(0)]));
+
+            // A local server needs no key, so hosted rows are not excluded as a class.
+            expect(renderedRepos(el)).toEqual(["f/0", "ollama/qwen3:4b"]);
+        });
+
+        it("keeps a row it cannot replace when the wider catalog cannot be read", async () => {
+            const featured = featuredRow(2).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+
+            const { el } = await openPicksStep(splitCatalog(featured, new Error("connection refused")));
+
+            expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
+            expect(findButtons(el).some((b) => b.textContent === MESSAGES.BUTTON_RETRY)).toBe(false);
+        });
+
+        it("keeps a row it cannot replace when the wider catalog offers nothing that runs", async () => {
+            const featured = featuredRow(2).concat(
+                makeEntry({ hf_repo: "f/huge", display_name: "Huge", fit: "wont_run" }),
+            );
+            const wider = [
+                ...featured,
+                makeEntry({ hf_repo: "w/huge", display_name: "Wider huge", fit: "wont_run", featured: false }),
+            ];
+
+            const { el } = await openPicksStep(splitCatalog(featured, wider));
+
+            expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
+        });
+    });
+
+    describe("An installed chat model is used, not re-downloaded", () => {
+        it("sets the model and advances without pulling", async () => {
+            const entry = makeEntry({
+                hf_repo: "Liquid/LFM2.5-2.6B-GGUF",
+                display_name: "LFM2.5 2.6B",
+                installed: true,
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([entry])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("Liquid/LFM2.5-2.6B-GGUF");
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("embedding"))).toBe(true);
+        });
+
+        it("keeps the user on the step when the server refuses to set the installed model", async () => {
+            const entry = makeEntry({
+                hf_repo: "Liquid/LFM2.5-2.6B-GGUF",
+                display_name: "LFM2.5 2.6B",
+                installed: true,
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([entry])));
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("model is not loadable")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const useBtn = findButtons(el).find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(useBtn.disabled).toBe(false);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("model is not loadable"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("LFM2.5 2.6B"))).toBe(true);
+        });
+
+        it("labels the action Download & continue for a model that is not on disk", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const labels = findButtons(el).map((b) => b.textContent);
+            expect(labels).toContain(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+            expect(labels).not.toContain(MESSAGES.BUTTON_USE_CONTINUE);
+        });
+
+        it("does not paint the recommended card as the server's active model", async () => {
+            const entry = makeEntry({
+                hf_repo: "Liquid/LFM2.5-2.6B-GGUF",
+                display_name: "LFM2.5 2.6B",
+                installed: true,
+            });
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([entry])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const label = el.find("lilbee-model-card-status-label");
+            expect(label?.textContent).toBe(MESSAGES.LABEL_INSTALLED);
+        });
+    });
+
+    describe("Wiki step", () => {
+        it("turns the wiki on for the running plugin, not only on disk", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: false } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.WIKI;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            el.findAll("lilbee-wizard-model-option")[0].trigger("click");
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+
+            expect(plugin.settings.wikiEnabled).toBe(true);
+        });
+    });
+
+    describe("Agent picker never covers the wizard", () => {
+        it("marks the plugin as showing setup while the wizard is open", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+
+            wizard.open();
+            expect(plugin.setupWizardOpen).toBe(true);
+
+            wizard.close();
+            expect(plugin.setupWizardOpen).toBe(false);
+        });
+
+        it("re-offers the pairing it pushed aside once the wizard closes", () => {
+            const plugin = makePlugin({
+                settings: { serverMode: "external", setupCompleted: true },
+                resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.close();
+
+            expect(plugin.resumeDeferredAgentPicker).toHaveBeenCalled();
         });
     });
 });

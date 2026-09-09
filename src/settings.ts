@@ -76,10 +76,10 @@ import {
     noticeServerUnreachableIfApplicable,
     openPluginSettingsById,
     renderExternalLink,
+    SERVER_PROBE_TIMEOUT_MS,
     setDeterminateProgress,
 } from "./utils";
 
-const CHECK_TIMEOUT_MS = 5000;
 /** GitHub's unauthenticated releases API allows 60 requests/hour per IP, so renders share one fetch. */
 const RELEASES_CACHE_TTL_MS = 10 * 60 * 1000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -3199,7 +3199,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.wikiEnabled);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.wikiEnabled = value;
-                    this.plugin.wikiEnabled = value;
                     await this.plugin.saveSettings();
                     this.showWikiSubSettings(value);
                 });
@@ -3501,7 +3500,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         statusEl.empty();
         statusEl.classList.remove("lilbee-health-ok", "lilbee-health-error");
         const dot = statusEl.createDiv({ cls: "lilbee-health-dot" });
-        const ok = await LilbeeClient.probe(url, CHECK_TIMEOUT_MS, this.plugin.readCurrentToken());
+        const ok = await LilbeeClient.probe(url, SERVER_PROBE_TIMEOUT_MS, this.plugin.readCurrentToken());
         dot.classList.add(ok ? "is-ok" : "is-error");
         statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
     }
