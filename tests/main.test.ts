@@ -7,6 +7,8 @@ import {
     CHAT_STATUS,
     DEFAULT_SHARED_CONFIG,
     INDETERMINATE_PROGRESS,
+    LOGS_DIR,
+    LOG_FILE,
     SETUP_OUTCOME,
     SSE_EVENT,
     SYNC_TRIGGER,
@@ -8892,8 +8894,129 @@ describe("LilbeePlugin", () => {
             );
             await plugin.configureManagedStorage();
             const messages = Notice.instances.map((n) => n.message);
-            expect(messages.some((m) => m.startsWith(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED))).toBe(true);
+            expect(messages.some((m) => m.includes("Could not move lilbee storage."))).toBe(true);
             expect(messages.some((m) => m.includes("disk full"))).toBe(true);
+            // The server never answered, so there is no refusal to remember.
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+            expect(messages.some((m) => m.includes("will not try again"))).toBe(false);
+        });
+
+        it("shows the server's own reason and the server log instead of the status code", async () => {
+            const updateConfig = vi
+                .fn()
+                .mockRejectedValue(new Error('Server responded 500: {"detail":"the target folder is read-only"}'));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            const message = Notice.instances.map((n) => n.message).find((m) => m.includes("Could not move"));
+            expect(message).toContain("the target folder is read-only");
+            expect(message).toContain(`${LOGS_DIR}/${LOG_FILE.SERVER}`);
+            expect(message).not.toContain("500");
+        });
+
+        it("drops a status line that carries no reason and still names the server log", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("Server responded 500: Internal server error"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            const message = Notice.instances.map((n) => n.message).find((m) => m.includes("Could not move"));
+            expect(message).not.toContain("500");
+            expect(message).toContain(`${LOGS_DIR}/${LOG_FILE.SERVER}`);
+        });
+
+        it("names the data directory generically when the registry is unavailable", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("Server responded 500: nope"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            (plugin as any).vaultRegistry = null;
+            await plugin.configureManagedStorage();
+            const message = Notice.instances.map((n) => n.message).find((m) => m.includes("Could not move"));
+            expect(message).toContain(LOG_FILE.SERVER);
+            expect(message).toContain("data directory");
+        });
+
+        it("does not re-send the move at the next start after a failure", async () => {
+            const updateConfig = vi
+                .fn()
+                .mockRejectedValue(new Error('Server responded 500: {"detail":"the move failed"}'));
+            const serverConfig = { documents_dir: "/old/docs", vault_base: null };
+            const first = await setupConfiguredPlugin(
+                {},
+                { config: vi.fn().mockResolvedValue(serverConfig), updateConfig },
+            );
+            await first.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+
+            const persisted = (first.saveData as any).mock.calls.at(-1)[0] as Record<string, unknown>;
+            expect(persisted.rejectedStorageMove).toEqual({
+                documentsDir: "/test/vault/lilbee",
+                vaultBase: "/test/vault",
+            });
+
+            Notice.clear();
+            const second = await setupConfiguredPlugin(persisted, {
+                config: vi.fn().mockResolvedValue(serverConfig),
+                updateConfig,
+            });
+            await second.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("re-sends the move when the wanted documents dir changes", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { rejectedStorageMove: { documentsDir: "/somewhere/else", vaultBase: "/test/vault" } },
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("re-sends the move when the wanted vault base changes", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { rejectedStorageMove: { documentsDir: "/test/vault/lilbee", vaultBase: "/other/vault" } },
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("forgets a refused layout once a move succeeds", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                { rejectedStorageMove: { documentsDir: "/somewhere/else", vaultBase: null } },
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+            const persisted = (plugin.saveData as any).mock.calls.at(-1)[0] as Record<string, unknown>;
+            expect(persisted.rejectedStorageMove).toBeNull();
         });
 
         it("returns silently when fetching current config fails", async () => {

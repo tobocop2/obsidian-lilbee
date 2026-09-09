@@ -854,6 +854,20 @@ describe("LilbeeSettingTab", () => {
             expect((plugin as any).configureManagedStorage).toHaveBeenCalled();
         });
 
+        it("clears a refused layout so the move is tried again", async () => {
+            const plugin = makePlugin({
+                serverMode: "managed",
+                storeContentInVault: false,
+                rejectedStorageMove: { documentsDir: "/test/vault/lilbee", vaultBase: "/test/vault" },
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)!(true);
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+        });
+
         it("is disabled and marks the row in external mode", async () => {
             const plugin = makePlugin({ serverMode: "external", storeContentInVault: true });
             mockChatPicker(plugin);

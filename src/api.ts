@@ -5,6 +5,7 @@ import {
     OCTET_STREAM_HEADERS,
     REQUEST_OUTCOME,
     SEARCH_CHUNK_TYPE,
+    SERVER_STATUS_PREFIX,
     SSE_EVENT,
     ERROR_NAME,
 } from "./types";
@@ -124,7 +125,7 @@ export class RateLimitedError extends Error {
  * failure) can branch on the status without a bespoke error type per route.
  */
 export function isHttpStatus(error: Error, status: number): boolean {
-    return error.message.startsWith(`Server responded ${status}`);
+    return error.message.startsWith(`${SERVER_STATUS_PREFIX} ${status}`);
 }
 
 /**
@@ -245,7 +246,7 @@ export class LilbeeClient {
         }
         if (!res.ok) {
             const text = await res.text().catch(() => "");
-            throw new Error(`Server responded ${res.status}: ${text}`);
+            throw new Error(`${SERVER_STATUS_PREFIX} ${res.status}: ${text}`);
         }
         return res;
     }
@@ -351,11 +352,11 @@ export class LilbeeClient {
                     this.recordOutcome(REQUEST_OUTCOME.SERVER_ERROR);
                     throw err;
                 }
-                if (err instanceof Error && err.message.startsWith("Server responded")) {
+                if (err instanceof Error && err.message.startsWith(SERVER_STATUS_PREFIX)) {
                     // A 4xx is a reachable server rejecting this request (validation,
                     // not-found, conflict) that the caller handles — don't flag a
                     // global server error. Only 5xx flips the status to error.
-                    const status = parseInt(err.message.slice("Server responded ".length), 10);
+                    const status = parseInt(err.message.slice(SERVER_STATUS_PREFIX.length + 1), 10);
                     this.recordOutcome(status >= 500 ? REQUEST_OUTCOME.SERVER_ERROR : REQUEST_OUTCOME.OK);
                     throw err;
                 }

@@ -10,7 +10,11 @@ import {
     SERVER_VARIANT,
     type ServerVariant,
     type WorkerRole,
+    LOG_FILE,
 } from "../types";
+
+/** The toggle a user flips to move lilbee content in or out of the vault. */
+const STORE_CONTENT_IN_VAULT_LABEL = "Store lilbee content in vault";
 
 /** How each server build is named in Settings and notices. */
 const SERVER_BUILD_LABEL: Record<ServerVariant, string> = {
@@ -284,12 +288,24 @@ export const MESSAGES = {
         "Reset every server-backed setting to its default? API keys and local plugin preferences are preserved.",
     BUTTON_RESET_ALL: "Reset all",
     LABEL_ADVANCED: "Advanced",
-    LABEL_STORE_CONTENT_IN_VAULT: "Store lilbee content in vault",
+    LABEL_STORE_CONTENT_IN_VAULT: STORE_CONTENT_IN_VAULT_LABEL,
     DESC_STORE_CONTENT_IN_VAULT:
         "Materialize crawled pages and imported files inside your vault so you can browse them in Obsidian. Disabled for external servers — their files live on the server machine, not your computer.",
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
-    NOTICE_STORAGE_REORGANIZE_FAILED: "Could not move lilbee storage into your vault: ",
+    NOTICE_STORAGE_REORGANIZE_FAILED: (reason: string | null, logPath: string | null, willRetry: boolean): string =>
+        [
+            "Could not move lilbee storage.",
+            reason,
+            logPath === null
+                ? `Check ${LOG_FILE.SERVER} in the lilbee data directory.`
+                : `Check the server log at ${logPath}.`,
+            willRetry
+                ? null
+                : `lilbee will not try again until you toggle "${STORE_CONTENT_IN_VAULT_LABEL}" in settings.`,
+        ]
+            .filter((part): part is string => part !== null)
+            .join(" "),
     NOTICE_TAKE_OVER_SUCCESS: (vaultName: string): string => `lilbee switched from "${vaultName}" to this vault.`,
     NOTICE_TAKE_OVER_DECLINED: (vaultName: string): string =>
         `lilbee stays with "${vaultName}". This vault will run without managed lilbee until you take over or close the other vault.`,

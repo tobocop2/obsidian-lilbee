@@ -496,6 +496,9 @@ export const SERVER_MODE = {
     EXTERNAL: "external",
 } as const satisfies Record<string, ServerMode>;
 
+/** How the API client opens the message it throws for a non-ok response. */
+export const SERVER_STATUS_PREFIX = "Server responded";
+
 /** Three-way result of the managed-mode consent modal. */
 export type ManagedConsentResultKind = "download" | "external" | "cancel";
 
@@ -652,6 +655,12 @@ export const DEFAULT_AGENT_INTEGRATION: AgentIntegrationSettings = {
 /** Below this the agent runs out of room mid-task, so the settings row warns. */
 export const AGENT_MIN_CONTEXT_TOKENS = 20_000;
 
+/** Where the plugin wants the managed server to keep content. */
+export interface StorageMoveTarget {
+    documentsDir: string;
+    vaultBase: string | null;
+}
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -670,6 +679,12 @@ export interface LilbeeSettings {
      * external servers keep their own documents_dir.
      */
     storeContentInVault: boolean;
+    /**
+     * The storage layout the server refused. While it still matches the layout
+     * the plugin wants, no move is sent, so a failure is not retried at every
+     * start. Cleared when either value changes or the user flips the toggle.
+     */
+    rejectedStorageMove: StorageMoveTarget | null;
     lastCatalogTab: CatalogTab;
     /**
      * Filesystem root that holds the shared lilbee binary, models cache, and
@@ -709,6 +724,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiVaultFolder: "lilbee-wiki",
     manualToken: "",
     storeContentInVault: true,
+    rejectedStorageMove: null,
     lastCatalogTab: "discover",
     sharedRoot: "",
     reasoningDefaulted: false,

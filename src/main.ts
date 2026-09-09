@@ -40,12 +40,14 @@ import {
     CAPABILITY,
     ERROR_NAME,
     LOGS_DIR,
+    LOG_FILE,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
     MODEL_TASK,
     REQUEST_OUTCOME,
     SERVER_MODE,
     SERVER_STATE,
+    SERVER_STATUS_PREFIX,
     SETUP_OUTCOME,
     SSE_EVENT,
     SYNC_TRIGGER,
@@ -68,6 +70,7 @@ import {
     type SetupOutcome,
     type ServerState,
     type ServerVariant,
+    type StorageMoveTarget,
     type SetupDonePayload,
     type SetupProgressPayload,
     type SetupStartPayload,
@@ -90,6 +93,7 @@ import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
+    extractServerErrorDetail,
     extractSseErrorMessage,
     formatDiskSize,
     isVersionOlder,
@@ -930,22 +934,24 @@ export default class LilbeePlugin extends Plugin {
         this.refreshSettingsTab();
     }
 
-    /**
-     * Tell the managed server to store content under the vault.
-     *
-     * PATCHes ``documents_dir`` to ``<vault>/lilbee`` and ``vault_base`` to the
-     * vault root. Server performs a locked relocation if paths changed, then
-     * stamps ``vault_path`` on every Source response so chat-chip clicks can
-     * deep-link into the local editor. No-op when the toggle is off, the
-     * server is external, or the current values already match.
-     */
-    /** Where the managed server keeps content when it is not stored in the vault. */
-    private serverOwnedDocumentsDir(): string | null {
+    /** This vault's server data directory, or null before the registry loads. */
+    private ownDataDir(): string | null {
         const registry = this.vaultRegistry;
-        if (!registry) return null;
-        return node.join(registry.resolveDataDir(this.vaultId), "documents");
+        return registry ? registry.resolveDataDir(this.vaultId) : null;
     }
 
+    /** Where the managed server keeps content when it is not stored in the vault. */
+    private serverOwnedDocumentsDir(): string | null {
+        const dataDir = this.ownDataDir();
+        return dataDir === null ? null : node.join(dataDir, "documents");
+    }
+
+    /**
+     * Tell the managed server where to keep content: under the vault, or in its
+     * own data directory. The server relocates what is already there. No-op when
+     * the server is external, when the current values already match, or when the
+     * server has already refused this same layout.
+     */
     async configureManagedStorage(): Promise<void> {
         if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
 
@@ -956,8 +962,21 @@ export default class LilbeePlugin extends Plugin {
         const storeInVault = this.settings.storeContentInVault;
         const vaultBase = this.getVaultBasePath();
         const desiredDocsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();
-        const desiredVaultBase = storeInVault ? vaultBase : null;
         if (desiredDocsDir === null) return;
+        const target: StorageMoveTarget = {
+            documentsDir: desiredDocsDir,
+            vaultBase: storeInVault ? vaultBase : null,
+        };
+
+        const refused = this.settings.rejectedStorageMove;
+        if (
+            refused !== null &&
+            refused.documentsDir === target.documentsDir &&
+            refused.vaultBase === target.vaultBase
+        ) {
+            this.journal.lifecycle("storage move skipped: the server already refused this layout");
+            return;
+        }
 
         let current: Record<string, unknown>;
         try {
@@ -969,24 +988,44 @@ export default class LilbeePlugin extends Plugin {
 
         const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
         const currentVault = typeof current.vault_base === "string" ? current.vault_base : null;
-        if (currentDocs === desiredDocsDir && currentVault === desiredVaultBase) {
+        if (currentDocs === target.documentsDir && currentVault === target.vaultBase) {
             return;
         }
 
         const notice = new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZING, NOTICE_PERMANENT);
         try {
             await this.api.updateConfig({
-                documents_dir: desiredDocsDir,
-                vault_base: desiredVaultBase,
+                documents_dir: target.documentsDir,
+                vault_base: target.vaultBase,
             });
             notice.hide();
+            this.settings.rejectedStorageMove = null;
+            await this.persistAll();
             new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZED);
         } catch (err) {
             notice.hide();
-            const detail = errorMessage(err, String(err));
-            new Notice(`${MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED}${detail}`, NOTICE_ERROR_DURATION_MS);
-            console.error("[lilbee] storage reorganisation failed", err);
+            await this.reportStorageMoveFailure(target, err);
         }
+    }
+
+    /** Say why a move failed, and remember a layout the server itself refused. */
+    private async reportStorageMoveFailure(target: StorageMoveTarget, err: unknown): Promise<void> {
+        // An unanswered request is not a refusal: remembering it would strand
+        // the user on a blip that the next start would have got past.
+        const message = errorMessage(err, String(err));
+        const refused = message.startsWith(SERVER_STATUS_PREFIX);
+        if (refused) {
+            this.settings.rejectedStorageMove = target;
+            await this.persistAll();
+        }
+
+        // A status line is not a reason. Show the server's own detail when it
+        // has one, otherwise point at the log that does.
+        const reason = refused ? extractServerErrorDetail(message) : message;
+        const dataDir = this.ownDataDir();
+        const logPath = dataDir === null ? null : node.join(dataDir, LOGS_DIR, LOG_FILE.SERVER);
+        new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED(reason, logPath, !refused), NOTICE_ERROR_DURATION_MS);
+        console.error("[lilbee] storage reorganisation failed", err);
     }
 
     /** True when the shared bin dir holds a server binary this vault can run. */

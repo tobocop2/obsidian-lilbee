@@ -2864,6 +2864,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.setDisabled(this.plugin.settings.serverMode !== SERVER_MODE.MANAGED);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.storeContentInVault = value;
+                    // Flipping the toggle is the way out of a refused move.
+                    this.plugin.settings.rejectedStorageMove = null;
                     await this.plugin.saveSettings();
                     // Both directions move content; off is not a no-op.
                     void this.plugin.configureManagedStorage();
