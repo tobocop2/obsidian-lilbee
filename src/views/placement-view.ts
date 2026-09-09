@@ -207,6 +207,9 @@ export class PlacementView extends ItemView {
         this.bodyEl.empty();
         this.renderHeader(this.bodyEl, data);
         this.renderNotice(this.bodyEl, data.notice ?? null);
+        if (data.rejected_spec_json) {
+            this.bodyEl.createDiv({ cls: "lilbee-placement-spec-ignored", text: MESSAGES.PLACEMENT_SPEC_IGNORED });
+        }
         if (data.gpus.length < 2) {
             this.renderSingleDevice(this.bodyEl, data);
         } else {
@@ -221,6 +224,8 @@ export class PlacementView extends ItemView {
         if (this.mode === PLACEMENT_MODE.MANUAL) {
             return this.isEdited(data) ? MESSAGES.PLACEMENT_STATE_EDITED : MESSAGES.PLACEMENT_STATE_MANUAL;
         }
+        // The plan in force is auto, but a saved spec is sitting rejected behind it.
+        if (data.rejected_spec_json) return MESSAGES.PLACEMENT_STATE_SPEC_IGNORED;
         return MESSAGES.PLACEMENT_STATE_AUTO;
     }
 

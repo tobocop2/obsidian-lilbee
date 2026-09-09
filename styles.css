@@ -4366,7 +4366,8 @@ button.lilbee-model-chip-select:focus-visible {
     padding: 28px 0;
     text-align: center;
 }
-.lilbee-placement-notice {
+.lilbee-placement-notice,
+.lilbee-placement-spec-ignored {
     margin: 0 0 var(--size-4-2, 8px);
     padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
     border-left: 3px solid var(--text-warning);

@@ -75,6 +75,12 @@ function multiManual(): PlacementResponse {
     return { ...multi(), manual: true, spec_json: '{"chat":{"devices":[0,1]}}' };
 }
 
+// GET /api/placement when a saved spec no longer fits: the server reports the auto
+// plan (manual false, spec_json null) and hands back the spec it refused to apply.
+function multiSpecRejected(): PlacementResponse {
+    return { ...multi(), rejected_spec_json: '{"chat":{"devices":[0,1,2]}}' };
+}
+
 function noGpu(): PlacementResponse {
     return {
         gpus: [],
@@ -214,6 +220,37 @@ describe("PlacementView multi-GPU (auto)", () => {
         expect(Notice.instances.map((n) => n.message)).toContain(
             'Click "Edit manually" first to change GPU placement.',
         );
+    });
+});
+
+describe("PlacementView rejected saved placement", () => {
+    it("says the saved placement is being ignored instead of reporting plain auto", async () => {
+        const { contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiSpecRejected())) })),
+        );
+        const banner = contentEl.find("lilbee-placement-spec-ignored");
+        expect(banner).not.toBeNull();
+        expect(banner!.textContent).toBe(
+            "A saved manual placement does not fit this hardware, so auto placement is running instead. " +
+                "The saved placement stays and applies again once the hardware fits it. " +
+                "Clear it or save a new one if you do not want it back.",
+        );
+        expect(contentEl.find("lilbee-placement-state")!.textContent).toBe("auto, manual ignored");
+    });
+
+    it("renders no banner and a plain auto state when no saved placement was rejected", async () => {
+        const { contentEl } = await openView(makePlugin(makeApi()));
+        expect(contentEl.find("lilbee-placement-spec-ignored")).toBeNull();
+        expect(contentEl.find("lilbee-placement-state")!.textContent).toBe("auto");
+    });
+
+    it("drops the banner once the saved placement is cleared", async () => {
+        const api = makeApi({ placement: vi.fn().mockResolvedValue(ok(multiSpecRejected())) });
+        const { view, contentEl } = await openView(makePlugin(api));
+        expect(contentEl.find("lilbee-placement-spec-ignored")).not.toBeNull();
+        (view as unknown as { mode: string }).mode = "manual";
+        await (view as unknown as { runReset: () => Promise<void> }).runReset();
+        expect(contentEl.find("lilbee-placement-spec-ignored")).toBeNull();
     });
 });
 

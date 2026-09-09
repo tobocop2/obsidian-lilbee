@@ -347,6 +347,12 @@ export interface SyncDone {
     held_out: SkippedSource[];
 }
 
+/** An add stream's terminal summary: the sync it ran, plus the add-only outcomes. */
+export interface AddDone extends SyncDone {
+    /** Sources the knowledge base already tracks, so nothing was registered. Needs no user action. */
+    tracked: string[];
+}
+
 /** Recovery options for a sync. Both default off (a plain incremental sync). */
 export interface SyncOptions {
     /** Drop the whole index and re-embed every document from scratch. */
@@ -1359,6 +1365,9 @@ export interface PlacementResponse {
     unplaceable: string[];
     manual: boolean;
     spec_json: string | null;
+    /** A saved manual spec this hardware no longer satisfies. The auto plan runs, the spec
+     *  stays saved and reapplies once it fits again. Absent on older servers. */
+    rejected_spec_json?: string | null;
     /** Host-level fix instruction, present only when GPU monitoring is degraded. */
     notice?: GpuNotice;
 }

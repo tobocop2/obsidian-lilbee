@@ -75,6 +75,7 @@ import {
     type SetupProgressPayload,
     type SetupStartPayload,
     INDETERMINATE_PROGRESS,
+    type AddDone,
     type SyncDone,
     type SSEEvent,
     type WarmProgress,
@@ -162,7 +163,7 @@ function formatSetupDetail(downloaded: number, total: number | null): string {
     return MESSAGES.STATUS_TASK_SETUP_PROGRESS.replace("{downloaded}", dlMB).replace("{total}", totalMB);
 }
 
-function summarizeSyncResult(done: SyncDone): string {
+function summarizeSyncResult(done: AddDone): string {
     const parts: string[] = [];
     if (done.added.length > 0) parts.push(`${done.added.length} added`);
     if (done.updated.length > 0) parts.push(`${done.updated.length} updated`);
@@ -170,6 +171,7 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
+    if (done.tracked.length > 0) parts.push(`${done.tracked.length} already tracked`);
     return parts.join(", ");
 }
 
@@ -238,13 +240,14 @@ export class FileProgressTracker {
     }
 }
 
-export function parseAddDoneEvent(data: unknown): SyncDone | null {
+export function parseAddDoneEvent(data: unknown): AddDone | null {
     if (!data || typeof data !== "object") return null;
     const obj = data as Record<string, unknown>;
-    if (obj.sync && typeof obj.sync === "object") {
-        return coerceSyncDone(obj.sync as Record<string, unknown>);
-    }
-    return coerceSyncDone(obj);
+    // `tracked` sits on the add envelope beside `sync`, never inside it.
+    const tracked = Array.isArray(obj.tracked) ? (obj.tracked as string[]) : [];
+    const sync = obj.sync && typeof obj.sync === "object" ? (obj.sync as Record<string, unknown>) : obj;
+    const done = coerceSyncDone(sync);
+    return done === null ? null : { ...done, tracked };
 }
 
 function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
@@ -2514,7 +2517,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         const total = files.length;
-        const merged: SyncDone = {
+        const merged: AddDone = {
             added: [],
             updated: [],
             removed: [],
@@ -2522,6 +2525,7 @@ export default class LilbeePlugin extends Plugin {
             failed: [],
             skipped: [],
             held_out: [],
+            tracked: [],
         };
         let done = 0;
         for (const batch of batches) {
@@ -2535,6 +2539,7 @@ export default class LilbeePlugin extends Plugin {
                         merged.failed.push(...parsed.failed);
                         merged.skipped.push(...parsed.skipped);
                         merged.held_out.push(...parsed.held_out);
+                        merged.tracked.push(...parsed.tracked);
                         merged.unchanged += parsed.unchanged;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {
@@ -2578,7 +2583,7 @@ export default class LilbeePlugin extends Plugin {
 
         try {
             const progress = new FileProgressTracker();
-            let syncResult: SyncDone | null = null;
+            let syncResult: AddDone | null = null;
             const controller = this.syncController;
             const rawStream = makeStream
                 ? makeStream(controller.signal)
@@ -3222,7 +3227,7 @@ export default class LilbeePlugin extends Plugin {
 
         try {
             const progress = new FileProgressTracker();
-            let syncResult: SyncDone | null = null;
+            let syncResult: AddDone | null = null;
             const controller = this.syncController;
             const rawStream = this.api.syncStream(controller.signal, options);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {

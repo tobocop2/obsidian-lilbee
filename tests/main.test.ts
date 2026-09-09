@@ -713,6 +713,7 @@ describe("LilbeePlugin", () => {
                             failed: [],
                             skipped: [],
                             held_out: [{ filename: `${batch[0].name}.pdf`, reason: "no text extracted" }],
+                            tracked: [`${batch[0].name}.tracked`],
                         },
                     };
                 })(),
@@ -734,6 +735,9 @@ describe("LilbeePlugin", () => {
                 "f0.py.pdf",
                 "f90.py.pdf",
             ]);
+            // Every batch's tracked names survive the merge; the sibling path must
+            // not drop what the single-request path reports.
+            expect(dones[0].data.tracked).toEqual(["f0.py.tracked", "f90.py.tracked"]);
         });
 
         it("uploadInBatches ignores an unparseable done from a batch", async () => {
@@ -2673,6 +2677,46 @@ describe("LilbeePlugin", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("adding test.md"))).toBe(true);
             expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(true);
+        });
+
+        it("addToLilbee reports already-tracked sources as their own outcome, not as failures", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            // The real /api/add terminal frame: tracked lives on the AddSummary
+            // envelope, beside the nested sync summary, not inside it.
+            async function* trackedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: [],
+                        skipped: [],
+                        tracked: ["notes"],
+                        errors: [],
+                        sync: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 3,
+                            relocated: [],
+                            failed: [],
+                            skipped: [],
+                            held_out: [],
+                            truncated: 0,
+                        },
+                        already_ingesting: [],
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(trackedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            const summary = Notice.instances.map((n) => n.message).find((m) => m.includes("already tracked"));
+            expect(summary).toBe("lilbee: 1 already tracked");
+            expect(summary).not.toContain("failed");
+            expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(false);
         });
 
         it("addToLilbee falls back to path when name is undefined", async () => {
@@ -4697,6 +4741,7 @@ describe("LilbeePlugin", () => {
                 failed: ["d"],
                 skipped: ["e"],
                 held_out: [{ filename: "f", reason: "no text extracted" }],
+                tracked: [],
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -4708,13 +4753,16 @@ describe("LilbeePlugin", () => {
                 failed: [],
                 skipped: [],
                 held_out: [],
+                tracked: [],
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
+            // `tracked` sits on the envelope, not inside `sync`.
             expect(
                 parseAddDoneEvent({
                     copied: [],
                     skipped: [],
+                    tracked: ["already-there"],
                     errors: [],
                     sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [], skipped: ["z.pdf"] },
                 }),
@@ -4726,6 +4774,7 @@ describe("LilbeePlugin", () => {
                 failed: [],
                 skipped: ["z.pdf"],
                 held_out: [],
+                tracked: ["already-there"],
             });
 
             // Malformed inputs return null.

@@ -1235,6 +1235,11 @@ export const MESSAGES = {
     PLACEMENT_STATE_MANUAL: "manual",
     PLACEMENT_STATE_EDITED: "edited",
     PLACEMENT_STATE_APPLYING: "applying…",
+    PLACEMENT_STATE_SPEC_IGNORED: "auto, manual ignored",
+    PLACEMENT_SPEC_IGNORED:
+        "A saved manual placement does not fit this hardware, so auto placement is running instead. " +
+        "The saved placement stays and applies again once the hardware fits it. " +
+        "Clear it or save a new one if you do not want it back.",
     PLACEMENT_AUTO_MANAGED: "Auto-managed. The planner balances roles across your hardware.",
     PLACEMENT_EDIT: "Edit manually",
     PLACEMENT_PREVIEW: "Preview",
