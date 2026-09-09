@@ -1377,14 +1377,14 @@ export class SetupWizard extends Modal {
 
     next(): void {
         if (this.step === WIZARD_STEP.WELCOME) {
+            // External mode is usable only once setup has completed, because
+            // that is when the plugin points its client at the server. Before
+            // then the stored mode is a preference, and skipping the server
+            // step lands on a model step that cannot load anything.
             const serverReady =
                 this.plugin.serverManager?.state === SERVER_STATE.READY ||
-                this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
-            // Only a managed server that reached READY has actually answered.
-            // `serverMode === EXTERNAL` is a stored preference: the consent
-            // modal writes it before setup completes, so treating it as proof
-            // would record setup with no server behind it.
-            if (this.plugin.serverManager?.state === SERVER_STATE.READY) void this.markServerReady();
+                (this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL && this.plugin.settings.setupCompleted);
+            if (serverReady) void this.markServerReady();
             this.step = serverReady ? WIZARD_STEP.MODEL_PICKER : WIZARD_STEP.SERVER_MODE;
         } else {
             this.step++;
