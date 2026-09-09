@@ -633,8 +633,9 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
+    /** Streams a sync. Always prunes the sources a .lilbeeignore excludes. */
     async *syncStream(signal?: AbortSignal, options?: SyncOptions): AsyncGenerator<SSEEvent, void> {
-        const body: Record<string, unknown> = {};
+        const body: Record<string, unknown> = { prune_ignored: true };
         if (options?.forceRebuild) body.force_rebuild = true;
         if (options?.retrySkipped) body.retry_skipped = true;
         const res = await this.fetchWithRetry(
