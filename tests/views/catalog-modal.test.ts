@@ -696,6 +696,31 @@ describe("CatalogModal", () => {
             modal.close();
         });
 
+        it("restarts the result set when a scroll lands a new search term before the debounce", async () => {
+            const plugin = makePlugin();
+            const first = makeEntry({ display_name: "A" });
+            const second = makeEntry({ display_name: "B" });
+            plugin.api.catalog
+                .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first], has_more: true }))
+                .mockResolvedValueOnce(ok({ total: 1, limit: 1, offset: 0, models: [second], has_more: false }));
+            const modal = await openModal(plugin);
+            const search = contentEl(modal).find("lilbee-catalog-search")! as unknown as {
+                value: string;
+                trigger(event: string): void;
+            };
+            search.value = "qwen";
+            search.trigger("input");
+
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
+            await tick();
+            await tick();
+
+            expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ search: "qwen", offset: 0 }));
+            expect(((modal as any).entries as CatalogEntry[]).map((e) => e.display_name)).toEqual(["B"]);
+            modal.close();
+        });
+
         it("does not fetch when scrolling is not near the bottom", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(

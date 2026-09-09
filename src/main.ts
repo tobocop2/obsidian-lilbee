@@ -17,7 +17,7 @@ import {
     reloadClaudian,
     type AgentWireOutcome,
 } from "./agent-integration";
-import { LilbeeClient, SessionTokenError } from "./api";
+import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from "./api";
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
@@ -47,7 +47,6 @@ import {
     REQUEST_OUTCOME,
     SERVER_MODE,
     SERVER_STATE,
-    SERVER_STATUS_PREFIX,
     SETUP_OUTCOME,
     SSE_EVENT,
     SYNC_TRIGGER,
@@ -949,52 +948,53 @@ export default class LilbeePlugin extends Plugin {
         return dataDir === null ? null : node.join(dataDir, "documents");
     }
 
-    /**
-     * Tell the managed server where to keep content: under the vault, or in its
-     * own data directory. The server relocates what is already there. No-op when
-     * the server is external, when the current values already match, or when the
-     * server has already refused this same layout.
-     */
+    /** Tell the managed server where to keep content: under the vault, or in its own data dir. */
     async configureManagedStorage(): Promise<void> {
         if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
-
-        // Off is a real destination, not a no-op: leaving documents_dir inside
-        // the vault means content keeps landing there after the user opted out.
-        // The server refuses to reset this field (its default is a sentinel), so
-        // the way back is an explicit path to the server's own data dir.
-        const storeInVault = this.settings.storeContentInVault;
-        const vaultBase = this.getVaultBasePath();
-        const desiredDocsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();
-        if (desiredDocsDir === null) return;
-        const target: StorageMoveTarget = {
-            documentsDir: desiredDocsDir,
-            vaultBase: storeInVault ? vaultBase : null,
-        };
-
-        const refused = this.settings.rejectedStorageMove;
-        if (
-            refused !== null &&
-            refused.documentsDir === target.documentsDir &&
-            refused.vaultBase === target.vaultBase
-        ) {
+        const target = this.wantedStorageLayout();
+        if (target === null) return;
+        if (this.alreadyRefusedStorage(target)) {
             this.journal.lifecycle("storage move skipped: the server already refused this layout");
             return;
         }
+        if (await this.serverStorageMatches(target)) return;
+        await this.sendStorageMove(target);
+    }
 
+    /** The layout the plugin wants, or null while the data dir is unknown. */
+    private wantedStorageLayout(): StorageMoveTarget | null {
+        // The server refuses to reset documents_dir, so opting out names its data dir explicitly.
+        const storeInVault = this.settings.storeContentInVault;
+        const vaultBase = this.getVaultBasePath();
+        const documentsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();
+        if (documentsDir === null) return null;
+        return { documentsDir, vaultBase: storeInVault ? vaultBase : null };
+    }
+
+    /** True when the server already refused this exact layout. */
+    private alreadyRefusedStorage(target: StorageMoveTarget): boolean {
+        const refused = this.settings.rejectedStorageMove;
+        return (
+            refused !== null && refused.documentsDir === target.documentsDir && refused.vaultBase === target.vaultBase
+        );
+    }
+
+    /** True when the server already has this layout. An unreadable config counts as a match. */
+    private async serverStorageMatches(target: StorageMoveTarget): Promise<boolean> {
         let current: Record<string, unknown>;
         try {
             current = await this.api.config();
         } catch (err) {
             console.error("[lilbee] could not read server config for vault setup", err);
-            return;
+            return true;
         }
-
         const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
         const currentVault = typeof current.vault_base === "string" ? current.vault_base : null;
-        if (currentDocs === target.documentsDir && currentVault === target.vaultBase) {
-            return;
-        }
+        return currentDocs === target.documentsDir && currentVault === target.vaultBase;
+    }
 
+    /** Move the server's storage, clearing any remembered refusal once it lands. */
+    private async sendStorageMove(target: StorageMoveTarget): Promise<void> {
         const notice = new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZING, NOTICE_PERMANENT);
         try {
             await this.api.updateConfig({
@@ -1013,18 +1013,17 @@ export default class LilbeePlugin extends Plugin {
 
     /** Say why a move failed, and remember a layout the server itself refused. */
     private async reportStorageMoveFailure(target: StorageMoveTarget, err: unknown): Promise<void> {
-        // An unanswered request is not a refusal: remembering it would strand
-        // the user on a blip that the next start would have got past.
+        // Only a 4xx is a refusal; a 5xx or an unanswered request is retried next start.
         const message = errorMessage(err, String(err));
-        const refused = message.startsWith(SERVER_STATUS_PREFIX);
+        const answered = hasStatusLine(err);
+        const refused = isClientError(err);
         if (refused) {
             this.settings.rejectedStorageMove = target;
             await this.persistAll();
         }
 
-        // A status line is not a reason. Show the server's own detail when it
-        // has one, otherwise point at the log that does.
-        const reason = refused ? extractServerErrorDetail(message) : message;
+        // A status line is not a reason: show the server's detail when it answered.
+        const reason = answered ? extractServerErrorDetail(message) : message;
         const dataDir = this.ownDataDir();
         const logPath = dataDir === null ? null : node.join(dataDir, LOGS_DIR, LOG_FILE.SERVER);
         new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED(reason, logPath, !refused), NOTICE_ERROR_DURATION_MS);
@@ -1996,8 +1995,7 @@ export default class LilbeePlugin extends Plugin {
         if (health?.isOk()) {
             this.healthFailureStreak = 0;
             if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
-            // Only a reconnect refetches the model: a restarted server may be
-            // on a different one. A steady probe asks for health and nothing else.
+            // Only a reconnect refetches the model: a restarted server may be on a different one.
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
@@ -3052,10 +3050,7 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /**
-     * Download Playwright Chromium so the crawler can render with a browser.
-     * Resolves true when the server reports the component installed.
-     */
+    /** Download Chromium so the crawler can render with a browser. True once it is installed. */
     async installCrawlerBrowser(): Promise<boolean> {
         const taskId = this.taskQueue.enqueue(MESSAGES.TASK_CRAWLER_BROWSER_SETUP, TASK_TYPE.SETUP);
         if (taskId === null) {
@@ -3210,8 +3205,7 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
-        // One sync at a time. A user trigger reports the running one; an automatic one is
-        // carried to the next run, because nothing else re-issues it.
+        // One sync at a time: a user trigger reports the running one, an automatic one defers.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
             if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
             else this.deferredSync = { options };

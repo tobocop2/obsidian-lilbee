@@ -2462,6 +2462,22 @@ describe("setOutcomeCallback", () => {
         expect(outcomes).not.toContain("server_error");
     });
 
+    it("treats a status line with no number as reachable, not a server error", async () => {
+        fetchMock.mockRejectedValue(new Error("Server responded"));
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("ok");
+        expect(outcomes).not.toContain("server_error");
+    });
+
+    it("treats a status line with trailing junk as reachable, not a server error", async () => {
+        fetchMock.mockRejectedValue(new Error("Server respondedX"));
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("ok");
+        expect(outcomes).not.toContain("server_error");
+    });
+
     it("fires 'unreachable' when fetch keeps rejecting", async () => {
         fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
         const result = await client.health();
@@ -2615,6 +2631,7 @@ const PLACEMENT: PlacementResponse = {
     unplaceable: [],
     manual: false,
     spec_json: null,
+    rejected_spec_json: null,
 };
 
 describe("gpuStatsStream()", () => {

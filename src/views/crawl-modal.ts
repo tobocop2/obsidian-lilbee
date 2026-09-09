@@ -31,6 +31,45 @@ export class CrawlModal extends Modal {
         bindEscapeToClose(this);
     }
 
+    /** The Chromium install offer, shown only when the server cannot render with a browser. */
+    private renderBrowserSetup(contentEl: HTMLElement, browserInput: HTMLElement): void {
+        const browserSetup = contentEl.createDiv({ cls: "lilbee-crawl-browser-setup" });
+        browserSetup.createSpan({ text: MESSAGES.NOTICE_CRAWL_BROWSER_MISSING });
+        const installBtn = browserSetup.createEl("button", {
+            text: MESSAGES.BUTTON_INSTALL_CHROMIUM,
+            attr: { type: "button" },
+        });
+        browserSetup.hide();
+        installBtn.addEventListener("click", () => {
+            installBtn.disabled = true;
+            void this.plugin.installCrawlerBrowser().then((installed) => {
+                installBtn.disabled = false;
+                if (!installed) return;
+                asInput(browserInput).disabled = false;
+                asInput(browserInput).checked = true;
+                browserSetup.hide();
+            });
+        });
+
+        void this.applyBrowserCapability(browserInput, browserSetup);
+    }
+
+    /** Resolve both before touching the toggle: the sticky default must not re-check a disabled box. */
+    private async applyBrowserCapability(browserInput: HTMLElement, browserSetup: HTMLElement): Promise<void> {
+        const [cfg, browserReady] = await Promise.all([
+            this.plugin.api.config().catch(() => null),
+            this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER),
+        ]);
+        if (!browserReady) {
+            asInput(browserInput).disabled = true;
+            browserSetup.show();
+            return;
+        }
+        if (cfg !== null) {
+            asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
+        }
+    }
+
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
@@ -95,40 +134,7 @@ export class CrawlModal extends Modal {
         asInput(browserInput).checked = false;
         browserLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_USE_BROWSER });
 
-        const browserSetup = contentEl.createDiv({ cls: "lilbee-crawl-browser-setup" });
-        browserSetup.createSpan({ text: MESSAGES.NOTICE_CRAWL_BROWSER_MISSING });
-        const installBtn = browserSetup.createEl("button", {
-            text: MESSAGES.BUTTON_INSTALL_CHROMIUM,
-            attr: { type: "button" },
-        });
-        browserSetup.hide();
-        installBtn.addEventListener("click", () => {
-            installBtn.disabled = true;
-            void this.plugin.installCrawlerBrowser().then((installed) => {
-                installBtn.disabled = false;
-                if (!installed) return;
-                asInput(browserInput).disabled = false;
-                asInput(browserInput).checked = true;
-                browserSetup.hide();
-            });
-        });
-
-        // Resolve both before touching the toggle: the sticky default must not
-        // re-check a box that the missing Chromium just disabled.
-        void (async () => {
-            const [cfg, browserReady] = await Promise.all([
-                this.plugin.api.config().catch(() => null),
-                this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER),
-            ]);
-            if (!browserReady) {
-                asInput(browserInput).disabled = true;
-                browserSetup.show();
-                return;
-            }
-            if (cfg !== null) {
-                asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
-            }
-        })();
+        this.renderBrowserSetup(contentEl, browserInput);
 
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });

@@ -51,6 +51,7 @@ function single(): PlacementResponse {
         unplaceable: [],
         manual: false,
         spec_json: null,
+        rejected_spec_json: null,
     };
 }
 
@@ -68,6 +69,7 @@ function multi(): PlacementResponse {
         unplaceable: [],
         manual: false,
         spec_json: null,
+        rejected_spec_json: null,
     };
 }
 
@@ -88,6 +90,7 @@ function noGpu(): PlacementResponse {
         unplaceable: [],
         manual: false,
         spec_json: null,
+        rejected_spec_json: null,
     };
 }
 

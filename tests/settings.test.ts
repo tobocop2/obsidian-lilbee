@@ -4666,6 +4666,31 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
         });
 
+        it("fetches Chromium when browser render mode is chosen before the probe lands", async () => {
+            const plugin = makePlugin();
+            let releaseProbe = (): void => {};
+            const probed = new Promise<void>((resolve) => {
+                releaseProbe = resolve;
+            });
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) => {
+                if (cap !== "crawling_browser") return true;
+                await probed;
+                return false;
+            });
+            plugin.installCrawlerBrowser = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            // The user reaches the dropdown while the capability probe is still in flight.
+            const choice = captured.dropdownByName.get(MESSAGES.LABEL_CRAWL_RENDER_MODE)!("browser");
+            releaseProbe();
+            await choice;
+
+            expect(plugin.installCrawlerBrowser).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
         it("falls back to HTTP when the Chromium fetch fails", async () => {
             const plugin = makePlugin();
             (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
@@ -4697,7 +4722,15 @@ describe("managed mode settings", () => {
 
         it("accepts browser render mode after the Chromium install succeeds", async () => {
             const plugin = makePlugin();
-            (plugin.api as any).getCapability = vi.fn(async (cap: string) => cap !== "crawling_browser");
+            let chromium = false;
+            // The install invalidates the cached capability, so the next probe sees Chromium.
+            (plugin.api as any).getCapability = vi.fn(async (cap: string) =>
+                cap === "crawling_browser" ? chromium : true,
+            );
+            plugin.installCrawlerBrowser = vi.fn(async () => {
+                chromium = true;
+                return true;
+            });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());

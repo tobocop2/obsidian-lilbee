@@ -685,11 +685,7 @@ export interface LilbeeSettings {
      * external servers keep their own documents_dir.
      */
     storeContentInVault: boolean;
-    /**
-     * The storage layout the server refused. While it still matches the layout
-     * the plugin wants, no move is sent, so a failure is not retried at every
-     * start. Cleared when either value changes or the user flips the toggle.
-     */
+    /** The storage layout the server refused; no move is sent while it still matches. */
     rejectedStorageMove: StorageMoveTarget | null;
     lastCatalogTab: CatalogTab;
     /**
@@ -929,10 +925,17 @@ export interface WikiPagePayload {
 }
 
 export interface CrawlerStatusResponse {
-    installed?: boolean;
-    package_installed?: boolean;
-    chromium_installed?: boolean;
+    installed: boolean;
+    package_installed: boolean;
 }
+
+export type CrawlerStatusField = keyof CrawlerStatusResponse;
+
+/** `PACKAGE` is the bundled crawler package; `WITH_BROWSER` also requires Chromium. */
+export const CRAWLER_STATUS_FIELD = {
+    PACKAGE: "package_installed",
+    WITH_BROWSER: "installed",
+} as const satisfies Record<string, CrawlerStatusField>;
 
 export interface SetupStartPayload {
     component: string;
@@ -1365,9 +1368,8 @@ export interface PlacementResponse {
     unplaceable: string[];
     manual: boolean;
     spec_json: string | null;
-    /** A saved manual spec this hardware no longer satisfies. The auto plan runs, the spec
-     *  stays saved and reapplies once it fits again. Absent on older servers. */
-    rejected_spec_json?: string | null;
+    /** A saved manual spec this hardware no longer satisfies; it reapplies once it fits. */
+    rejected_spec_json: string | null;
     /** Host-level fix instruction, present only when GPU monitoring is degraded. */
     notice?: GpuNotice;
 }

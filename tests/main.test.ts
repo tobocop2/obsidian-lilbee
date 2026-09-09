@@ -30,7 +30,9 @@ import { ok, err } from "../src/result";
 vi.mock("../src/diagnostics-export", () => ({
     exportDiagnostics: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../src/api", () => ({
+vi.mock("../src/api", async (importOriginal) => ({
+    // The status helpers stay real: main.ts classifies a failed config PATCH with them.
+    ...(await importOriginal<typeof import("../src/api")>()),
     SessionTokenError: class SessionTokenError extends Error {
         readonly status: number;
         constructor(status: number, body: string) {
@@ -8987,10 +8989,52 @@ describe("LilbeePlugin", () => {
             expect(message).toContain("data directory");
         });
 
+        it("re-sends the move at the next start after the server answered 503", async () => {
+            const updateConfig = vi
+                .fn()
+                .mockRejectedValue(
+                    new Error('Server responded 503: {"detail":"Close the program that holds config.toml open."}'),
+                );
+            const serverConfig = { documents_dir: "/old/docs", vault_base: null };
+            const first = await setupConfiguredPlugin(
+                {},
+                { config: vi.fn().mockResolvedValue(serverConfig), updateConfig },
+            );
+            await first.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            expect(first.settings.rejectedStorageMove).toBeNull();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes("Close the program that holds config.toml open."))).toBe(true);
+            expect(messages.some((m) => m.includes("will not try again"))).toBe(false);
+
+            const second = await setupConfiguredPlugin(
+                { ...first.settings },
+                { config: vi.fn().mockResolvedValue(serverConfig), updateConfig },
+            );
+            await second.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledTimes(2);
+        });
+
+        it("does not remember a refusal when the status line carries no number", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("Server responded"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({ documents_dir: "/old/docs", vault_base: null }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(plugin.settings.rejectedStorageMove).toBeNull();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes("will not try again"))).toBe(false);
+        });
+
         it("does not re-send the move at the next start after a failure", async () => {
             const updateConfig = vi
                 .fn()
-                .mockRejectedValue(new Error('Server responded 500: {"detail":"the move failed"}'));
+                .mockRejectedValue(new Error('Server responded 422: {"detail":"the move failed"}'));
             const serverConfig = { documents_dir: "/old/docs", vault_base: null };
             const first = await setupConfiguredPlugin(
                 {},

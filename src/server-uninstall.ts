@@ -49,20 +49,12 @@ export function planUninstall(sharedRoot: string, vaultDataDir: string): Uninsta
 /** How long the stop may run before the child is killed and the uninstall goes on. */
 const ENGINE_STOP_TIMEOUT_MS = 15_000;
 
-/**
- * The binary's off switch for the shared engine, whoever started it. The data dir
- * names the vault whose private engine is stopped alongside the machine-wide one,
- * and it precedes the command because the server binds it on the root command.
- */
+/** Stop args for the shared engine; the data dir precedes the command, as the binary requires. */
 function engineStopArgs(vaultDataDir: string): string[] {
     return ["--data-dir", vaultDataDir, "engine", "stop"];
 }
 
-/**
- * Stop the shared engine, which outlives any one plugin process and holds the model
- * files open. A missing binary, one too old to know the command, and a stop past its
- * bound are all ignored.
- */
+/** Stop the shared engine, which holds the model files open. Every failure is ignored. */
 async function stopSharedEngine(sharedRoot: string, vaultDataDir: string): Promise<void> {
     const binary = new ServerBinary(sharedBinDir(sharedRoot)).installed();
     if (binary === null) return;
@@ -73,10 +65,7 @@ async function stopSharedEngine(sharedRoot: string, vaultDataDir: string): Promi
     }
 }
 
-/**
- * Stop the engine, then delete every planned path. Missing paths are not an error.
- * The order is the contract: deleting a file a live engine holds open fails on Windows.
- */
+/** Stop the engine before deleting: Windows cannot delete a file a live engine holds open. */
 export async function executeUninstall(plan: UninstallPlan, sharedRoot: string, vaultDataDir: string): Promise<void> {
     await stopSharedEngine(sharedRoot, vaultDataDir);
     for (const t of plan.targets) {
