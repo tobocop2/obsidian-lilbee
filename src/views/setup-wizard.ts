@@ -180,17 +180,11 @@ const SERVER_SETUP_PHASES: {
 ];
 
 /**
- * Rank the server's featured chat entries into the wizard's "Our picks" row.
+ * Ranks the server's featured chat entries into the wizard's picks row, keeping
+ * only those a first run should offer and leading with recognised families.
  *
- * Deliberately does NOT filter by `source`. When a server is mis-configured
- * and tags every featured model as `source="litellm"` (a known transient bug
- * in older builds), filtering on source emptied the wizard grid. The featured
- * list itself is the source of truth — the server has already decided these
- * are the models a fresh user should see. We just reorder them so recognised
- * open-weight families (Gemma, Qwen, Llama, Phi) lead.
- *
- * Callers that genuinely need to hide a subset (e.g. API-only entries in a
- * different UI) can pass a custom `filter` predicate.
+ * Never filters on `source`: a mis-configured server tags every featured model
+ * as one source, which empties the row.
  */
 export function pickNativeChatModels(
     models: FeaturedModel[],
