@@ -336,12 +336,6 @@ export default class LilbeePlugin extends Plugin {
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
-    /**
-     * One flag, read straight from the stored setting. It used to be a second
-     * field mirrored from `settings.wikiEnabled` by hand, and every writer that
-     * forgot the mirror left the wiki commands unregistered while chat was
-     * already asking for wiki content.
-     */
     get wikiEnabled(): boolean {
         return this.settings.wikiEnabled;
     }
@@ -910,8 +904,7 @@ export default class LilbeePlugin extends Plugin {
     /** Offer the picker the first time lilbee sees an agent CLI on this machine. */
     private async maybeShowAgentPicker(): Promise<void> {
         if (this.settings.agentIntegration.pickerShown) return;
-        // Pairing a coding agent is not part of setting up the vault. The
-        // wizard re-offers it on close, so the question is deferred, not dropped.
+        // The wizard re-offers pairing on close, so this defers the question rather than dropping it.
         if (this.setupWizardOpen) {
             this.agentPickerDeferred = true;
             return;
@@ -929,9 +922,7 @@ export default class LilbeePlugin extends Plugin {
             await this.persistAgentIntegration();
             return;
         }
-        // Connecting answers the question, so the picker does not come back.
-        // `remember` decides only whether the agent selection is kept, which is
-        // why it can default to off without the picker returning every start.
+        // Connecting answers the question; `remember` decides only whether the selection is kept.
         this.settings.agentIntegration.pickerShown = true;
         if (choice.remember) this.settings.agentIntegration.agent = choice.client;
         await this.persistAgentIntegration();

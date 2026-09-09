@@ -131,17 +131,11 @@ const PREFERRED_FAMILIES = [
 ];
 const MAX_FEATURED_PICKS = 8;
 
-/**
- * A model the wizard is willing to recommend on a first run: one that runs.
- *
- * Matches the server TUI's own picks rail, which is the oracle: supported, and
- * a known fit that is not wont_run. A missing fit is excluded rather than
- * allowed through, because an unknown size cannot be promised.
- */
+/** A first-run pick: supported compat and a known fit that is not wont_run, matching the server TUI's rail. */
 function isFirstRunPick(model: FeaturedModel): boolean {
     if (!model.fit) return false;
     if (model.fit === HARDWARE_FIT.WONT_RUN) return false;
-    return model.compat !== MODEL_COMPAT.UNSUPPORTED;
+    return model.compat === MODEL_COMPAT.SUPPORTED;
 }
 
 /**
@@ -195,10 +189,6 @@ const SERVER_SETUP_PHASES: {
  * are the models a fresh user should see. We just reorder them so recognised
  * open-weight families (Gemma, Qwen, Llama, Phi) lead.
  *
- * The row is curated on top of that ordering: models the host cannot run,
- * safety-stripped re-uploads and runtime-specific quants are not what a
- * first-run user should be offered. See `isFirstRunPick`.
- *
  * Callers that genuinely need to hide a subset (e.g. API-only entries in a
  * different UI) can pass a custom `filter` predicate.
  */
@@ -206,9 +196,7 @@ export function pickNativeChatModels(
     models: FeaturedModel[],
     filter: (m: FeaturedModel) => boolean = () => true,
 ): FeaturedModel[] {
-    // Only models that run. If that leaves nothing, the caller shows its
-    // empty state and the full catalog is one button away; showing a model
-    // the host cannot load under a picks heading is worse than showing none.
+    // The row may come back empty; the caller has an empty state for that.
     const eligible = models.filter(filter).filter(isFirstRunPick);
     const seen = new Set<string>();
     const ordered: FeaturedModel[] = [];
@@ -255,10 +243,8 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("lilbee-wizard");
-        // Obsidian renders Settings in front of the workspace, so a wizard
-        // opened from there (or by enabling the plugin) would sit behind it.
+        // Obsidian renders Settings in front of the workspace, so a wizard opened from there sits behind it.
         closeSettings(this.app);
-        // Nothing else may take the foreground while setup runs.
         this.plugin.setupWizardOpen = true;
         this.renderStep();
     }
@@ -271,12 +257,7 @@ export class SetupWizard extends Modal {
         if (!this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
     }
 
-    /**
-     * A server that answers is the point setup stops being optional scaffolding:
-     * from here the plugin starts and configures itself on the next launch,
-     * whatever the user does with the remaining steps. Writing the flag only on
-     * the final button left every other exit with a dead plugin.
-     */
+    /** Records setup as complete: the point from which the plugin starts itself on the next launch. */
     private async markServerReady(): Promise<void> {
         if (this.plugin.settings.setupCompleted) return;
         this.plugin.settings.setupCompleted = true;
@@ -644,12 +625,7 @@ export class SetupWizard extends Modal {
         return { panel, setPhase };
     }
 
-    /**
-     * Check the typed URL and token before anything is written. Persisting
-     * first would stop a working managed server (saveSettings shuts one down
-     * when the mode leaves managed) and leave the user in external mode
-     * pointing at a server that never answered.
-     */
+    /** Checks the typed URL and token before anything is persisted: saving stops a running managed server. */
     private async checkExternalAndAdvance(
         url: string,
         token: string,
@@ -667,9 +643,7 @@ export class SetupWizard extends Modal {
         this.plugin.settings.manualToken = token;
         this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
         await this.plugin.saveSettings();
-        // Repoint the existing client at the new URL and hand it the token
-        // the user just pasted. Updating in-place keeps test mocks intact
-        // and avoids churning listeners keyed on the old instance.
+        // Update the client in place; listeners are keyed on the instance.
         this.plugin.api.setBaseUrl(url);
         this.plugin.api.setToken(token || null);
         await this.markServerReady();
@@ -833,8 +807,7 @@ export class SetupWizard extends Modal {
         for (let i = 0; i < this.featuredModels.length; i++) {
             const entry = this.featuredModels[i];
             renderModelCard(grid, entry, {
-                // Recommended, not active: the wizard does not know what the
-                // server it is now talking to has loaded.
+                // Recommended, not active: the wizard does not know what the server has loaded.
                 isSelected: i === recommended,
                 onClick: () => this.selectModel(grid, entry, downloadBtn),
             });
@@ -855,8 +828,7 @@ export class SetupWizard extends Modal {
         const retryBtn = container.createEl("button", { text: MESSAGES.BUTTON_RETRY });
         retryBtn.addEventListener("click", () => {
             statusEl.setText("");
-            // A failed load disables the primary action below. Give it back for
-            // the retry; a second failure disables it again.
+            // The failed load disabled the primary action; the retry needs it back.
             if (this.primaryBtn) this.primaryBtn.disabled = false;
             retry();
         });
@@ -1377,10 +1349,7 @@ export class SetupWizard extends Modal {
 
     next(): void {
         if (this.step === WIZARD_STEP.WELCOME) {
-            // External mode is usable only once setup has completed, because
-            // that is when the plugin points its client at the server. Before
-            // then the stored mode is a preference, and skipping the server
-            // step lands on a model step that cannot load anything.
+            // The client is only pointed at an external server once setup has completed.
             const serverReady =
                 this.plugin.serverManager?.state === SERVER_STATE.READY ||
                 (this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL && this.plugin.settings.setupCompleted);

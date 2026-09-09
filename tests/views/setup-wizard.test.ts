@@ -34,8 +34,9 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         featured: true,
         downloads: 0,
         param_count: "0.6B",
-        // A live server reports fit on every row; the picks filter requires it.
+        // A live server reports fit and compat on every row; the picks filter requires both.
         fit: "fits",
+        compat: "supported",
         ...overrides,
     };
 }
@@ -3874,6 +3875,30 @@ describe("SetupWizard", () => {
             const picks = pickNativeChatModels([unknown, known]);
 
             // An unknown size cannot be promised, so it is not a pick.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("drops a model whose compat the server reports as unknown", () => {
+            const supported = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" });
+            const unknown = makeEntry({
+                hf_repo: "org/Mystery-Arch",
+                display_name: "Mystery Arch",
+                compat: "unknown",
+            });
+
+            const picks = pickNativeChatModels([unknown, supported]);
+
+            // An unknown architecture cannot be promised to run, so it is not a pick.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
+        });
+
+        it("drops a model whose compat the server did not report", () => {
+            const supported = makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" });
+            const missing = makeEntry({ hf_repo: "org/No-Compat", display_name: "No Compat" });
+            delete (missing as { compat?: unknown }).compat;
+
+            const picks = pickNativeChatModels([missing, supported]);
+
             expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
         });
     });
