@@ -870,8 +870,12 @@ class MockTextComponent {
         this.inputEl.placeholder = p;
         return this;
     }
-    setValue(_v: string): this {
+    setValue(v: string): this {
+        this.inputEl.value = v;
         return this;
+    }
+    getValue(): string {
+        return this.inputEl.value;
     }
     onChange(cb: (v: string) => void): this {
         this._onChange = cb;
@@ -889,8 +893,12 @@ class MockTextAreaComponent {
         this.inputEl.placeholder = p;
         return this;
     }
-    setValue(_v: string): this {
+    setValue(v: string): this {
+        this.inputEl.value = v;
         return this;
+    }
+    getValue(): string {
+        return this.inputEl.value;
     }
     onChange(cb: (v: string) => void): this {
         this._onChange = cb;
