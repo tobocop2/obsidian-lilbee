@@ -132,28 +132,16 @@ const PREFERRED_FAMILIES = [
 const MAX_FEATURED_PICKS = 8;
 
 /**
- * Name markers that keep a model out of the first-run picks. Safety-stripped
- * community re-uploads and runtime-specific quants are catalog material, not a
- * first impression. Matched against the lowercased repo + display name, and
- * only where a marker starts a word: a plain substring match drops "input"
- * on "npu".
- */
-const EXCLUDED_PICK_MARKER = new RegExp(
-    "(^|[^a-z])(uncensored|abliterated|heretic|nsfw|rocm|cuda|vulkan|openvino|npu)",
-);
-
-/**
- * A model the wizard is willing to recommend on a first run.
+ * A model the wizard is willing to recommend on a first run: one that runs.
  *
- * Matches the server TUI's own picks rail, which is the oracle: featured,
- * supported, and a known fit that is not wont_run. A missing fit is excluded
- * rather than allowed through, because an unknown size cannot be promised.
+ * Matches the server TUI's own picks rail, which is the oracle: supported, and
+ * a known fit that is not wont_run. A missing fit is excluded rather than
+ * allowed through, because an unknown size cannot be promised.
  */
 function isFirstRunPick(model: FeaturedModel): boolean {
     if (!model.fit) return false;
     if (model.fit === HARDWARE_FIT.WONT_RUN) return false;
-    if (model.compat === MODEL_COMPAT.UNSUPPORTED) return false;
-    return !EXCLUDED_PICK_MARKER.test(`${model.hf_repo} ${model.display_name}`.toLowerCase());
+    return model.compat !== MODEL_COMPAT.UNSUPPORTED;
 }
 
 /**
@@ -218,11 +206,10 @@ export function pickNativeChatModels(
     models: FeaturedModel[],
     filter: (m: FeaturedModel) => boolean = () => true,
 ): FeaturedModel[] {
-    const allowed = models.filter(filter);
-    // Curation must never empty the row: a server whose whole featured list
-    // reads as excluded still has to offer the user something to pick.
-    const curated = allowed.filter(isFirstRunPick);
-    const eligible = curated.length > 0 ? curated : allowed;
+    // Only models that run. If that leaves nothing, the caller shows its
+    // empty state and the full catalog is one button away; showing a model
+    // the host cannot load under a picks heading is worse than showing none.
+    const eligible = models.filter(filter).filter(isFirstRunPick);
     const seen = new Set<string>();
     const ordered: FeaturedModel[] = [];
     for (const prefix of PREFERRED_FAMILIES) {

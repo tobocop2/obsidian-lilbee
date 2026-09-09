@@ -3832,25 +3832,6 @@ describe("SetupWizard", () => {
             expect(picks.map((m) => m.hf_repo)).toEqual(["a/small"]);
         });
 
-        it("drops safety-stripped community re-uploads", () => {
-            const picks = pickNativeChatModels([
-                makeEntry({ hf_repo: "x/Qwen3-27B-Uncensored", display_name: "Qwen3 27B Uncensored" }),
-                makeEntry({ hf_repo: "x/Qwen3-27B-Heretic-Abliterated", display_name: "Heretic Abliterated" }),
-                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
-            ]);
-
-            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
-        });
-
-        it("drops runtime-specific quants", () => {
-            const picks = pickNativeChatModels([
-                makeEntry({ hf_repo: "x/Flash-ROCm-FP4-Imatrix", display_name: "Flash ROCm FP4" }),
-                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
-            ]);
-
-            expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
-        });
-
         it("drops models the server says it cannot load", () => {
             const picks = pickNativeChatModels([
                 makeEntry({ hf_repo: "x/Weird-Arch", display_name: "Weird", compat: "unsupported" }),
@@ -3860,13 +3841,23 @@ describe("SetupWizard", () => {
             expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
         });
 
-        it("keeps a model whose name merely contains an excluded marker", () => {
+        it("shows nothing rather than a model that will not run", () => {
             const picks = pickNativeChatModels([
-                makeEntry({ hf_repo: "org/Qwen3-Input-Guard", display_name: "Qwen3 Input Guard" }),
-                makeEntry({ hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B" }),
+                makeEntry({ hf_repo: "a/huge", display_name: "Huge", fit: "wont_run" }),
+                makeEntry({ hf_repo: "b/also-huge", display_name: "Also Huge", fit: "wont_run" }),
             ]);
 
-            expect(picks.map((m) => m.hf_repo)).toEqual(["org/Qwen3-Input-Guard", "Qwen/Qwen3-4B-GGUF"]);
+            // The caller renders its own empty state; the full catalog is one button away.
+            expect(picks).toEqual([]);
+        });
+
+        it("keeps a model the picks row has no opinion about beyond fit", () => {
+            const picks = pickNativeChatModels([
+                makeEntry({ hf_repo: "x/Qwen3-27B-Uncensored", display_name: "Qwen3 27B Uncensored", fit: "fits" }),
+            ]);
+
+            // Fit is the only rule. Content is not judged by matching names.
+            expect(picks.map((m) => m.hf_repo)).toEqual(["x/Qwen3-27B-Uncensored"]);
         });
 
         it("drops a model whose fit the server did not report", () => {
@@ -3878,14 +3869,6 @@ describe("SetupWizard", () => {
 
             // An unknown size cannot be promised, so it is not a pick.
             expect(picks.map((m) => m.hf_repo)).toEqual(["Qwen/Qwen3-4B-GGUF"]);
-        });
-
-        it("shows the raw list rather than an empty grid when curation removes everything", () => {
-            const picks = pickNativeChatModels([
-                makeEntry({ hf_repo: "x/Only-Uncensored", display_name: "Only Uncensored" }),
-            ]);
-
-            expect(picks.map((m) => m.hf_repo)).toEqual(["x/Only-Uncensored"]);
         });
     });
 
