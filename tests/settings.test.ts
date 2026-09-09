@@ -7,6 +7,7 @@ import {
     DEFAULT_SETTINGS,
     MEMORY_CONFIG_KEY,
     MODEL_TASK,
+    SERVER_MODE,
     SERVER_VARIANT,
     SSE_EVENT,
     TABLE_MODEL,
@@ -301,6 +302,8 @@ interface Captured {
     /** Callbacks keyed by the row's display name, so a test names the field it
      * means instead of counting rows to it. */
     textByName: Map<string, TextOnChange>;
+    /** The rendered input of each text row, keyed by the row's display name. */
+    textInputByName: Map<string, { value: string; type: string }>;
     toggleByName: Map<string, ToggleOnChange>;
     dropdownByName: Map<string, DropdownOnChange>;
     textAreaByName: Map<string, TextOnChange>;
@@ -351,6 +354,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     // the page, which is how one settings change takes 40 unrelated tests down.
     // Record each Setting's name so a test can ask for the row it means.
     const textByName = new Map<string, TextOnChange>();
+    const textInputByName = new Map<string, { value: string; type: string }>();
     const blurByName = new Map<string, BlurCapture>();
     const toggleByName = new Map<string, ToggleOnChange>();
     const dropdownByName = new Map<string, DropdownOnChange>();
@@ -382,73 +386,45 @@ function captureSettingCallbacks(fn: () => void): Captured {
 
     Setting.prototype.addText = function (cb: (text: any) => void) {
         const name = currentName;
-        const listeners = new Map<string, () => void>();
-        const fakeText = {
-            setPlaceholder: () => fakeText,
-            // Obsidian's TextComponent writes through to the element, and rows seeded from
-            // stored state are only honest in a test if the element carries that value.
-            setValue: (v: string) => {
-                fakeText.inputEl.value = v;
-                return fakeText;
-            },
-            onChange: (handler: TextOnChange) => {
+        return origAddText.call(this, (text: any) => {
+            const listeners = new Map<string, () => void>();
+            const origOnChange = text.onChange.bind(text);
+            text.onChange = (handler: TextOnChange) => {
                 textOnChanges.push(handler);
-                if (currentName) textByName.set(currentName, handler);
-                return fakeText;
-            },
-            inputEl: {
-                placeholder: "",
-                type: "text",
-                value: "",
-                addClass: vi.fn(),
-                classList: { add: vi.fn(), remove: vi.fn() },
-                attributes: {} as Record<string, string>,
-                setAttribute(name: string, value: string): void {
-                    this.attributes[name] = value;
-                },
-                getAttribute(name: string): string | null {
-                    return this.attributes[name] ?? null;
-                },
-                addEventListener: (event: string, handler: BlurHandler) => {
-                    listeners.set(event, handler);
-                    if (event === "blur") {
-                        const capture: BlurCapture = {
-                            handler,
-                            inputEl: fakeText.inputEl,
-                            edit: (value: string) => {
-                                fakeText.inputEl.value = value;
-                                listeners.get("input")?.();
-                            },
-                        };
-                        blurHandlers.push(capture);
-                        blurByName.set(name, capture);
-                    }
-                },
-            },
-        };
-        cb(fakeText);
-        return this;
+                if (name) textByName.set(name, handler);
+                return origOnChange(handler);
+            };
+            text.inputEl.addEventListener = (event: string, handler: BlurHandler) => {
+                listeners.set(event, handler);
+                if (event === "blur") {
+                    const capture: BlurCapture = {
+                        handler,
+                        inputEl: text.inputEl,
+                        edit: (value: string) => {
+                            text.inputEl.value = value;
+                            listeners.get("input")?.();
+                        },
+                    };
+                    blurHandlers.push(capture);
+                    blurByName.set(name, capture);
+                }
+            };
+            if (name) textInputByName.set(name, text.inputEl);
+            cb(text);
+        });
     };
 
     (Setting.prototype as any).addTextArea = function (cb: (text: any) => void) {
-        const fakeText = {
-            setPlaceholder: () => fakeText,
-            setValue: () => fakeText,
-            onChange: (handler: TextOnChange) => {
+        const name = currentName;
+        return origAddTextArea.call(this, (text: any) => {
+            const origOnChange = text.onChange.bind(text);
+            text.onChange = (handler: TextOnChange) => {
                 textAreaOnChanges.push(handler);
-                if (currentName) textAreaByName.set(currentName, handler);
-                return fakeText;
-            },
-            inputEl: {
-                placeholder: "",
-                value: "",
-                addClass: vi.fn(),
-                classList: { add: vi.fn(), remove: vi.fn() },
-                addEventListener: vi.fn(),
-            },
-        };
-        cb(fakeText);
-        return this;
+                if (name) textAreaByName.set(name, handler);
+                return origOnChange(handler);
+            };
+            cb(text);
+        });
     };
 
     Setting.prototype.addSlider = function (cb: (slider: any) => void) {
@@ -578,6 +554,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
 
     return {
         textByName,
+        textInputByName,
         toggleByName,
         dropdownByName,
         textAreaByName,
@@ -698,6 +675,14 @@ describe("LilbeeSettingTab", () => {
             await textOnChanges[0]("http://localhost:9999");
             expect(plugin.settings.serverUrl).toBe("http://localhost:9999");
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        });
+
+        it("renders the stored URL in the field", () => {
+            const plugin = makePlugin({ serverMode: SERVER_MODE.EXTERNAL, serverUrl: "http://remote:9999" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textInputByName } = captureSettingCallbacks(() => tab.display());
+            expect(textInputByName.get(MESSAGES.LABEL_SERVER_URL)?.value).toBe("http://remote:9999");
         });
     });
 

@@ -134,17 +134,14 @@ function captureSettingCallbacks(fn: () => void) {
 
     const origAddText = Setting.prototype.addText;
     Setting.prototype.addText = function (cb: (text: any) => void) {
-        const fakeText = {
-            setPlaceholder: () => fakeText,
-            setValue: () => fakeText,
-            onChange: (handler: (value: string) => void | Promise<void>) => {
+        return origAddText.call(this, (text: any) => {
+            const origOnChange = text.onChange.bind(text);
+            text.onChange = (handler: (value: string) => void | Promise<void>) => {
                 textOnChanges.push(handler);
-                return fakeText;
-            },
-            inputEl: { placeholder: "", type: "text", value: "", addEventListener: vi.fn() },
-        };
-        cb(fakeText);
-        return this;
+                return origOnChange(handler);
+            };
+            cb(text);
+        });
     };
     // Capture button labels + onClick handlers without replacing the mock —
     // settings.ts calls .setWarning(), .setTooltip(), .setIcon() on buttons
