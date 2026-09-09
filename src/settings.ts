@@ -1,4 +1,14 @@
-import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
+import {
+    App,
+    ButtonComponent,
+    DropdownComponent,
+    Notice,
+    PluginSettingTab,
+    requireApiVersion,
+    setIcon,
+    Setting,
+} from "obsidian";
+import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem, SettingGroup } from "obsidian";
 import type LilbeePlugin from "./main";
 import { LilbeeClient } from "./api";
 import { isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
@@ -112,6 +122,285 @@ interface UpdateProgressEls {
 /** Marks the setting a navigation landed on; the theme colours the flash. */
 const SETTING_FOCUS_CLASS = "lilbee-setting-focus";
 
+/** A server-config row: the key the server reports it under, and how it is labelled. */
+interface ConfigRowSpec {
+    key: string;
+    name: string;
+    desc: string;
+}
+
+/** Slider bounds for a server-config number. */
+interface SliderLimits {
+    min: number;
+    max: number;
+    step: number;
+}
+
+/** Parsing rules for a server-config number typed into a text field. */
+interface NumberFieldOpts {
+    integer: boolean;
+    min?: number;
+    reindex?: boolean;
+}
+
+/**
+ * One settings row. Both render paths read the same specs: display() builds each row into a
+ * container, and getSettingDefinitions() turns each into a definition Obsidian can search.
+ */
+interface RowSpec {
+    name: string;
+    desc: string;
+    /** Set when the connected server has to report the key before the row means anything. */
+    key?: string;
+    /** Set only by gated(), which is never nested, so it is safe to overwrite. */
+    visible?: () => boolean;
+    /** False for rows that carry a section's own DOM rather than a setting a user searches for. */
+    searchable?: boolean;
+    /** `container` is where a row that needs more than one element puts the rest. */
+    apply: (setting: Setting, container: HTMLElement) => void;
+}
+
+const CHAT_TOGGLES: ConfigRowSpec[] = [
+    { key: CONFIG_KEY.SHOW_REASONING, name: MESSAGES.LABEL_SHOW_REASONING, desc: MESSAGES.DESC_SHOW_REASONING },
+    { key: CONFIG_KEY.CHAT_COMPACTION, name: MESSAGES.LABEL_CHAT_COMPACTION, desc: MESSAGES.DESC_CHAT_COMPACTION },
+];
+
+const MAX_DISTANCE: ConfigRowSpec = {
+    key: "max_distance",
+    name: MESSAGES.LABEL_MAX_DISTANCE,
+    desc: MESSAGES.DESC_MAX_DISTANCE,
+};
+const MAX_DISTANCE_LIMITS: SliderLimits = { min: 0.05, max: 1.0, step: 0.05 };
+const ADAPTIVE_THRESHOLD: ConfigRowSpec = {
+    key: "adaptive_threshold",
+    name: MESSAGES.LABEL_ADAPTIVE_THRESHOLD,
+    desc: MESSAGES.DESC_ADAPTIVE_THRESHOLD,
+};
+const TOP_K_LIMITS: SliderLimits = { min: 1, max: 20, step: 1 };
+const WIKI_FAITHFULNESS_LIMITS: SliderLimits = { min: 0, max: 1, step: 0.05 };
+const DEFAULT_WIKI_VAULT_FOLDER = "lilbee-wiki";
+
+/** A crawl number typed into a text box. */
+interface CrawlNumericField extends ConfigRowSpec {
+    placeholder: string;
+    kind: "int" | "float";
+    nullable: boolean;
+    min?: number;
+}
+
+interface CrawlBoolField extends ConfigRowSpec {
+    kind: "bool";
+}
+
+type CrawlField = CrawlNumericField | CrawlBoolField;
+
+const CRAWL_FIELDS: CrawlField[] = [
+    {
+        key: "crawl_max_depth",
+        name: MESSAGES.LABEL_CRAWL_MAX_DEPTH,
+        desc: MESSAGES.DESC_CRAWL_MAX_DEPTH,
+        placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
+        kind: "int",
+        nullable: true,
+        min: 0,
+    },
+    {
+        key: "crawl_max_pages",
+        name: MESSAGES.LABEL_CRAWL_MAX_PAGES,
+        desc: MESSAGES.DESC_CRAWL_MAX_PAGES,
+        placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
+        kind: "int",
+        nullable: true,
+        min: 1,
+    },
+    {
+        key: "crawl_timeout",
+        name: MESSAGES.LABEL_CRAWL_TIMEOUT,
+        desc: MESSAGES.DESC_CRAWL_TIMEOUT,
+        placeholder: MESSAGES.PLACEHOLDER_30,
+        kind: "int",
+        nullable: false,
+        min: 1,
+    },
+    {
+        key: "crawl_mean_delay",
+        name: MESSAGES.LABEL_CRAWL_MEAN_DELAY,
+        desc: MESSAGES.DESC_CRAWL_MEAN_DELAY,
+        placeholder: "0.5",
+        kind: "float",
+        nullable: false,
+        min: 0,
+    },
+    {
+        key: "crawl_max_delay_range",
+        name: MESSAGES.LABEL_CRAWL_MAX_DELAY_RANGE,
+        desc: MESSAGES.DESC_CRAWL_MAX_DELAY_RANGE,
+        placeholder: "0.5",
+        kind: "float",
+        nullable: false,
+        min: 0,
+    },
+    {
+        key: "crawl_concurrent_requests",
+        name: MESSAGES.LABEL_CRAWL_CONCURRENT_REQUESTS,
+        desc: MESSAGES.DESC_CRAWL_CONCURRENT_REQUESTS,
+        placeholder: "3",
+        kind: "int",
+        nullable: false,
+        min: 1,
+    },
+    {
+        key: "crawl_retry_on_rate_limit",
+        name: MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT,
+        desc: MESSAGES.DESC_CRAWL_RETRY_ON_RATE_LIMIT,
+        kind: "bool",
+    },
+    {
+        key: "crawl_retry_base_delay_min",
+        name: MESSAGES.LABEL_CRAWL_RETRY_BASE_DELAY_MIN,
+        desc: MESSAGES.DESC_CRAWL_RETRY_BASE_DELAY_MIN,
+        placeholder: "1.0",
+        kind: "float",
+        nullable: false,
+        min: 0,
+    },
+    {
+        key: "crawl_retry_base_delay_max",
+        name: MESSAGES.LABEL_CRAWL_RETRY_BASE_DELAY_MAX,
+        desc: MESSAGES.DESC_CRAWL_RETRY_BASE_DELAY_MAX,
+        placeholder: "3.0",
+        kind: "float",
+        nullable: false,
+        min: 0,
+    },
+    {
+        key: "crawl_retry_max_backoff",
+        name: MESSAGES.LABEL_CRAWL_RETRY_MAX_BACKOFF,
+        desc: MESSAGES.DESC_CRAWL_RETRY_MAX_BACKOFF,
+        placeholder: "30.0",
+        kind: "float",
+        nullable: false,
+        min: 0,
+    },
+    {
+        key: "crawl_retry_max_attempts",
+        name: MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS,
+        desc: MESSAGES.DESC_CRAWL_RETRY_MAX_ATTEMPTS,
+        placeholder: "3",
+        kind: "int",
+        nullable: false,
+        min: 0,
+    },
+];
+
+const MEMORY_TOGGLES: ConfigRowSpec[] = [
+    {
+        key: MEMORY_CONFIG_KEY.ENABLED,
+        name: MESSAGES.LABEL_MEMORY_ENABLED,
+        desc: MESSAGES.DESC_MEMORY_ENABLED,
+    },
+    {
+        key: MEMORY_CONFIG_KEY.AUTO_EXTRACT,
+        name: MESSAGES.LABEL_MEMORY_AUTO_EXTRACT,
+        desc: MESSAGES.DESC_MEMORY_AUTO_EXTRACT,
+    },
+];
+
+/** A provider API key stored on the server. */
+interface ApiKeyField extends ConfigRowSpec {
+    provider: string;
+}
+
+const API_KEY_FIELDS: ApiKeyField[] = [
+    {
+        key: "openai_api_key",
+        name: MESSAGES.LABEL_OPENAI_API_KEY,
+        desc: MESSAGES.DESC_OPENAI_API_KEY,
+        provider: "openai",
+    },
+    {
+        key: "anthropic_api_key",
+        name: MESSAGES.LABEL_ANTHROPIC_API_KEY,
+        desc: MESSAGES.DESC_ANTHROPIC_API_KEY,
+        provider: "anthropic",
+    },
+    {
+        key: "gemini_api_key",
+        name: MESSAGES.LABEL_GEMINI_API_KEY,
+        desc: MESSAGES.DESC_GEMINI_API_KEY,
+        provider: "gemini",
+    },
+];
+
+/** A local model server the lilbee server can talk to. */
+interface LocalServerField extends ConfigRowSpec {
+    placeholder: string;
+}
+
+const LOCAL_SERVER_FIELDS: LocalServerField[] = [
+    {
+        key: "ollama_base_url",
+        name: MESSAGES.LABEL_OLLAMA_BASE_URL,
+        desc: MESSAGES.DESC_OLLAMA_BASE_URL,
+        placeholder: "http://localhost:11434",
+    },
+    {
+        key: "lm_studio_base_url",
+        name: MESSAGES.LABEL_LM_STUDIO_BASE_URL,
+        desc: MESSAGES.DESC_LM_STUDIO_BASE_URL,
+        placeholder: "http://localhost:1234/v1",
+    },
+];
+
+/** A generation knob typed into a text box. Hideable rows wait for the server to report the key. */
+interface GenerationField extends ConfigRowSpec {
+    integer: boolean;
+    hideable?: boolean;
+}
+
+// num_ctx is intentionally not surfaced: the server picks a context window appropriate to the
+// active model, and asking for more than the model supports only wastes RAM.
+const GENERATION_FIELDS: GenerationField[] = [
+    { key: "temperature", name: MESSAGES.LABEL_GEN_TEMPERATURE, desc: MESSAGES.DESC_GEN_TEMPERATURE, integer: false },
+    { key: "top_p", name: MESSAGES.LABEL_GEN_TOP_P, desc: MESSAGES.DESC_GEN_TOP_P, integer: false },
+    { key: "top_k_sampling", name: MESSAGES.LABEL_GEN_TOP_K, desc: MESSAGES.DESC_GEN_TOP_K, integer: true },
+    {
+        key: "repeat_penalty",
+        name: MESSAGES.LABEL_GEN_REPEAT_PENALTY,
+        desc: MESSAGES.DESC_GEN_REPEAT_PENALTY,
+        integer: false,
+    },
+    { key: "seed", name: MESSAGES.LABEL_GEN_SEED, desc: MESSAGES.DESC_GEN_SEED, integer: true },
+    {
+        key: "max_tokens",
+        name: MESSAGES.LABEL_GEN_MAX_TOKENS,
+        desc: MESSAGES.DESC_GEN_MAX_TOKENS,
+        integer: true,
+        hideable: true,
+    },
+    {
+        key: "max_reasoning_chars",
+        name: MESSAGES.LABEL_GEN_MAX_REASONING_CHARS,
+        desc: MESSAGES.DESC_GEN_MAX_REASONING_CHARS,
+        integer: true,
+        hideable: true,
+    },
+    {
+        key: "model_keep_alive",
+        name: MESSAGES.LABEL_GEN_MODEL_KEEP_ALIVE,
+        desc: MESSAGES.DESC_GEN_MODEL_KEEP_ALIVE,
+        integer: true,
+        hideable: true,
+    },
+    {
+        key: "gpu_memory_fraction",
+        name: MESSAGES.LABEL_GEN_GPU_MEMORY_FRACTION,
+        desc: MESSAGES.DESC_GEN_GPU_MEMORY_FRACTION,
+        integer: false,
+        hideable: true,
+    },
+];
+
 export class LilbeeSettingTab extends PluginSettingTab {
     private versionSettingEl: HTMLElement | null = null;
     /** Set by the update ribbon icon and the reminder: keep the version row in view across re-renders. */
@@ -142,11 +431,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
     // Fail open: an unreachable probe must not block a render mode that works.
     private crawlerBrowserReady = true;
     private wikiContainerEl: HTMLElement | null = null;
+    private wikiSubSettingsEl: HTMLElement | null = null;
+    private modelsContainerEl: HTMLElement | null = null;
     /** Last successful release-list fetch; failures are not cached, so a retry always refetches. */
     private releasesCache: { at: number; releases: ReleaseInfo[] } | null = null;
     /** Detected agent CLIs; null until the first probe lands or after it fails. */
     private agentDetections: AgentClientDetection[] | null = null;
     private agentBodyEl: HTMLElement | null = null;
+    /** Last server config; the definitions read it to decide which rows the connected server supports. */
+    private serverConfig: ConfigResponse | null = null;
+    /** Capabilities the connected server reports; null until the first probe lands. */
+    private capabilities: Record<string, boolean> | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -156,6 +451,128 @@ export class LilbeeSettingTab extends PluginSettingTab {
     display(): void {
         this.render();
         this.revealServerUpdate();
+    }
+
+    /**
+     * True from 1.13.0 on, where Obsidian renders this tab from the definitions and stops
+     * calling display(). The store ruleset only recognises a literal version here.
+     */
+    private usesDefinitions(): boolean {
+        return requireApiVersion("1.13.0");
+    }
+
+    /** Ask Obsidian to re-evaluate the definitions' visible predicates. */
+    private refreshVisibility(): void {
+        if (requireApiVersion("1.13.0")) this.refreshDomState();
+    }
+
+    /** Build each row into its own Setting, in order. The pre-1.13 path. */
+    private renderRows(container: HTMLElement, rows: RowSpec[]): void {
+        for (const row of rows) row.apply(new Setting(container), container);
+    }
+
+    /** A collapsible section with its summary and one-line explainer. The pre-1.13 path. */
+    private openDetails(containerEl: HTMLElement, cls: string, summary: string, help?: string): HTMLElement {
+        const details = containerEl.createEl("details", { cls: `${cls} lilbee-settings-section` });
+        details.createEl("summary", { text: summary });
+        if (help !== undefined) details.createEl("p", { text: help, cls: "setting-item-description" });
+        return details;
+    }
+
+    /** Turn a section's rows into a searchable group. The 1.13 path. */
+    private groupOf(
+        heading: string | undefined,
+        rows: RowSpec[],
+        opts?: { help?: string; visible?: () => boolean },
+    ): SettingDefinitionGroup {
+        const items: SettingDefinition[] = rows.map((row) => this.definitionOf(row));
+        if (opts?.help !== undefined) items.unshift({ name: "", desc: opts.help, searchable: false });
+        const group: SettingDefinitionGroup = { type: "group", items };
+        if (heading !== undefined) group.heading = heading;
+        if (opts?.visible) group.visible = opts.visible;
+        return group;
+    }
+
+    private definitionOf(row: RowSpec): SettingDefinition {
+        const { key, visible } = row;
+        const definition: SettingDefinition = {
+            name: row.name,
+            desc: row.desc,
+            render: (setting: Setting, group: SettingGroup) => {
+                if (requireApiVersion("1.13.0")) row.apply(setting, group.listEl);
+            },
+        };
+        if (row.searchable === false) definition.searchable = false;
+        if (key !== undefined || visible !== undefined) {
+            definition.visible = (): boolean =>
+                (key === undefined || this.serverReports(key)) && (visible === undefined || visible());
+        }
+        return definition;
+    }
+
+    /** Hide a whole run of rows behind one condition, e.g. the wiki rows behind the wiki toggle. */
+    private gated(rows: RowSpec[], visible: () => boolean): RowSpec[] {
+        return rows.map((row) => ({ ...row, visible }));
+    }
+
+    /** A row with no server-config key of its own: plugin settings, a button, or section DOM. */
+    private localRow(name: string, desc: string, apply: (setting: Setting, container: HTMLElement) => void): RowSpec {
+        return { name, desc, apply };
+    }
+
+    private toggleRow(spec: ConfigRowSpec): RowSpec {
+        return { ...spec, apply: (setting) => this.applyConfigToggle(setting, spec) };
+    }
+
+    private bareToggleRow(spec: ConfigRowSpec): RowSpec {
+        return { ...spec, apply: (setting) => this.applyBareConfigToggle(setting, spec) };
+    }
+
+    private sliderRow(spec: ConfigRowSpec, limits: SliderLimits): RowSpec {
+        return { ...spec, apply: (setting) => this.applyConfigSlider(setting, spec, limits) };
+    }
+
+    private numberRow(spec: ConfigRowSpec, opts: NumberFieldOpts): RowSpec {
+        return { ...spec, apply: (setting) => this.applyNumberFieldWithReset(setting, spec, opts) };
+    }
+
+    /** OCR languages and the like: always shown, because the server answers with a default. */
+    private listRow(spec: ConfigRowSpec): RowSpec {
+        return this.localRow(spec.name, spec.desc, (setting) => this.applyConfigList(setting, spec));
+    }
+
+    /** Push one server-config value and say whether it took. */
+    private async pushConfig(key: string, value: unknown, name: string): Promise<void> {
+        try {
+            await this.plugin.api.updateConfig({ [key]: value });
+            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+        }
+    }
+
+    /** A server-config boolean on a toggle, with no reset affordance. */
+    private applyBareConfigToggle(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressChangeEvents) return;
+                    await this.pushConfig(spec.key, value, spec.name);
+                });
+                this.serverConfigToggles.set(spec.key, toggle);
+            });
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+    }
+
+    /** Rebuild the tab after state a control's own callback changed. */
+    refresh(): void {
+        if (requireApiVersion("1.13.0")) {
+            this.update();
+            return;
+        }
+        this.render();
     }
 
     render(): void {
@@ -191,15 +608,77 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.wikiContainerEl = containerEl.createDiv();
         this.renderWikiSettings(this.wikiContainerEl);
         this.renderAgentIntegration(containerEl);
-        this.renderDiagnostics(containerEl);
+        this.applyDiagnosticsRow(new Setting(containerEl));
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             this.renderUninstallSection(containerEl, this.storageTotalBytes);
         }
+        this.loadTabState();
+    }
+
+    /**
+     * The 1.13 render path. Obsidian calls this on every display and once for search indexing,
+     * and stops calling display() while it returns anything.
+     */
+    getSettingDefinitions(): SettingDefinitionItem[] {
+        const items: SettingDefinitionItem[] = [
+            this.definitionOf({
+                name: "",
+                desc: "",
+                searchable: false,
+                apply: (setting) => {
+                    // The first row to render, so the tab loads its server state only when shown.
+                    this.loadTabState();
+                    this.renderBugFeedback(setting.descEl);
+                },
+            }),
+            this.groupOf(undefined, this.rowsConnection()),
+            ...this.defsModels(),
+            this.groupOf(MESSAGES.LABEL_CHAT_SECTION, this.rowsChatSettings()),
+            this.groupOf(MESSAGES.LABEL_SEARCH_RETRIEVAL, this.rowsSearchRetrieval()),
+            this.groupOf(this.generationHeading(), this.rowsGeneration(), {
+                help: MESSAGES.LABEL_GENERATION_HELP,
+            }),
+            this.groupOf(MESSAGES.LABEL_MEMORY_SECTION, this.rowsMemory()),
+            this.groupOf(MESSAGES.LABEL_RETRIEVAL_ADVANCED, this.rowsRetrievalAdvanced(), {
+                help: MESSAGES.LABEL_RETRIEVAL_ADVANCED_HELP,
+            }),
+            this.groupOf(MESSAGES.LABEL_INGEST, this.rowsIngest(), { help: MESSAGES.LABEL_INGEST_HELP }),
+            this.groupOf(MESSAGES.LABEL_WORKER_POOL, this.rowsWorkerPool(), {
+                help: MESSAGES.LABEL_WORKER_POOL_HELP,
+            }),
+            this.groupOf(MESSAGES.LABEL_CRAWLING, this.rowsCrawling(), {
+                visible: () => this.serverSupports(CAPABILITY.CRAWLING),
+            }),
+            this.groupOf(MESSAGES.LABEL_WIKI_SECTION, this.rowsWiki(), {
+                visible: () => this.serverSupports(CAPABILITY.WIKI),
+            }),
+            ...this.defsAgentIntegration(),
+            this.definitionOf(
+                this.localRow(MESSAGES.LABEL_EXPORT_DIAGNOSTICS, MESSAGES.DESC_EXPORT_DIAGNOSTICS, (setting) =>
+                    this.applyDiagnosticsRow(setting),
+                ),
+            ),
+            this.groupOf(MESSAGES.LABEL_ADVANCED, this.rowsAdvanced(), { help: MESSAGES.LABEL_ADVANCED_HELP }),
+            this.groupOf(MESSAGES.LABEL_FLEET, this.rowsFleet(), { help: MESSAGES.LABEL_FLEET_HELP }),
+        ];
+        if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
+            items.push(...this.defsUninstall(this.storageTotalBytes));
+        }
+        return items;
+    }
+
+    /** Server state every render depends on: current config, its defaults, and the capabilities. */
+    private loadTabState(): void {
         this.loadServerDefaults();
         this.loadConfigDefaults();
         void this.applyCapabilityGating();
+    }
+
+    private generationHeading(): string {
+        const modelLabel = displayLabelForRef(this.plugin.activeModel) || MESSAGES.LABEL_NO_MODEL_SELECTED;
+        return `${MESSAGES.LABEL_GENERATION} (${modelLabel})`;
     }
 
     private async applyCapabilityGating(): Promise<void> {
@@ -209,6 +688,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER),
             this.plugin.api.getCapability(CAPABILITY.WIKI),
         ]);
+        this.capabilities = {
+            [CAPABILITY.API_KEYS]: apiKeys,
+            [CAPABILITY.CRAWLING]: crawling,
+            [CAPABILITY.CRAWLING_BROWSER]: crawlingBrowser,
+            [CAPABILITY.WIKI]: wiki,
+        };
+        if (this.usesDefinitions()) {
+            this.crawlerBrowserReady = crawlingBrowser;
+            this.refreshVisibility();
+            return;
+        }
         if (!apiKeys && this.apiKeysContainerEl) this.apiKeysContainerEl.hide();
         if (!crawling && this.crawlingContainerEl) this.crawlingContainerEl.hide();
         if (!wiki && this.wikiContainerEl) this.wikiContainerEl.hide();
@@ -244,8 +734,25 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
+    private rowsConnection(): RowSpec[] {
+        const managed = this.plugin.settings.serverMode === SERVER_MODE.MANAGED;
+        return [
+            this.localRow(MESSAGES.LABEL_SERVER_MODE, MESSAGES.DESC_SERVER_MODE, (setting) =>
+                this.applyServerModeRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_SETUP_WIZARD, MESSAGES.DESC_SETUP_WIZARD, (setting) =>
+                this.applySetupWizardRow(setting),
+            ),
+            ...(managed ? this.rowsManaged() : this.rowsExternal()),
+        ];
+    }
+
     private renderConnectionSettings(containerEl: HTMLElement): void {
-        const modeSetting = new Setting(containerEl)
+        this.renderRows(containerEl, this.rowsConnection());
+    }
+
+    private applyServerModeRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_SERVER_MODE)
             .setDesc(MESSAGES.DESC_SERVER_MODE)
             .addDropdown((dropdown) =>
@@ -256,12 +763,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.serverMode = value as ServerMode;
                         await this.plugin.saveSettings();
-                        this.render();
+                        this.refresh();
                     }),
             );
-        this.appendLocalResetAffordance(modeSetting, "serverMode", MESSAGES.LABEL_SERVER_MODE);
+        this.appendLocalResetAffordance(setting, "serverMode", MESSAGES.LABEL_SERVER_MODE);
+    }
 
-        new Setting(containerEl)
+    private applySetupWizardRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_SETUP_WIZARD)
             .setDesc(MESSAGES.DESC_SETUP_WIZARD)
             .addButton((btn) =>
@@ -269,12 +778,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     new SetupWizard(this.app, this.plugin).open();
                 }),
             );
-
-        if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED) {
-            this.renderManagedSettings(containerEl);
-        } else {
-            this.renderExternalSettings(containerEl);
-        }
     }
 
     /**
@@ -285,7 +788,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderAgentIntegration(containerEl: HTMLElement): void {
         const section = containerEl.createDiv({ cls: "lilbee-settings-section lilbee-agent-section" });
         new Setting(section).setName(MESSAGES.LABEL_AGENT_SECTION).setHeading().setDesc(MESSAGES.DESC_AGENT_SECTION);
-        this.agentBodyEl = section.createDiv({ cls: "lilbee-agent-body" });
+        this.mountAgentBody(section);
+    }
+
+    /**
+     * The agent rows depend on a CLI probe and rebuild themselves, so the whole body stays
+     * imperative behind one searchable definition.
+     */
+    private defsAgentIntegration(): SettingDefinitionItem[] {
+        return [
+            {
+                type: "group",
+                heading: MESSAGES.LABEL_AGENT_SECTION,
+                cls: "lilbee-agent-section",
+                items: [
+                    this.definitionOf({
+                        name: MESSAGES.LABEL_AGENT_CHOICE,
+                        desc: MESSAGES.DESC_AGENT_SECTION,
+                        apply: (_setting, container) => this.mountAgentBody(container),
+                    }),
+                ],
+            },
+        ];
+    }
+
+    private mountAgentBody(container: HTMLElement): void {
+        this.agentBodyEl = container.createDiv({ cls: "lilbee-agent-body" });
         void this.loadAgentDetections();
     }
 
@@ -460,49 +988,82 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return this.plugin.isServerInstalled() && !this.plugin.isServerUninstalled();
     }
 
-    private renderManagedSettings(containerEl: HTMLElement): void {
-        if (!this.hasManagedServer()) {
-            this.renderInstallServer(containerEl);
-            this.renderSharedRootSetting(containerEl);
-            return;
-        }
+    private rowsManaged(): RowSpec[] {
+        const sharedRoot = this.localRow(
+            MESSAGES.LABEL_SHARED_ROOT,
+            MESSAGES.DESC_SHARED_ROOT(this.plugin.vaultRegistry?.sharedRoot ?? ""),
+            (setting) => this.applySharedRootRow(setting),
+        );
+        if (!this.hasManagedServer()) return [...this.rowsInstallServer(), sharedRoot];
+        // Adopting a data dir and sizing the install both need the registry that resolves it.
+        const registryRows: RowSpec[] =
+            this.plugin.vaultRegistry === null
+                ? []
+                : [
+                      this.localRow(MESSAGES.LABEL_ADOPT_DATA_DIR, MESSAGES.DESC_ADOPT_DATA_DIR, (setting) =>
+                          this.applyAdoptDataDirRow(setting),
+                      ),
+                      this.localRow(MESSAGES.LABEL_STORAGE_REPORT, MESSAGES.DESC_STORAGE_REPORT, (setting, container) =>
+                          this.applyStorageReportRow(setting, container),
+                      ),
+                  ];
+        return [
+            this.localRow(MESSAGES.LABEL_SERVER_STATUS, MESSAGES.DESC_SERVER_STATUS_CURRENT, (setting) =>
+                this.applyServerStatusRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_SERVER_CONTROLS, MESSAGES.DESC_SERVER_CONTROLS_START_STOP, (setting) =>
+                this.applyServerControlsRow(setting),
+            ),
+            sharedRoot,
+            ...registryRows,
+            this.localRow(MESSAGES.LABEL_SERVER_VERSION, MESSAGES.DESC_SERVER_VERSION_LOADING, (setting, container) =>
+                this.applyVersionRow(setting, container),
+            ),
+            this.localRow(MESSAGES.LABEL_SERVER_AUTO_UPDATE, MESSAGES.DESC_SERVER_AUTO_UPDATE, (setting) =>
+                this.applyAutoUpdateRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_SERVER_UPDATE_REMINDER, MESSAGES.DESC_SERVER_UPDATE_REMINDER, (setting) =>
+                this.applyUpdateReminderRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_INCLUDE_DEV_BUILDS, MESSAGES.DESC_INCLUDE_DEV_BUILDS, (setting) =>
+                this.applyDevBuildsRow(setting),
+            ),
+        ];
+    }
 
-        const statusSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SERVER_STATUS)
-            .setDesc(MESSAGES.DESC_SERVER_STATUS_CURRENT);
-
-        const statusEl = statusSetting.settingEl.createDiv({ cls: "lilbee-server-status" });
+    private applyServerStatusRow(setting: Setting): void {
+        setting.setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_STATUS_CURRENT);
+        const statusEl = setting.settingEl.createDiv({ cls: "lilbee-server-status" });
         const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
         const stateText = statusEl.createSpan();
-
         const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
         stateText.setText(serverState);
         dot.classList.add(`is-${serverState}`);
+    }
 
-        const controlSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SERVER_CONTROLS)
-            .setDesc(MESSAGES.DESC_SERVER_CONTROLS_START_STOP);
-
+    private applyServerControlsRow(setting: Setting): void {
+        setting.setName(MESSAGES.LABEL_SERVER_CONTROLS).setDesc(MESSAGES.DESC_SERVER_CONTROLS_START_STOP);
+        const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
         if (serverState === SERVER_STATE.STOPPED || serverState === SERVER_STATE.ERROR) {
-            controlSetting.addButton((btn) =>
+            setting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_START).onClick(async () => {
                     this.plugin.journal.lifecycle("start requested from the settings tab");
                     await this.plugin.startManagedServer();
-                    this.render();
+                    this.refresh();
                 }),
             );
         }
         if (serverState === SERVER_STATE.READY || serverState === SERVER_STATE.STARTING) {
-            controlSetting.addButton((btn) =>
+            setting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_STOP).onClick(async () => {
                     this.plugin.journal.lifecycle("stop requested from the settings tab");
                     await this.plugin.serverManager?.stop();
-                    this.render();
+                    this.refresh();
                 }),
             );
         }
         if (serverState === SERVER_STATE.READY) {
-            controlSetting.addButton((btn) =>
+            setting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_RESTART).onClick(async () => {
                     this.plugin.journal.lifecycle("restart requested from the settings tab");
                     try {
@@ -510,22 +1071,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     } catch (err) {
                         new Notice(errorMessage(err, MESSAGES.ERROR_START_SERVER));
                     }
-                    this.render();
+                    this.refresh();
                 }),
             );
         }
-
-        this.renderSharedRootSetting(containerEl);
-        this.renderAdoptDataDir(containerEl);
-        this.renderStorageReport(containerEl);
-        this.renderVersionSetting(containerEl);
-        this.renderAutoUpdateToggle(containerEl);
-        this.renderUpdateReminderToggle(containerEl);
-        this.renderDevBuildsToggle(containerEl);
     }
 
-    private renderAutoUpdateToggle(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+    private applyAutoUpdateRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_SERVER_AUTO_UPDATE)
             .setDesc(MESSAGES.DESC_SERVER_AUTO_UPDATE)
             .addToggle((toggle) =>
@@ -535,8 +1088,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
-    private renderUpdateReminderToggle(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+    private applyUpdateReminderRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_SERVER_UPDATE_REMINDER)
             .setDesc(MESSAGES.DESC_SERVER_UPDATE_REMINDER)
             .addToggle((toggle) =>
@@ -571,16 +1124,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
      * One control for upgrade, downgrade, and reinstall. The dropdown lists
      * recent releases newest-first; the button names what the selection does.
      */
-    private renderVersionSetting(containerEl: HTMLElement): void {
+    private applyVersionRow(setting: Setting, container: HTMLElement): void {
         const installed = this.plugin.getSharedLilbeeVersion();
-        const setting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SERVER_VERSION)
-            .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        setting.setName(MESSAGES.LABEL_SERVER_VERSION).setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
         this.versionSettingEl = setting.settingEl;
-        const progress = this.renderUpdateProgress(containerEl);
+        const progress = this.renderUpdateProgress(container);
 
         let releases: ReleaseInfo[] = [];
         let selectedTag = installed;
@@ -636,7 +1187,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 // so the chosen version is honored across plugin updates.
                 if (updated && selectedTag !== releases[0].tag) {
                     this.plugin.setServerAutoUpdate(false);
-                    this.render();
+                    this.refresh();
                 }
             });
         });
@@ -649,7 +1200,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         ? MESSAGES.DESC_SERVER_VERSION_OFFLINE(installed, loaded.error)
                         : MESSAGES.DESC_SERVER_VERSION_UNKNOWN,
                 );
-                setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.render()));
+                setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.refresh()));
                 return;
             }
             const all = loaded.releases;
@@ -686,15 +1237,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     /** Opt in to in-development builds. */
-    private renderDevBuildsToggle(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+    private applyDevBuildsRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
             .setDesc(MESSAGES.DESC_INCLUDE_DEV_BUILDS)
             .addToggle((toggle) =>
                 toggle.setValue(this.plugin.settings.includeDevBuilds).onChange(async (value) => {
                     this.plugin.settings.includeDevBuilds = value;
                     await this.plugin.saveSettings();
-                    this.render();
+                    this.refresh();
                 }),
             );
     }
@@ -722,13 +1273,44 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const heading = new Setting(containerEl).setName(MESSAGES.LABEL_UNINSTALL).setHeading();
         heading.settingEl.addClass("lilbee-danger-heading");
         heading.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
+        this.renderUninstallCallout(containerEl);
+        this.applyUninstallServerRow(new Setting(containerEl), totalBytes);
+    }
 
-        const callout = containerEl.createDiv({ cls: "lilbee-uninstall-callout" });
+    private defsUninstall(totalBytes: number): SettingDefinitionItem[] {
+        return [
+            {
+                type: "group",
+                heading: MESSAGES.LABEL_UNINSTALL,
+                cls: "lilbee-danger-heading",
+                items: [
+                    this.definitionOf({
+                        name: "",
+                        desc: MESSAGES.CALLOUT_UNINSTALL_FIRST,
+                        searchable: false,
+                        apply: (_setting, container) => this.renderUninstallCallout(container),
+                    }),
+                    this.definitionOf(
+                        this.localRow(
+                            MESSAGES.LABEL_UNINSTALL_SERVER,
+                            MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(totalBytes)),
+                            (setting) => this.applyUninstallServerRow(setting, totalBytes),
+                        ),
+                    ),
+                ],
+            },
+        ];
+    }
+
+    private renderUninstallCallout(container: HTMLElement): void {
+        const callout = container.createDiv({ cls: "lilbee-uninstall-callout" });
         const mark = callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });
         mark.setAttribute("aria-hidden", "true");
         callout.createEl("p", { text: MESSAGES.CALLOUT_UNINSTALL_FIRST });
+    }
 
-        new Setting(containerEl)
+    private applyUninstallServerRow(setting: Setting, totalBytes: number): void {
+        setting
             .setName(MESSAGES.LABEL_UNINSTALL_SERVER)
             .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(totalBytes)))
             .addButton((btn) => {
@@ -750,36 +1332,48 @@ export class LilbeeSettingTab extends PluginSettingTab {
             new Notice(errorMessage(err, MESSAGES.ERROR_UNINSTALL_FAILED));
             console.error("[lilbee] uninstall failed:", err);
         }
-        this.render();
+        this.refresh();
     }
 
     /** Recovery path after an uninstall: pick a release and pull the server back. */
-    private renderInstallServer(containerEl: HTMLElement): void {
-        // A download kicked off outside Settings (first run, consent modal) is still
-        // in flight: offer to stop it rather than a dead Install button.
+    private rowsInstallServer(): RowSpec[] {
         if (this.plugin.isDownloadingServer()) {
-            new Setting(containerEl)
-                .setName(MESSAGES.LABEL_SERVER_STATUS)
-                .setDesc(MESSAGES.DESC_SERVER_DOWNLOADING)
-                .addButton((btn) => {
-                    btn.setButtonText(MESSAGES.BUTTON_CANCEL_DOWNLOAD).onClick(() => {
-                        this.plugin.cancelServerDownload();
-                        this.render();
-                    });
-                    btn.buttonEl.addClass("mod-warning");
-                });
-            return;
+            return [
+                this.localRow(MESSAGES.LABEL_SERVER_STATUS, MESSAGES.DESC_SERVER_DOWNLOADING, (setting) =>
+                    this.applyCancelDownloadRow(setting),
+                ),
+            ];
         }
+        return [
+            this.localRow(MESSAGES.LABEL_SERVER_STATUS, MESSAGES.DESC_SERVER_NOT_INSTALLED, (setting) => {
+                setting.setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_NOT_INSTALLED);
+            }),
+            this.localRow(MESSAGES.LABEL_INSTALL_SERVER, MESSAGES.DESC_SERVER_VERSION_LOADING, (setting, container) =>
+                this.applyInstallServerRow(setting, container),
+            ),
+        ];
+    }
 
-        new Setting(containerEl).setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_NOT_INSTALLED);
+    /** A download kicked off outside Settings is still in flight: offer to stop it. */
+    private applyCancelDownloadRow(setting: Setting): void {
+        setting
+            .setName(MESSAGES.LABEL_SERVER_STATUS)
+            .setDesc(MESSAGES.DESC_SERVER_DOWNLOADING)
+            .addButton((btn) => {
+                btn.setButtonText(MESSAGES.BUTTON_CANCEL_DOWNLOAD).onClick(() => {
+                    this.plugin.cancelServerDownload();
+                    this.refresh();
+                });
+                btn.buttonEl.addClass("mod-warning");
+            });
+    }
 
-        const setting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_INSTALL_SERVER)
-            .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+    private applyInstallServerRow(setting: Setting, container: HTMLElement): void {
+        setting.setName(MESSAGES.LABEL_INSTALL_SERVER).setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
-        const progress = this.renderUpdateProgress(containerEl);
+        const progress = this.renderUpdateProgress(container);
 
         let releases: ReleaseInfo[] = [];
         let selectedTag = "";
@@ -817,7 +1411,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         void this.loadReleases().then((loaded) => {
             if (loaded.releases === null) {
                 setting.setDesc(MESSAGES.ERROR_RELEASE_LIST(loaded.error));
-                setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.render()));
+                setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.refresh()));
                 return;
             }
             releases = loaded.releases;
@@ -843,7 +1437,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             await this.plugin.installServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_INSTALLED(release.tag));
-            this.render();
+            this.refresh();
         } catch (err) {
             // Unloading aborted it, and this tab is gone with the plugin.
             if (this.plugin.isUnloaded()) return;
@@ -891,7 +1485,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             await this.plugin.updateServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
-            this.render();
+            this.refresh();
             return true;
         } catch (err) {
             // Unloading aborted it, and this tab is gone with the plugin.
@@ -910,9 +1504,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private renderSharedRootSetting(containerEl: HTMLElement): void {
+    private applySharedRootRow(setting: Setting): void {
         const resolved = this.plugin.vaultRegistry?.sharedRoot ?? "";
-        new Setting(containerEl)
+        setting
             .setName(MESSAGES.LABEL_SHARED_ROOT)
             .setDesc(MESSAGES.DESC_SHARED_ROOT(resolved))
             .addText((text) =>
@@ -926,11 +1520,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
-    private renderAdoptDataDir(containerEl: HTMLElement): void {
+    private applyAdoptDataDirRow(setting: Setting): void {
         const registry = this.plugin.vaultRegistry;
         if (!registry) return;
         let staged = "";
-        new Setting(containerEl)
+        setting
             .setName(MESSAGES.LABEL_ADOPT_DATA_DIR)
             .setDesc(MESSAGES.DESC_ADOPT_DATA_DIR)
             .addText((text) =>
@@ -946,28 +1540,28 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                     await this.plugin.adoptDataDir(staged);
                     new Notice(MESSAGES.NOTICE_ADOPT_DATA_DIR_DONE(staged));
-                    this.render();
+                    this.refresh();
                 }),
             );
     }
 
     /** Walks the shared install; the total is reused by the uninstall section. */
-    private renderStorageReport(containerEl: HTMLElement): void {
+    private applyStorageReportRow(setting: Setting, container: HTMLElement): void {
         const registry = this.plugin.vaultRegistry;
         if (!registry) return;
         const report = reportForVault(registry.sharedRoot, registry.resolveDataDir(this.plugin.vaultId));
         this.storageTotalBytes = report.totalBytes;
-        new Setting(containerEl).setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
+        setting.setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
 
-        const list = containerEl.createDiv({ cls: "lilbee-storage-report" });
+        const list = container.createDiv({ cls: "lilbee-storage-report" });
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_BIN, report.binBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_MODELS, report.modelsBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_VAULT, report.vaultBytes, report.vaultDataDir);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_TOTAL, report.totalBytes);
     }
 
-    private renderDiagnostics(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+    private applyDiagnosticsRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_EXPORT_DIAGNOSTICS)
             .setDesc(MESSAGES.DESC_EXPORT_DIAGNOSTICS)
             .addButton((btn) =>
@@ -977,8 +1571,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
-    private renderExternalSettings(containerEl: HTMLElement): void {
-        const serverSetting = new Setting(containerEl)
+    private rowsExternal(): RowSpec[] {
+        return [
+            this.localRow(MESSAGES.LABEL_SERVER_URL, MESSAGES.DESC_SERVER_URL_HELP, (setting) =>
+                this.applyServerUrlRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_MANUAL_TOKEN, MESSAGES.DESC_MANUAL_TOKEN, (setting) =>
+                this.applyManualTokenRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_SWITCH_MANAGED, MESSAGES.DESC_SWITCH_MANAGED, (setting) =>
+                this.applySwitchToManagedRow(setting),
+            ),
+        ];
+    }
+
+    private applyServerUrlRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_SERVER_URL)
             .setDesc(MESSAGES.DESC_SERVER_URL_HELP)
             .addText((text) =>
@@ -991,18 +1599,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        const serverStatusEl = serverSetting.settingEl.createSpan({ cls: "lilbee-health-status" });
+        const serverStatusEl = setting.settingEl.createSpan({ cls: "lilbee-health-status" });
 
-        serverSetting.addButton((btn) =>
+        setting.addButton((btn) =>
             btn.setButtonText(MESSAGES.BUTTON_TEST).onClick(async () => {
                 await this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
             }),
         );
-        this.appendLocalResetAffordance(serverSetting, "serverUrl", MESSAGES.LABEL_SERVER_URL);
+        this.appendLocalResetAffordance(setting, "serverUrl", MESSAGES.LABEL_SERVER_URL);
 
         void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
+    }
 
-        const manualTokenSetting = new Setting(containerEl)
+    private applyManualTokenRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_MANUAL_TOKEN)
             .setDesc(MESSAGES.DESC_MANUAL_TOKEN)
             .addText((text) => {
@@ -1014,9 +1624,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
             });
-        this.appendLocalResetAffordance(manualTokenSetting, "manualToken", MESSAGES.LABEL_MANUAL_TOKEN);
+        this.appendLocalResetAffordance(setting, "manualToken", MESSAGES.LABEL_MANUAL_TOKEN);
+    }
 
-        new Setting(containerEl)
+    private applySwitchToManagedRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_SWITCH_MANAGED)
             .setDesc(MESSAGES.DESC_SWITCH_MANAGED)
             .addButton((btn) =>
@@ -1024,105 +1636,100 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
                     this.plugin.settings.serverUrl = DEFAULT_SETTINGS.serverUrl;
                     await this.plugin.saveSettings();
-                    this.render();
+                    this.refresh();
                 }),
             );
     }
 
     private renderModelsSection(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_MODELS).setHeading();
-        containerEl.createEl("p", {
-            text: MESSAGES.DESC_MODELS_HELP,
-            cls: "setting-item-description",
-        });
+        containerEl.createEl("p", { text: MESSAGES.DESC_MODELS_HELP, cls: "setting-item-description" });
+        this.mountModelPickers(containerEl);
+        this.applyRefreshModelsRow(new Setting(containerEl));
+    }
 
-        const modelsContainer = containerEl.createDiv(CLS_MODELS_CONTAINER);
-        const modelSettings = new Setting(containerEl)
+    private defsModels(): SettingDefinitionItem[] {
+        return [
+            {
+                type: "group",
+                heading: MESSAGES.LABEL_MODELS,
+                items: [
+                    this.definitionOf({
+                        name: "",
+                        desc: MESSAGES.DESC_MODELS_HELP,
+                        searchable: false,
+                        apply: (_setting, container) => this.mountModelPickers(container),
+                    }),
+                    this.definitionOf(
+                        this.localRow(MESSAGES.LABEL_REFRESH_MODELS, MESSAGES.DESC_REFRESH_MODELS, (setting) =>
+                            this.applyRefreshModelsRow(setting),
+                        ),
+                    ),
+                ],
+            },
+        ];
+    }
+
+    /** The chat, embedding, vision and reranker pickers all live in one container the Refresh button reloads. */
+    private mountModelPickers(container: HTMLElement): void {
+        this.modelsContainerEl = container.createDiv(CLS_MODELS_CONTAINER);
+        void this.loadModels(this.modelsContainerEl);
+    }
+
+    private applyRefreshModelsRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_REFRESH_MODELS)
             .setDesc(MESSAGES.DESC_REFRESH_MODELS)
             .addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_REFRESH).onClick(async () => {
-                    await this.loadModels(modelsContainer);
+                    if (this.modelsContainerEl) await this.loadModels(this.modelsContainerEl);
+                }),
+            )
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_BROWSE_CATALOG).onClick(() => {
+                    new CatalogModal(this.app, this.plugin).open();
                 }),
             );
-        modelSettings.addButton((btn) =>
-            btn.setButtonText(MESSAGES.BUTTON_BROWSE_CATALOG).onClick(() => {
-                new CatalogModal(this.app, this.plugin).open();
-            }),
-        );
+    }
 
-        void this.loadModels(modelsContainer);
+    private rowsChatSettings(): RowSpec[] {
+        return CHAT_TOGGLES.map((spec) => this.bareToggleRow(spec));
     }
 
     private renderChatSettings(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_CHAT_SECTION).setHeading();
+        this.renderRows(containerEl, this.rowsChatSettings());
+    }
 
-        const showReasoningSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SHOW_REASONING)
-            .setDesc(MESSAGES.DESC_SHOW_REASONING)
-            .addToggle((toggle) => {
-                toggle.onChange(async (value) => {
-                    if (this.suppressChangeEvents) return;
-                    try {
-                        await this.plugin.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_SHOW_REASONING));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_SHOW_REASONING));
-                    }
-                });
-                this.serverConfigToggles.set(CONFIG_KEY.SHOW_REASONING, toggle);
-            });
-        showReasoningSetting.settingEl.hide();
-        this.serverConfigHideableEls.set(CONFIG_KEY.SHOW_REASONING, showReasoningSetting.settingEl);
-
-        const compactionSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_CHAT_COMPACTION)
-            .setDesc(MESSAGES.DESC_CHAT_COMPACTION)
-            .addToggle((toggle) => {
-                toggle.onChange(async (value) => {
-                    if (this.suppressChangeEvents) return;
-                    try {
-                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_COMPACTION]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CHAT_COMPACTION));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CHAT_COMPACTION));
-                    }
-                });
-                this.serverConfigToggles.set(CONFIG_KEY.CHAT_COMPACTION, toggle);
-            });
-        compactionSetting.settingEl.hide();
-        this.serverConfigHideableEls.set(CONFIG_KEY.CHAT_COMPACTION, compactionSetting.settingEl);
+    private rowsSearchRetrieval(): RowSpec[] {
+        return [
+            this.localRow(MESSAGES.LABEL_RESULTS_COUNT, MESSAGES.DESC_RESULTS_COUNT, (setting) =>
+                this.applyResultsCountRow(setting),
+            ),
+            this.sliderRow(MAX_DISTANCE, MAX_DISTANCE_LIMITS),
+            this.toggleRow(ADAPTIVE_THRESHOLD),
+        ];
     }
 
     private renderSearchRetrievalSettings(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_SEARCH_RETRIEVAL).setHeading();
+        this.renderRows(containerEl, this.rowsSearchRetrieval());
+    }
 
-        const topKSetting = new Setting(containerEl)
+    private applyResultsCountRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_RESULTS_COUNT)
             .setDesc(MESSAGES.DESC_RESULTS_COUNT)
             .addSlider((slider) =>
                 slider
-                    .setLimits(1, 20, 1)
+                    .setLimits(TOP_K_LIMITS.min, TOP_K_LIMITS.max, TOP_K_LIMITS.step)
                     .setValue(this.plugin.settings.topK)
                     .onChange(async (value) => {
                         this.plugin.settings.topK = value;
                         await this.plugin.saveSettings();
                     }),
             );
-        this.appendLocalResetAffordance(topKSetting, "topK", MESSAGES.LABEL_RESULTS_COUNT);
-
-        this.renderConfigSlider(containerEl, "max_distance", MESSAGES.LABEL_MAX_DISTANCE, MESSAGES.DESC_MAX_DISTANCE, {
-            min: 0.05,
-            max: 1.0,
-            step: 0.05,
-        });
-
-        this.renderConfigToggle(
-            containerEl,
-            "adaptive_threshold",
-            MESSAGES.LABEL_ADAPTIVE_THRESHOLD,
-            MESSAGES.DESC_ADAPTIVE_THRESHOLD,
-        );
+        this.appendLocalResetAffordance(setting, "topK", MESSAGES.LABEL_RESULTS_COUNT);
     }
 
     private loadServerDefaults(): void {
@@ -1174,8 +1781,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         generalInput.placeholder = cfg.general_system_prompt;
                     }
                 }
+                const first = this.serverConfig === null;
+                this.serverConfig = cfg;
                 this.applyChatModeFromConfig(cfg);
                 this.applyHideableConfigFields(cfg);
+                if (!this.usesDefinitions()) return;
+                // The first config decides which rows exist and what they start at, so rebuild once.
+                if (first) this.refresh();
+                else this.refreshVisibility();
             })
             .catch(() => {
                 // Connection status is shown via the Test button — no duplicate warning needed
@@ -1203,6 +1816,30 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
+    /** Show or hide a row the plugin owns. On 1.13 the row's visible predicate owns it and this is a no-op. */
+    private setRowVisible(el: HTMLElement | null, visible: boolean): void {
+        if (!el || this.usesDefinitions()) return;
+        if (visible) el.show();
+        else el.hide();
+    }
+
+    /** Pre-1.13 hides the row until the server reports the key; 1.13 uses the row's visible predicate. */
+    private hideUntilServerReports(el: HTMLElement, key: string): void {
+        if (this.usesDefinitions()) return;
+        el.hide();
+        this.serverConfigHideableEls.set(key, el);
+    }
+
+    /** True once the connected server has reported a value for a config key. */
+    private serverReports(key: string): boolean {
+        return this.serverConfig !== null && this.serverConfig[key] !== undefined;
+    }
+
+    /** True until a capability probe says the connected server lacks the feature. */
+    private serverSupports(capability: string): boolean {
+        return this.capabilities === null || this.capabilities[capability];
+    }
+
     private applyHideableConfigFields(cfg: ConfigResponse): void {
         // The initial render leaves each row's settingEl with display = "none". When the server
         // reports a value for a key, reveal the row. Older servers omit unknown keys entirely,
@@ -1215,13 +1852,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private applyChatModeFromConfig(cfg: ConfigResponse): void {
-        /* v8 ignore next 2 */
-        if (!this.chatModeSettingEl) return;
-        if (cfg.chat_mode === undefined) {
-            this.chatModeSettingEl.hide();
-            return;
-        }
-        this.chatModeSettingEl.show();
+        // On 1.13 the row's visible predicate hides it instead, so only the value and the embedding guard apply.
+        this.setRowVisible(this.chatModeSettingEl, cfg.chat_mode !== undefined);
+        if (cfg.chat_mode === undefined) return;
         if (this.chatModeDropdown) {
             this.chatModeDropdown.setValue(cfg.chat_mode);
         }
@@ -1256,7 +1889,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     try {
                         await this.plugin.api.updateConfig({ [key]: def });
                         new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.render();
+                        this.refresh();
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
                     }
@@ -1277,66 +1910,80 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.plugin.settings[key] = DEFAULT_SETTINGS[key];
                     await this.plugin.saveSettings();
                     new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                    this.render();
+                    this.refresh();
                 }),
         );
     }
 
+    private rowsGeneration(): RowSpec[] {
+        const rag: ConfigRowSpec = {
+            key: CONFIG_KEY.RAG_SYSTEM_PROMPT,
+            name: MESSAGES.LABEL_RAG_SYSTEM_PROMPT,
+            desc: MESSAGES.DESC_RAG_SYSTEM_PROMPT,
+        };
+        const general: ConfigRowSpec = {
+            key: CONFIG_KEY.GENERAL_SYSTEM_PROMPT,
+            name: MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
+            desc: MESSAGES.DESC_GENERAL_SYSTEM_PROMPT,
+        };
+        return [
+            // Both prompts reach the server through /api/config, so external mode sees them too.
+            this.localRow(rag.name, rag.desc, (setting) =>
+                this.applySystemPromptRow(setting, rag, "ragSystemPrompt", this.plugin.settings.ragSystemPrompt),
+            ),
+            this.localRow(general.name, general.desc, (setting) =>
+                this.applySystemPromptRow(
+                    setting,
+                    general,
+                    "generalSystemPrompt",
+                    this.plugin.settings.generalSystemPrompt,
+                ),
+            ),
+            {
+                key: CONFIG_KEY.CHAT_MODE,
+                name: MESSAGES.LABEL_CHAT_MODE,
+                desc: MESSAGES.DESC_CHAT_MODE,
+                apply: (setting) => this.applyChatModeRow(setting),
+            },
+            ...GENERATION_FIELDS.map((field) => this.generationRow(field)),
+        ];
+    }
+
     private renderGenerationSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-generation-details lilbee-settings-section" });
-        const modelLabel = displayLabelForRef(this.plugin.activeModel) || MESSAGES.LABEL_NO_MODEL_SELECTED;
-        details.createEl("summary", { text: `${MESSAGES.LABEL_GENERATION} (${modelLabel})` });
-        details.createEl("p", {
-            text: MESSAGES.LABEL_GENERATION_HELP,
-            cls: "setting-item-description",
-        });
-
-        // Both prompts reach the server through /api/config. They used to travel
-        // only in the spawn environment, which made them dead in external mode
-        // and stale until the next spawn in managed mode.
-        const ragPromptSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)
-            .setDesc(MESSAGES.DESC_RAG_SYSTEM_PROMPT)
-            .addTextArea((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                    .setValue(this.plugin.settings.ragSystemPrompt)
-                    .onChange(async (value) => {
-                        this.plugin.settings.ragSystemPrompt = value;
-                        await this.plugin.saveSettings();
-                        await this.pushSystemPrompt(
-                            CONFIG_KEY.RAG_SYSTEM_PROMPT,
-                            value,
-                            MESSAGES.LABEL_RAG_SYSTEM_PROMPT,
-                        );
-                    });
-                this.serverConfigInputs.set("rag_system_prompt", text.inputEl);
-            });
-        this.appendLocalResetAffordance(ragPromptSetting, "ragSystemPrompt", MESSAGES.LABEL_RAG_SYSTEM_PROMPT);
-
-        const generalPromptSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)
-            .setDesc(MESSAGES.DESC_GENERAL_SYSTEM_PROMPT)
-            .addTextArea((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                    .setValue(this.plugin.settings.generalSystemPrompt)
-                    .onChange(async (value) => {
-                        this.plugin.settings.generalSystemPrompt = value;
-                        await this.plugin.saveSettings();
-                        await this.pushSystemPrompt(
-                            CONFIG_KEY.GENERAL_SYSTEM_PROMPT,
-                            value,
-                            MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
-                        );
-                    });
-                this.serverConfigInputs.set("general_system_prompt", text.inputEl);
-            });
-        this.appendLocalResetAffordance(
-            generalPromptSetting,
-            "generalSystemPrompt",
-            MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
+        const details = this.openDetails(
+            containerEl,
+            "lilbee-generation-details",
+            this.generationHeading(),
+            MESSAGES.LABEL_GENERATION_HELP,
         );
+        this.renderRows(details, this.rowsGeneration());
+    }
 
-        const chatModeSetting = new Setting(details)
+    /** A prompt kept in plugin settings and mirrored to the server. */
+    private applySystemPromptRow(
+        setting: Setting,
+        spec: ConfigRowSpec,
+        settingsKey: "ragSystemPrompt" | "generalSystemPrompt",
+        initial: string,
+    ): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addTextArea((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
+                    .setValue(initial)
+                    .onChange(async (value) => {
+                        this.plugin.settings[settingsKey] = value;
+                        await this.plugin.saveSettings();
+                        await this.pushSystemPrompt(spec.key, value, spec.name);
+                    });
+                this.serverConfigInputs.set(spec.key, text.inputEl);
+            });
+        this.appendLocalResetAffordance(setting, settingsKey, spec.name);
+    }
+
+    private applyChatModeRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_CHAT_MODE)
             .setDesc(MESSAGES.DESC_CHAT_MODE)
             .addDropdown((dd) => {
@@ -1353,179 +2000,129 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.chatModeDropdown = dd;
                 this.chatModeSelectEl = dd.selectEl;
             });
-        this.chatModeSettingEl = chatModeSetting.settingEl;
-        this.chatModeSettingEl.hide();
+        this.chatModeSettingEl = setting.settingEl;
+        this.setRowVisible(this.chatModeSettingEl, false);
+    }
 
-        const fields: { key: string; name: string; desc: string; integer: boolean; hideable?: boolean }[] = [
-            {
-                key: "temperature",
-                name: MESSAGES.LABEL_GEN_TEMPERATURE,
-                desc: MESSAGES.DESC_GEN_TEMPERATURE,
-                integer: false,
-            },
-            {
-                key: "top_p",
-                name: MESSAGES.LABEL_GEN_TOP_P,
-                desc: MESSAGES.DESC_GEN_TOP_P,
-                integer: false,
-            },
-            {
-                key: "top_k_sampling",
-                name: MESSAGES.LABEL_GEN_TOP_K,
-                desc: MESSAGES.DESC_GEN_TOP_K,
-                integer: true,
-            },
-            {
-                key: "repeat_penalty",
-                name: MESSAGES.LABEL_GEN_REPEAT_PENALTY,
-                desc: MESSAGES.DESC_GEN_REPEAT_PENALTY,
-                integer: false,
-            },
-            // num_ctx is intentionally not surfaced — it's a model-side
-            // property. The server picks a context window appropriate to the
-            // active model; exposing it as a user knob invites mismatches
-            // (asking for more than the model supports, or over-allocating
-            // RAM for no benefit).
-            {
-                key: "seed",
-                name: MESSAGES.LABEL_GEN_SEED,
-                desc: MESSAGES.DESC_GEN_SEED,
-                integer: true,
-            },
-            {
-                key: "max_tokens",
-                name: MESSAGES.LABEL_GEN_MAX_TOKENS,
-                desc: MESSAGES.DESC_GEN_MAX_TOKENS,
-                integer: true,
-                hideable: true,
-            },
-            {
-                key: "max_reasoning_chars",
-                name: MESSAGES.LABEL_GEN_MAX_REASONING_CHARS,
-                desc: MESSAGES.DESC_GEN_MAX_REASONING_CHARS,
-                integer: true,
-                hideable: true,
-            },
-            {
-                key: "model_keep_alive",
-                name: MESSAGES.LABEL_GEN_MODEL_KEEP_ALIVE,
-                desc: MESSAGES.DESC_GEN_MODEL_KEEP_ALIVE,
-                integer: true,
-                hideable: true,
-            },
-            {
-                key: "gpu_memory_fraction",
-                name: MESSAGES.LABEL_GEN_GPU_MEMORY_FRACTION,
-                desc: MESSAGES.DESC_GEN_GPU_MEMORY_FRACTION,
-                integer: false,
-                hideable: true,
-            },
+    private generationRow(field: GenerationField): RowSpec {
+        const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
+        const apply = (setting: Setting): void => this.applyGenerationField(setting, spec, field);
+        return field.hideable === true ? { ...spec, apply } : this.localRow(spec.name, spec.desc, apply);
+    }
+
+    /** A generation knob: a number, or an empty box that clears the override. */
+    private applyGenerationField(setting: Setting, spec: ConfigRowSpec, field: GenerationField): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") {
+                            await this.pushConfig(spec.key, null, spec.name);
+                            return;
+                        }
+                        const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
+                        if (isNaN(num)) return;
+                        await this.pushConfig(spec.key, num, spec.name);
+                    });
+                this.serverConfigInputs.set(spec.key, text.inputEl);
+            });
+        this.appendResetAffordance(setting, spec.key, spec.name);
+        if (field.hideable === true) this.hideUntilServerReports(setting.settingEl, spec.key);
+    }
+
+    private rowsWorkerPool(): RowSpec[] {
+        return [
+            this.numberRow(
+                {
+                    key: "worker_pool_call_timeout_s",
+                    name: MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
+                    desc: MESSAGES.DESC_WORKER_POOL_CALL_TIMEOUT,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.toggleRow({
+                key: "worker_pool_eager_start",
+                name: MESSAGES.LABEL_WORKER_POOL_EAGER_START,
+                desc: MESSAGES.DESC_WORKER_POOL_EAGER_START,
+            }),
+            this.numberRow(
+                {
+                    key: "worker_pool_max_idle_s",
+                    name: MESSAGES.LABEL_WORKER_POOL_MAX_IDLE,
+                    desc: MESSAGES.DESC_WORKER_POOL_MAX_IDLE,
+                },
+                { integer: false, min: 0 },
+            ),
         ];
-
-        for (const field of fields) {
-            const genSetting = new Setting(details)
-                .setName(field.name)
-                .setDesc(field.desc)
-                .addText((text) => {
-                    text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
-                        .setValue("")
-                        .onChange(async (value) => {
-                            const trimmed = value.trim();
-                            if (trimmed === "") {
-                                try {
-                                    await this.plugin.api.updateConfig({ [field.key]: null });
-                                    new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
-                                } catch {
-                                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
-                                }
-                                return;
-                            }
-                            const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
-                            if (isNaN(num)) return;
-                            try {
-                                await this.plugin.api.updateConfig({ [field.key]: num });
-                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
-                            } catch {
-                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
-                            }
-                        });
-                    this.serverConfigInputs.set(field.key, text.inputEl);
-                });
-            this.appendResetAffordance(genSetting, field.key, field.name);
-            if (field.hideable) {
-                genSetting.settingEl.hide();
-                this.serverConfigHideableEls.set(field.key, genSetting.settingEl);
-            }
-        }
     }
 
     private renderWorkerPoolSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", {
-            cls: "lilbee-worker-pool-details lilbee-settings-section",
-        });
-        details.createEl("summary", { text: MESSAGES.LABEL_WORKER_POOL });
-        details.createEl("p", {
-            text: MESSAGES.LABEL_WORKER_POOL_HELP,
-            cls: "setting-item-description",
-        });
-
-        const callTimeoutSetting = this.renderHideableNumberField(
-            details,
-            "worker_pool_call_timeout_s",
-            MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
-            MESSAGES.DESC_WORKER_POOL_CALL_TIMEOUT,
-            { integer: false, min: 0 },
+        const details = this.openDetails(
+            containerEl,
+            "lilbee-worker-pool-details",
+            MESSAGES.LABEL_WORKER_POOL,
+            MESSAGES.LABEL_WORKER_POOL_HELP,
         );
-        this.appendResetAffordance(
-            callTimeoutSetting,
-            "worker_pool_call_timeout_s",
-            MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
-        );
-
-        const eagerStartSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_WORKER_POOL_EAGER_START)
-            .setDesc(MESSAGES.DESC_WORKER_POOL_EAGER_START)
-            .addToggle((toggle) => {
-                toggle.onChange(async (value) => {
-                    if (this.suppressChangeEvents) return;
-                    try {
-                        await this.plugin.api.updateConfig({ worker_pool_eager_start: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WORKER_POOL_EAGER_START));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WORKER_POOL_EAGER_START));
-                    }
-                });
-                this.serverConfigToggles.set("worker_pool_eager_start", toggle);
-            });
-        this.appendResetAffordance(
-            eagerStartSetting,
-            "worker_pool_eager_start",
-            MESSAGES.LABEL_WORKER_POOL_EAGER_START,
-        );
-        eagerStartSetting.settingEl.hide();
-        this.serverConfigHideableEls.set("worker_pool_eager_start", eagerStartSetting.settingEl);
-
-        const maxIdleSetting = this.renderHideableNumberField(
-            details,
-            "worker_pool_max_idle_s",
-            MESSAGES.LABEL_WORKER_POOL_MAX_IDLE,
-            MESSAGES.DESC_WORKER_POOL_MAX_IDLE,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(maxIdleSetting, "worker_pool_max_idle_s", MESSAGES.LABEL_WORKER_POOL_MAX_IDLE);
+        this.renderRows(details, this.rowsWorkerPool());
     }
 
     /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
      * hidden until the connected server reports the key, so older servers show none. */
-    private renderFleetSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-fleet-details lilbee-settings-section" });
-        details.createEl("summary", { text: MESSAGES.LABEL_FLEET });
-        details.createEl("p", { text: MESSAGES.LABEL_FLEET_HELP, cls: "setting-item-description" });
+    private rowsFleet(): RowSpec[] {
+        const kv: ConfigRowSpec = {
+            key: "kv_cache_type",
+            name: MESSAGES.LABEL_KV_CACHE_TYPE,
+            desc: MESSAGES.DESC_KV_CACHE_TYPE,
+        };
+        const devices: ConfigRowSpec = {
+            key: "gpu_devices",
+            name: MESSAGES.LABEL_GPU_DEVICES,
+            desc: MESSAGES.DESC_GPU_DEVICES,
+        };
+        return [
+            { ...kv, apply: (setting) => this.applyKvCacheRow(setting, kv) },
+            this.toggleRow({
+                key: "flash_attention",
+                name: MESSAGES.LABEL_FLASH_ATTENTION,
+                desc: MESSAGES.DESC_FLASH_ATTENTION,
+            }),
+            this.numberRow(
+                { key: "n_gpu_layers", name: MESSAGES.LABEL_N_GPU_LAYERS, desc: MESSAGES.DESC_N_GPU_LAYERS },
+                { integer: true, min: 0 },
+            ),
+            this.numberRow(
+                { key: "embed_replicas", name: MESSAGES.LABEL_EMBED_REPLICAS, desc: MESSAGES.DESC_EMBED_REPLICAS },
+                { integer: true, min: 0 },
+            ),
+            this.numberRow(
+                { key: "vision_replicas", name: MESSAGES.LABEL_VISION_REPLICAS, desc: MESSAGES.DESC_VISION_REPLICAS },
+                { integer: true, min: 0 },
+            ),
+            {
+                ...devices,
+                apply: (setting) => this.applyNullableTextRow(setting, devices, MESSAGES.PLACEHOLDER_GPU_DEVICES),
+            },
+        ];
+    }
 
-        const kvContainer = details.createDiv();
-        const kvSetting = new Setting(kvContainer)
-            .setName(MESSAGES.LABEL_KV_CACHE_TYPE)
-            .setDesc(MESSAGES.DESC_KV_CACHE_TYPE)
+    private renderFleetSettings(containerEl: HTMLElement): void {
+        const details = this.openDetails(
+            containerEl,
+            "lilbee-fleet-details",
+            MESSAGES.LABEL_FLEET,
+            MESSAGES.LABEL_FLEET_HELP,
+        );
+        this.renderRows(details, this.rowsFleet());
+    }
+
+    private applyKvCacheRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addDropdown((dropdown) => {
                 dropdown.addOption(KV_CACHE_TYPE.F16, KV_CACHE_TYPE.F16);
                 dropdown.addOption(KV_CACHE_TYPE.Q8_0, KV_CACHE_TYPE.Q8_0);
@@ -1533,209 +2130,151 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.addOption(KV_CACHE_TYPE.F32, KV_CACHE_TYPE.F32);
                 dropdown.setValue(KV_CACHE_TYPE.Q8_0);
                 dropdown.onChange(async (value) => {
-                    try {
-                        await this.plugin.api.updateConfig({ kv_cache_type: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_KV_CACHE_TYPE));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_KV_CACHE_TYPE));
-                    }
+                    await this.pushConfig(spec.key, value, spec.name);
                 });
-                this.serverConfigDropdowns.set("kv_cache_type", dropdown);
+                this.serverConfigDropdowns.set(spec.key, dropdown);
             });
-        this.appendResetAffordance(kvSetting, "kv_cache_type", MESSAGES.LABEL_KV_CACHE_TYPE);
-        kvContainer.hide();
-        this.serverConfigHideableEls.set("kv_cache_type", kvContainer);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
 
-        const flashContainer = details.createDiv();
-        const flashSetting = new Setting(flashContainer)
-            .setName(MESSAGES.LABEL_FLASH_ATTENTION)
-            .setDesc(MESSAGES.DESC_FLASH_ATTENTION)
-            .addToggle((toggle) => {
-                toggle.onChange(async (value) => {
-                    if (this.suppressChangeEvents) return;
-                    try {
-                        await this.plugin.api.updateConfig({ flash_attention: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FLASH_ATTENTION));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FLASH_ATTENTION));
-                    }
-                });
-                this.serverConfigToggles.set("flash_attention", toggle);
-            });
-        this.appendResetAffordance(flashSetting, "flash_attention", MESSAGES.LABEL_FLASH_ATTENTION);
-        flashContainer.hide();
-        this.serverConfigHideableEls.set("flash_attention", flashContainer);
-
-        const layers = this.renderHideableNumberField(
-            details,
-            "n_gpu_layers",
-            MESSAGES.LABEL_N_GPU_LAYERS,
-            MESSAGES.DESC_N_GPU_LAYERS,
-            { integer: true, min: 0 },
-        );
-        this.appendResetAffordance(layers, "n_gpu_layers", MESSAGES.LABEL_N_GPU_LAYERS);
-
-        const embedReplicas = this.renderHideableNumberField(
-            details,
-            "embed_replicas",
-            MESSAGES.LABEL_EMBED_REPLICAS,
-            MESSAGES.DESC_EMBED_REPLICAS,
-            { integer: true, min: 0 },
-        );
-        this.appendResetAffordance(embedReplicas, "embed_replicas", MESSAGES.LABEL_EMBED_REPLICAS);
-
-        const visionReplicas = this.renderHideableNumberField(
-            details,
-            "vision_replicas",
-            MESSAGES.LABEL_VISION_REPLICAS,
-            MESSAGES.DESC_VISION_REPLICAS,
-            { integer: true, min: 0 },
-        );
-        this.appendResetAffordance(visionReplicas, "vision_replicas", MESSAGES.LABEL_VISION_REPLICAS);
-
-        const devContainer = details.createDiv();
-        const devSetting = new Setting(devContainer)
-            .setName(MESSAGES.LABEL_GPU_DEVICES)
-            .setDesc(MESSAGES.DESC_GPU_DEVICES)
+    /** A server-config string in a text box; an empty box clears the override. */
+    private applyNullableTextRow(setting: Setting, spec: ConfigRowSpec, placeholder: string): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_GPU_DEVICES)
+                text.setPlaceholder(placeholder)
                     .setValue("")
                     .onChange(async (value) => {
                         const trimmed = value.trim();
-                        try {
-                            await this.plugin.api.updateConfig({ gpu_devices: trimmed === "" ? null : trimmed });
-                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_GPU_DEVICES));
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_GPU_DEVICES));
-                        }
+                        await this.pushConfig(spec.key, trimmed === "" ? null : trimmed, spec.name);
                     });
-                this.serverConfigInputs.set("gpu_devices", text.inputEl);
+                this.serverConfigInputs.set(spec.key, text.inputEl);
             });
-        this.appendResetAffordance(devSetting, "gpu_devices", MESSAGES.LABEL_GPU_DEVICES);
-        devContainer.hide();
-        this.serverConfigHideableEls.set("gpu_devices", devContainer);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
+
+    private rowsIngest(): RowSpec[] {
+        const tableModel: ConfigRowSpec = {
+            key: "table_model",
+            name: MESSAGES.LABEL_TABLE_MODEL,
+            desc: MESSAGES.DESC_TABLE_MODEL,
+        };
+        return [
+            // layout_detection is off by default server-side because of what it costs.
+            this.toggleRow({
+                key: "layout_detection",
+                name: MESSAGES.LABEL_LAYOUT_DETECTION,
+                desc: MESSAGES.DESC_LAYOUT_DETECTION,
+            }),
+            this.toggleRow({
+                key: "table_extraction",
+                name: MESSAGES.LABEL_TABLE_EXTRACTION,
+                desc: MESSAGES.DESC_TABLE_EXTRACTION,
+            }),
+            this.localRow(tableModel.name, tableModel.desc, (setting) => this.applyTableModelRow(setting, tableModel)),
+            this.listRow({
+                key: "ocr_language",
+                name: MESSAGES.LABEL_OCR_LANGUAGE,
+                desc: MESSAGES.DESC_OCR_LANGUAGE,
+            }),
+            this.numberRow(
+                {
+                    key: "ingest_processes",
+                    name: MESSAGES.LABEL_INGEST_PROCESSES,
+                    desc: MESSAGES.DESC_INGEST_PROCESSES,
+                },
+                { integer: true, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "system_memory_reserve_gb",
+                    name: MESSAGES.LABEL_SYSTEM_MEMORY_RESERVE_GB,
+                    desc: MESSAGES.DESC_SYSTEM_MEMORY_RESERVE_GB,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "usable_vram_fraction",
+                    name: MESSAGES.LABEL_USABLE_VRAM_FRACTION,
+                    desc: MESSAGES.DESC_USABLE_VRAM_FRACTION,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.toggleRow({
+                key: "fast_model_downloads",
+                name: MESSAGES.LABEL_FAST_MODEL_DOWNLOADS,
+                desc: MESSAGES.DESC_FAST_MODEL_DOWNLOADS,
+            }),
+            this.numberRow(
+                { key: "chunk_size", name: MESSAGES.LABEL_CHUNK_SIZE, desc: MESSAGES.DESC_CHUNK_SIZE },
+                { integer: true, min: 1, reindex: true },
+            ),
+            this.numberRow(
+                { key: "chunk_overlap", name: MESSAGES.LABEL_CHUNK_OVERLAP, desc: MESSAGES.DESC_CHUNK_OVERLAP },
+                { integer: true, min: 0, reindex: true },
+            ),
+            this.numberRow(
+                {
+                    key: "max_chunks_per_file",
+                    name: MESSAGES.LABEL_MAX_CHUNKS_PER_FILE,
+                    desc: MESSAGES.DESC_MAX_CHUNKS_PER_FILE,
+                },
+                { integer: true, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "tesseract_timeout",
+                    name: MESSAGES.LABEL_TESSERACT_TIMEOUT,
+                    desc: MESSAGES.DESC_TESSERACT_TIMEOUT,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "vision_load_budget_s",
+                    name: MESSAGES.LABEL_VISION_LOAD_BUDGET,
+                    desc: MESSAGES.DESC_VISION_LOAD_BUDGET,
+                },
+                { integer: false, min: 0 },
+            ),
+        ];
     }
 
     private renderIngestSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", {
-            cls: "lilbee-ingest-details lilbee-settings-section",
-        });
-        details.createEl("summary", { text: MESSAGES.LABEL_INGEST });
-        details.createEl("p", {
-            text: MESSAGES.LABEL_INGEST_HELP,
-            cls: "setting-item-description",
-        });
+        const details = this.openDetails(
+            containerEl,
+            "lilbee-ingest-details",
+            MESSAGES.LABEL_INGEST,
+            MESSAGES.LABEL_INGEST_HELP,
+        );
+        this.renderRows(details, this.rowsIngest());
+    }
 
-        // Extraction quality. layout_detection is off by default server-side
-        // because of what it costs, so the description says so rather than
-        // leaving someone to discover it on a slow ingest.
-        this.renderConfigToggle(
-            details,
-            "layout_detection",
-            MESSAGES.LABEL_LAYOUT_DETECTION,
-            MESSAGES.DESC_LAYOUT_DETECTION,
-        );
-        this.renderConfigToggle(
-            details,
-            "table_extraction",
-            MESSAGES.LABEL_TABLE_EXTRACTION,
-            MESSAGES.DESC_TABLE_EXTRACTION,
-        );
-        const tableModelSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_TABLE_MODEL)
-            .setDesc(MESSAGES.DESC_TABLE_MODEL)
+    private applyTableModelRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addDropdown((dropdown) => {
                 for (const model of Object.values(TABLE_MODEL)) dropdown.addOption(model, model);
                 dropdown.setValue(TABLE_MODEL.SLANET_AUTO);
                 dropdown.onChange(async (value) => {
-                    try {
-                        await this.plugin.api.updateConfig({ table_model: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_TABLE_MODEL));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_TABLE_MODEL));
-                    }
+                    await this.pushConfig(spec.key, value, spec.name);
                 });
-                this.serverConfigDropdowns.set("table_model", dropdown);
+                this.serverConfigDropdowns.set(spec.key, dropdown);
             });
-        this.appendResetAffordance(tableModelSetting, "table_model", MESSAGES.LABEL_TABLE_MODEL);
-        this.renderConfigList(details, "ocr_language", MESSAGES.LABEL_OCR_LANGUAGE, MESSAGES.DESC_OCR_LANGUAGE);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
 
-        // How much of the machine ingest and the engine may take.
-        const ingestProcesses = this.renderHideableNumberField(
-            details,
-            "ingest_processes",
-            MESSAGES.LABEL_INGEST_PROCESSES,
-            MESSAGES.DESC_INGEST_PROCESSES,
-            { integer: true, min: 0 },
-        );
-        this.appendResetAffordance(ingestProcesses, "ingest_processes", MESSAGES.LABEL_INGEST_PROCESSES);
-        const memReserve = this.renderHideableNumberField(
-            details,
-            "system_memory_reserve_gb",
-            MESSAGES.LABEL_SYSTEM_MEMORY_RESERVE_GB,
-            MESSAGES.DESC_SYSTEM_MEMORY_RESERVE_GB,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(memReserve, "system_memory_reserve_gb", MESSAGES.LABEL_SYSTEM_MEMORY_RESERVE_GB);
-        const vramFraction = this.renderHideableNumberField(
-            details,
-            "usable_vram_fraction",
-            MESSAGES.LABEL_USABLE_VRAM_FRACTION,
-            MESSAGES.DESC_USABLE_VRAM_FRACTION,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(vramFraction, "usable_vram_fraction", MESSAGES.LABEL_USABLE_VRAM_FRACTION);
-        this.renderConfigToggle(
-            details,
-            "fast_model_downloads",
-            MESSAGES.LABEL_FAST_MODEL_DOWNLOADS,
-            MESSAGES.DESC_FAST_MODEL_DOWNLOADS,
-        );
-
-        const chunkSizeSetting = this.renderHideableNumberField(
-            details,
-            "chunk_size",
-            MESSAGES.LABEL_CHUNK_SIZE,
-            MESSAGES.DESC_CHUNK_SIZE,
-            { integer: true, min: 1, reindex: true },
-        );
-        this.appendResetAffordance(chunkSizeSetting, "chunk_size", MESSAGES.LABEL_CHUNK_SIZE);
-
-        const chunkOverlapSetting = this.renderHideableNumberField(
-            details,
-            "chunk_overlap",
-            MESSAGES.LABEL_CHUNK_OVERLAP,
-            MESSAGES.DESC_CHUNK_OVERLAP,
-            { integer: true, min: 0, reindex: true },
-        );
-        this.appendResetAffordance(chunkOverlapSetting, "chunk_overlap", MESSAGES.LABEL_CHUNK_OVERLAP);
-
-        const maxChunksSetting = this.renderHideableNumberField(
-            details,
-            "max_chunks_per_file",
-            MESSAGES.LABEL_MAX_CHUNKS_PER_FILE,
-            MESSAGES.DESC_MAX_CHUNKS_PER_FILE,
-            { integer: true, min: 0 },
-        );
-        this.appendResetAffordance(maxChunksSetting, "max_chunks_per_file", MESSAGES.LABEL_MAX_CHUNKS_PER_FILE);
-
-        const tesseractSetting = this.renderHideableNumberField(
-            details,
-            "tesseract_timeout",
-            MESSAGES.LABEL_TESSERACT_TIMEOUT,
-            MESSAGES.DESC_TESSERACT_TIMEOUT,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(tesseractSetting, "tesseract_timeout", MESSAGES.LABEL_TESSERACT_TIMEOUT);
-
-        const visionBudgetSetting = this.renderHideableNumberField(
-            details,
-            "vision_load_budget_s",
-            MESSAGES.LABEL_VISION_LOAD_BUDGET,
-            MESSAGES.DESC_VISION_LOAD_BUDGET,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(visionBudgetSetting, "vision_load_budget_s", MESSAGES.LABEL_VISION_LOAD_BUDGET);
+    /** Memory rows read the config the tab already holds, so they exist only once it has arrived. */
+    private rowsMemory(): RowSpec[] {
+        return MEMORY_TOGGLES.map((spec) => ({
+            ...spec,
+            apply: (setting: Setting) => this.applyMemoryToggle(setting, spec, this.serverConfig?.[spec.key] === true),
+        }));
     }
 
     private renderMemorySection(containerEl: HTMLElement): void {
@@ -1744,20 +2283,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.plugin.api
             .config()
             .then((cfg) => {
-                this.renderMemoryToggle(
-                    section,
-                    MEMORY_CONFIG_KEY.ENABLED,
-                    cfg[MEMORY_CONFIG_KEY.ENABLED] === true,
-                    MESSAGES.LABEL_MEMORY_ENABLED,
-                    MESSAGES.DESC_MEMORY_ENABLED,
-                );
-                this.renderMemoryToggle(
-                    section,
-                    MEMORY_CONFIG_KEY.AUTO_EXTRACT,
-                    cfg[MEMORY_CONFIG_KEY.AUTO_EXTRACT] === true,
-                    MESSAGES.LABEL_MEMORY_AUTO_EXTRACT,
-                    MESSAGES.DESC_MEMORY_AUTO_EXTRACT,
-                );
+                for (const spec of MEMORY_TOGGLES) {
+                    this.applyMemoryToggle(new Setting(section), spec, cfg[spec.key] === true);
+                }
             })
             .catch((err) => {
                 if (noticeServerUnreachableIfApplicable(err)) return;
@@ -1765,228 +2293,190 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
-    private renderMemoryToggle(section: HTMLElement, key: string, initial: boolean, name: string, desc: string): void {
-        new Setting(section)
-            .setName(name)
-            .setDesc(desc)
+    private applyMemoryToggle(setting: Setting, spec: ConfigRowSpec, initial: boolean): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addToggle((toggle) => {
                 toggle.setValue(initial);
                 toggle.onChange(async (value) => {
-                    try {
-                        await this.plugin.api.updateConfig({ [key]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
-                    }
+                    await this.pushConfig(spec.key, value, spec.name);
                 });
-                this.memoryToggles.set(key, toggle);
+                this.memoryToggles.set(spec.key, toggle);
             });
     }
 
+    private rowsRetrievalAdvanced(): RowSpec[] {
+        const fts: ConfigRowSpec = {
+            key: "fts_language",
+            name: MESSAGES.LABEL_FTS_LANGUAGE,
+            desc: MESSAGES.DESC_FTS_LANGUAGE,
+        };
+        return [
+            this.numberRow(
+                {
+                    key: "candidate_multiplier",
+                    name: MESSAGES.LABEL_CANDIDATE_MULTIPLIER,
+                    desc: MESSAGES.DESC_CANDIDATE_MULTIPLIER,
+                },
+                { integer: true, min: 1 },
+            ),
+            this.numberRow(
+                {
+                    key: "min_relevance_score",
+                    name: MESSAGES.LABEL_MIN_RELEVANCE_SCORE,
+                    desc: MESSAGES.DESC_MIN_RELEVANCE_SCORE,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "max_context_sources",
+                    name: MESSAGES.LABEL_MAX_CONTEXT_SOURCES,
+                    desc: MESSAGES.DESC_MAX_CONTEXT_SOURCES,
+                },
+                { integer: true, min: 1 },
+            ),
+            this.numberRow(
+                {
+                    key: "diversity_max_per_source",
+                    name: MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
+                    desc: MESSAGES.DESC_DIVERSITY_MAX_PER_SOURCE,
+                },
+                { integer: true, min: 1 },
+            ),
+            this.toggleRow({
+                key: "title_search",
+                name: MESSAGES.LABEL_TITLE_SEARCH,
+                desc: MESSAGES.DESC_TITLE_SEARCH,
+            }),
+            this.numberRow(
+                {
+                    key: "title_search_weight",
+                    name: MESSAGES.LABEL_TITLE_SEARCH_WEIGHT,
+                    desc: MESSAGES.DESC_TITLE_SEARCH_WEIGHT,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.toggleRow({
+                key: "adaptive_fusion",
+                name: MESSAGES.LABEL_ADAPTIVE_FUSION,
+                desc: MESSAGES.DESC_ADAPTIVE_FUSION,
+            }),
+            this.numberRow(
+                {
+                    key: "adaptive_fusion_margin",
+                    name: MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN,
+                    desc: MESSAGES.DESC_ADAPTIVE_FUSION_MARGIN,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "lexical_fusion_weight",
+                    name: MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT,
+                    desc: MESSAGES.DESC_LEXICAL_FUSION_WEIGHT,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.numberRow(
+                {
+                    key: "neighbor_expansion",
+                    name: MESSAGES.LABEL_NEIGHBOR_EXPANSION,
+                    desc: MESSAGES.DESC_NEIGHBOR_EXPANSION,
+                },
+                { integer: true, min: 0 },
+            ),
+            this.toggleRow({
+                key: "filter_structural_chunks",
+                name: MESSAGES.LABEL_FILTER_STRUCTURAL_CHUNKS,
+                desc: MESSAGES.DESC_FILTER_STRUCTURAL_CHUNKS,
+            }),
+            this.numberRow(
+                {
+                    key: "rerank_min_score",
+                    name: MESSAGES.LABEL_RERANK_MIN_SCORE,
+                    desc: MESSAGES.DESC_RERANK_MIN_SCORE,
+                },
+                { integer: false, min: 0 },
+            ),
+            this.localRow(fts.name, fts.desc, (setting) => this.applyFtsLanguageRow(setting, fts)),
+            // Indexing-side quality: these only take effect on documents ingested after the change.
+            this.toggleRow({
+                key: "contextual_enrichment",
+                name: MESSAGES.LABEL_CONTEXTUAL_ENRICHMENT,
+                desc: MESSAGES.DESC_CONTEXTUAL_ENRICHMENT,
+            }),
+            this.toggleRow({
+                key: "embed_titles",
+                name: MESSAGES.LABEL_EMBED_TITLES,
+                desc: MESSAGES.DESC_EMBED_TITLES,
+            }),
+            this.toggleRow({
+                key: "token_sizing",
+                name: MESSAGES.LABEL_TOKEN_SIZING,
+                desc: MESSAGES.DESC_TOKEN_SIZING,
+            }),
+            this.numberRow(
+                { key: "mmr_lambda", name: MESSAGES.LABEL_MMR_LAMBDA, desc: MESSAGES.DESC_MMR_LAMBDA },
+                { integer: false, min: 0 },
+            ),
+        ];
+    }
+
     private renderRetrievalAdvanced(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", {
-            cls: "lilbee-retrieval-advanced-details lilbee-settings-section",
-        });
-        details.createEl("summary", { text: MESSAGES.LABEL_RETRIEVAL_ADVANCED });
-        details.createEl("p", {
-            text: MESSAGES.LABEL_RETRIEVAL_ADVANCED_HELP,
-            cls: "setting-item-description",
-        });
+        const details = this.openDetails(
+            containerEl,
+            "lilbee-retrieval-advanced-details",
+            MESSAGES.LABEL_RETRIEVAL_ADVANCED,
+            MESSAGES.LABEL_RETRIEVAL_ADVANCED_HELP,
+        );
+        this.renderRows(details, this.rowsRetrievalAdvanced());
+    }
 
-        const candidateSetting = this.renderHideableNumberField(
-            details,
-            "candidate_multiplier",
-            MESSAGES.LABEL_CANDIDATE_MULTIPLIER,
-            MESSAGES.DESC_CANDIDATE_MULTIPLIER,
-            { integer: true, min: 1 },
-        );
-        this.appendResetAffordance(candidateSetting, "candidate_multiplier", MESSAGES.LABEL_CANDIDATE_MULTIPLIER);
-
-        const minRelevanceSetting = this.renderHideableNumberField(
-            details,
-            "min_relevance_score",
-            MESSAGES.LABEL_MIN_RELEVANCE_SCORE,
-            MESSAGES.DESC_MIN_RELEVANCE_SCORE,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(minRelevanceSetting, "min_relevance_score", MESSAGES.LABEL_MIN_RELEVANCE_SCORE);
-
-        const maxSourcesSetting = this.renderHideableNumberField(
-            details,
-            "max_context_sources",
-            MESSAGES.LABEL_MAX_CONTEXT_SOURCES,
-            MESSAGES.DESC_MAX_CONTEXT_SOURCES,
-            { integer: true, min: 1 },
-        );
-        this.appendResetAffordance(maxSourcesSetting, "max_context_sources", MESSAGES.LABEL_MAX_CONTEXT_SOURCES);
-
-        const diversitySetting = this.renderHideableNumberField(
-            details,
-            "diversity_max_per_source",
-            MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
-            MESSAGES.DESC_DIVERSITY_MAX_PER_SOURCE,
-            { integer: true, min: 1 },
-        );
-        this.appendResetAffordance(
-            diversitySetting,
-            "diversity_max_per_source",
-            MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
-        );
-
-        this.renderConfigToggle(details, "title_search", MESSAGES.LABEL_TITLE_SEARCH, MESSAGES.DESC_TITLE_SEARCH);
-        const titleWeight = this.renderHideableNumberField(
-            details,
-            "title_search_weight",
-            MESSAGES.LABEL_TITLE_SEARCH_WEIGHT,
-            MESSAGES.DESC_TITLE_SEARCH_WEIGHT,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(titleWeight, "title_search_weight", MESSAGES.LABEL_TITLE_SEARCH_WEIGHT);
-
-        this.renderConfigToggle(
-            details,
-            "adaptive_fusion",
-            MESSAGES.LABEL_ADAPTIVE_FUSION,
-            MESSAGES.DESC_ADAPTIVE_FUSION,
-        );
-        const fusionMargin = this.renderHideableNumberField(
-            details,
-            "adaptive_fusion_margin",
-            MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN,
-            MESSAGES.DESC_ADAPTIVE_FUSION_MARGIN,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(fusionMargin, "adaptive_fusion_margin", MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN);
-
-        const lexicalWeight = this.renderHideableNumberField(
-            details,
-            "lexical_fusion_weight",
-            MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT,
-            MESSAGES.DESC_LEXICAL_FUSION_WEIGHT,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(lexicalWeight, "lexical_fusion_weight", MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT);
-
-        const neighbors = this.renderHideableNumberField(
-            details,
-            "neighbor_expansion",
-            MESSAGES.LABEL_NEIGHBOR_EXPANSION,
-            MESSAGES.DESC_NEIGHBOR_EXPANSION,
-            { integer: true, min: 0 },
-        );
-        this.appendResetAffordance(neighbors, "neighbor_expansion", MESSAGES.LABEL_NEIGHBOR_EXPANSION);
-
-        this.renderConfigToggle(
-            details,
-            "filter_structural_chunks",
-            MESSAGES.LABEL_FILTER_STRUCTURAL_CHUNKS,
-            MESSAGES.DESC_FILTER_STRUCTURAL_CHUNKS,
-        );
-
-        const rerankMin = this.renderHideableNumberField(
-            details,
-            "rerank_min_score",
-            MESSAGES.LABEL_RERANK_MIN_SCORE,
-            MESSAGES.DESC_RERANK_MIN_SCORE,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(rerankMin, "rerank_min_score", MESSAGES.LABEL_RERANK_MIN_SCORE);
-
-        const ftsLanguage = new Setting(details)
-            .setName(MESSAGES.LABEL_FTS_LANGUAGE)
-            .setDesc(MESSAGES.DESC_FTS_LANGUAGE)
+    /** A blank box means "leave the server's language alone", so it sends nothing. */
+    private applyFtsLanguageRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addText((text) => {
                 text.onChange(async (value) => {
                     const trimmed = value.trim();
                     if (trimmed === "") return;
-                    try {
-                        await this.plugin.api.updateConfig({ fts_language: trimmed });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FTS_LANGUAGE));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FTS_LANGUAGE));
-                    }
+                    await this.pushConfig(spec.key, trimmed, spec.name);
                 });
-                this.serverConfigInputs.set("fts_language", text.inputEl);
+                this.serverConfigInputs.set(spec.key, text.inputEl);
             });
-        this.appendResetAffordance(ftsLanguage, "fts_language", MESSAGES.LABEL_FTS_LANGUAGE);
-
-        // Indexing-side quality: these only take effect on documents ingested
-        // after the change, which is why they sit with retrieval rather than
-        // with the ingest controls.
-        this.renderConfigToggle(
-            details,
-            "contextual_enrichment",
-            MESSAGES.LABEL_CONTEXTUAL_ENRICHMENT,
-            MESSAGES.DESC_CONTEXTUAL_ENRICHMENT,
-        );
-        this.renderConfigToggle(details, "embed_titles", MESSAGES.LABEL_EMBED_TITLES, MESSAGES.DESC_EMBED_TITLES);
-        this.renderConfigToggle(details, "token_sizing", MESSAGES.LABEL_TOKEN_SIZING, MESSAGES.DESC_TOKEN_SIZING);
-
-        const mmrSetting = this.renderHideableNumberField(
-            details,
-            "mmr_lambda",
-            MESSAGES.LABEL_MMR_LAMBDA,
-            MESSAGES.DESC_MMR_LAMBDA,
-            { integer: false, min: 0 },
-        );
-        this.appendResetAffordance(mmrSetting, "mmr_lambda", MESSAGES.LABEL_MMR_LAMBDA);
+        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
     /** A server-config boolean on a toggle, hidden until loadServerDefaults sees the key. */
-    private renderConfigToggle(container: HTMLElement, key: string, name: string, desc: string): void {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc)
-            .addToggle((toggle) => {
-                toggle.onChange(async (value) => {
-                    if (this.suppressChangeEvents) return;
-                    try {
-                        await this.plugin.api.updateConfig({ [key]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
-                    }
-                });
-                this.serverConfigToggles.set(key, toggle);
-            });
-        setting.settingEl.hide();
-        this.serverConfigHideableEls.set(key, setting.settingEl);
-        this.appendResetAffordance(setting, key, name);
+    private applyConfigToggle(setting: Setting, spec: ConfigRowSpec): void {
+        this.applyBareConfigToggle(setting, spec);
+        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
     /** A server-config number on a slider, hidden until loadServerDefaults sees the key. */
-    private renderConfigSlider(
-        container: HTMLElement,
-        key: string,
-        name: string,
-        desc: string,
-        opts: { min: number; max: number; step: number },
-    ): void {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc)
+    private applyConfigSlider(setting: Setting, spec: ConfigRowSpec, limits: SliderLimits): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addSlider((slider) => {
-                slider.setLimits(opts.min, opts.max, opts.step).onChange(async (value) => {
+                slider.setLimits(limits.min, limits.max, limits.step).onChange(async (value) => {
                     if (this.suppressChangeEvents) return;
-                    try {
-                        await this.plugin.api.updateConfig({ [key]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
-                    }
+                    await this.pushConfig(spec.key, value, spec.name);
                 });
-                this.serverConfigSliders.set(key, slider);
+                this.serverConfigSliders.set(spec.key, slider);
             });
-        setting.settingEl.hide();
-        this.serverConfigHideableEls.set(key, setting.settingEl);
-        this.appendResetAffordance(setting, key, name);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
     /** A server-config list of short strings, one per line (e.g. OCR languages). */
-    private renderConfigList(container: HTMLElement, key: string, name: string, desc: string): void {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc)
+    private applyConfigList(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addTextArea((area) => {
                 area.onChange(async (value) => {
                     const items = value
@@ -1996,46 +2486,39 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     // An empty box means "use the server default", not "no
                     // languages" — sending [] would leave OCR unable to read
                     // anything at all.
-                    try {
-                        await this.plugin.api.updateConfig({ [key]: items.length > 0 ? items : null });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
-                    }
+                    await this.pushConfig(spec.key, items.length > 0 ? items : null, spec.name);
                 });
-                this.serverConfigTextAreas.set(key, area.inputEl);
+                this.serverConfigTextAreas.set(spec.key, area.inputEl);
             });
-        this.appendResetAffordance(setting, key, name);
+        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
-    private renderHideableNumberField(
-        container: HTMLElement,
-        key: string,
-        name: string,
-        desc: string,
-        opts: { integer: boolean; min?: number; reindex?: boolean },
-    ): Setting {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc)
+    private applyHideableNumberField(setting: Setting, spec: ConfigRowSpec, opts: NumberFieldOpts): Setting {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addText((text) => {
                 text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
                     .setValue("")
                     .onChange(async (value) => {
-                        await this.handleHideableNumberChange(value, key, name, opts);
+                        await this.handleHideableNumberChange(value, spec.key, spec.name, opts);
                     });
-                this.serverConfigInputs.set(key, text.inputEl);
+                this.serverConfigInputs.set(spec.key, text.inputEl);
             });
-        setting.settingEl.hide();
-        this.serverConfigHideableEls.set(key, setting.settingEl);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
         return setting;
+    }
+
+    /** A hideable number field with its reset affordance: the shape most server-config rows take. */
+    private applyNumberFieldWithReset(setting: Setting, spec: ConfigRowSpec, opts: NumberFieldOpts): void {
+        this.appendResetAffordance(this.applyHideableNumberField(setting, spec, opts), spec.key, spec.name);
     }
 
     private async handleHideableNumberChange(
         value: string,
         key: string,
         name: string,
-        opts: { integer: boolean; min?: number; reindex?: boolean },
+        opts: NumberFieldOpts,
     ): Promise<void> {
         const trimmed = value.trim();
         if (trimmed === "") return;
@@ -2448,183 +2931,87 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
+    private rowsCrawling(): RowSpec[] {
+        const renderMode: ConfigRowSpec = {
+            key: CONFIG_KEY.CRAWL_RENDER_MODE,
+            name: MESSAGES.LABEL_CRAWL_RENDER_MODE,
+            desc: MESSAGES.DESC_CRAWL_RENDER_MODE,
+        };
+        const patterns: ConfigRowSpec = {
+            key: "crawl_exclude_patterns",
+            name: MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS,
+            desc: MESSAGES.DESC_CRAWL_EXCLUDE_PATTERNS,
+        };
+        return [
+            ...CRAWL_FIELDS.map((field) => this.crawlRow(field)),
+            { ...renderMode, apply: (setting) => this.applyCrawlRenderModeRow(setting, renderMode) },
+            {
+                name: MESSAGES.LABEL_CRAWL_BROWSER_SETUP,
+                desc: MESSAGES.DESC_CRAWL_BROWSER_SETUP,
+                visible: () => !this.crawlerBrowserReady,
+                apply: (setting) => this.applyCrawlBrowserSetupRow(setting),
+            },
+            this.localRow(patterns.name, patterns.desc, (setting) =>
+                this.applyCrawlExcludePatternsRow(setting, patterns),
+            ),
+        ];
+    }
+
     private renderCrawlingSettings(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_CRAWLING).setHeading();
+        this.renderRows(containerEl, this.rowsCrawling());
+    }
 
-        type NumericKind = "int" | "float";
-        type NumericField = {
-            key: string;
-            name: string;
-            desc: string;
-            placeholder: string;
-            kind: NumericKind;
-            nullable: boolean;
-            min?: number;
-        };
-        type BoolField = { key: string; name: string; desc: string; kind: "bool" };
-        type Field = NumericField | BoolField;
+    private crawlRow(field: CrawlField): RowSpec {
+        const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
+        if (field.kind === "bool")
+            return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlBool(setting, spec));
+        return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlNumber(setting, spec, field));
+    }
 
-        const fields: Field[] = [
-            {
-                key: "crawl_max_depth",
-                name: MESSAGES.LABEL_CRAWL_MAX_DEPTH,
-                desc: MESSAGES.DESC_CRAWL_MAX_DEPTH,
-                placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
-                kind: "int",
-                nullable: true,
-                min: 0,
-            },
-            {
-                key: "crawl_max_pages",
-                name: MESSAGES.LABEL_CRAWL_MAX_PAGES,
-                desc: MESSAGES.DESC_CRAWL_MAX_PAGES,
-                placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
-                kind: "int",
-                nullable: true,
-                min: 1,
-            },
-            {
-                key: "crawl_timeout",
-                name: MESSAGES.LABEL_CRAWL_TIMEOUT,
-                desc: MESSAGES.DESC_CRAWL_TIMEOUT,
-                placeholder: MESSAGES.PLACEHOLDER_30,
-                kind: "int",
-                nullable: false,
-                min: 1,
-            },
-            {
-                key: "crawl_mean_delay",
-                name: MESSAGES.LABEL_CRAWL_MEAN_DELAY,
-                desc: MESSAGES.DESC_CRAWL_MEAN_DELAY,
-                placeholder: "0.5",
-                kind: "float",
-                nullable: false,
-                min: 0,
-            },
-            {
-                key: "crawl_max_delay_range",
-                name: MESSAGES.LABEL_CRAWL_MAX_DELAY_RANGE,
-                desc: MESSAGES.DESC_CRAWL_MAX_DELAY_RANGE,
-                placeholder: "0.5",
-                kind: "float",
-                nullable: false,
-                min: 0,
-            },
-            {
-                key: "crawl_concurrent_requests",
-                name: MESSAGES.LABEL_CRAWL_CONCURRENT_REQUESTS,
-                desc: MESSAGES.DESC_CRAWL_CONCURRENT_REQUESTS,
-                placeholder: "3",
-                kind: "int",
-                nullable: false,
-                min: 1,
-            },
-            {
-                key: "crawl_retry_on_rate_limit",
-                name: MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT,
-                desc: MESSAGES.DESC_CRAWL_RETRY_ON_RATE_LIMIT,
-                kind: "bool",
-            },
-            {
-                key: "crawl_retry_base_delay_min",
-                name: MESSAGES.LABEL_CRAWL_RETRY_BASE_DELAY_MIN,
-                desc: MESSAGES.DESC_CRAWL_RETRY_BASE_DELAY_MIN,
-                placeholder: "1.0",
-                kind: "float",
-                nullable: false,
-                min: 0,
-            },
-            {
-                key: "crawl_retry_base_delay_max",
-                name: MESSAGES.LABEL_CRAWL_RETRY_BASE_DELAY_MAX,
-                desc: MESSAGES.DESC_CRAWL_RETRY_BASE_DELAY_MAX,
-                placeholder: "3.0",
-                kind: "float",
-                nullable: false,
-                min: 0,
-            },
-            {
-                key: "crawl_retry_max_backoff",
-                name: MESSAGES.LABEL_CRAWL_RETRY_MAX_BACKOFF,
-                desc: MESSAGES.DESC_CRAWL_RETRY_MAX_BACKOFF,
-                placeholder: "30.0",
-                kind: "float",
-                nullable: false,
-                min: 0,
-            },
-            {
-                key: "crawl_retry_max_attempts",
-                name: MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS,
-                desc: MESSAGES.DESC_CRAWL_RETRY_MAX_ATTEMPTS,
-                placeholder: "3",
-                kind: "int",
-                nullable: false,
-                min: 0,
-            },
-        ];
-
-        for (const field of fields) {
-            if (field.kind === "bool") {
-                const boolSetting = new Setting(containerEl)
-                    .setName(field.name)
-                    .setDesc(field.desc)
-                    .addToggle((toggle) => {
-                        toggle.onChange(async (value) => {
-                            if (this.suppressChangeEvents) return;
-                            try {
-                                await this.plugin.api.updateConfig({ [field.key]: value });
-                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
-                            } catch {
-                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
-                            }
-                        });
-                        this.serverConfigToggles.set(field.key, toggle);
-                    });
-                this.appendResetAffordance(boolSetting, field.key, field.name);
-                continue;
-            }
-
-            const numField = field;
-            const numSetting = new Setting(containerEl)
-                .setName(numField.name)
-                .setDesc(numField.desc)
-                .addText((text) => {
-                    text.setPlaceholder(numField.placeholder)
-                        .setValue("")
-                        .onChange(async (value) => {
-                            const trimmed = value.trim();
-                            if (trimmed === "") {
-                                if (!numField.nullable) return;
-                                try {
-                                    await this.plugin.api.updateConfig({ [numField.key]: null });
-                                    new Notice(MESSAGES.NOTICE_FIELD_UPDATED(numField.name));
-                                } catch {
-                                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(numField.name));
-                                }
-                                return;
-                            }
-                            const num = Number(trimmed);
-                            if (!Number.isFinite(num)) return;
-                            if (numField.kind === "int" && !Number.isInteger(num)) return;
-                            if (numField.min !== undefined && num < numField.min) return;
-                            try {
-                                await this.plugin.api.updateConfig({ [numField.key]: num });
-                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(numField.name));
-                            } catch {
-                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(numField.name));
-                            }
-                        });
-                    this.serverConfigInputs.set(numField.key, text.inputEl);
+    private applyCrawlBool(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressChangeEvents) return;
+                    await this.pushConfig(spec.key, value, spec.name);
                 });
-            this.appendResetAffordance(numSetting, numField.key, numField.name);
-        }
+                this.serverConfigToggles.set(spec.key, toggle);
+            });
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
 
-        // Wrap the render-mode row in its own child div so the hide-until-supported
-        // toggle targets just this row, not the capability-gated crawling container.
-        const renderModeContainer = containerEl.createDiv();
-        const renderModeSetting = new Setting(renderModeContainer)
-            .setName(MESSAGES.LABEL_CRAWL_RENDER_MODE)
-            .setDesc(MESSAGES.DESC_CRAWL_RENDER_MODE)
+    private applyCrawlNumber(setting: Setting, spec: ConfigRowSpec, field: CrawlNumericField): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addText((text) => {
+                text.setPlaceholder(field.placeholder)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") {
+                            if (!field.nullable) return;
+                            await this.pushConfig(spec.key, null, spec.name);
+                            return;
+                        }
+                        const num = Number(trimmed);
+                        if (!Number.isFinite(num)) return;
+                        if (field.kind === "int" && !Number.isInteger(num)) return;
+                        if (field.min !== undefined && num < field.min) return;
+                        await this.pushConfig(spec.key, num, spec.name);
+                    });
+                this.serverConfigInputs.set(spec.key, text.inputEl);
+            });
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
+
+    private applyCrawlRenderModeRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addDropdown((dropdown) => {
                 dropdown.addOption(CRAWL_RENDER_MODE.HTTP, MESSAGES.LABEL_CRAWL_RENDER_MODE_HTTP);
                 dropdown.addOption(CRAWL_RENDER_MODE.BROWSER, MESSAGES.LABEL_CRAWL_RENDER_MODE_BROWSER);
@@ -2641,21 +3028,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.crawlerBrowserReady = true;
                         this.crawlerBrowserSetupEl?.hide();
                     }
-                    try {
-                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_RENDER_MODE));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_RENDER_MODE));
-                    }
+                    await this.pushConfig(spec.key, value, spec.name);
                 });
-                this.serverConfigDropdowns.set(CONFIG_KEY.CRAWL_RENDER_MODE, dropdown);
+                this.serverConfigDropdowns.set(spec.key, dropdown);
             });
-        this.appendResetAffordance(renderModeSetting, CONFIG_KEY.CRAWL_RENDER_MODE, MESSAGES.LABEL_CRAWL_RENDER_MODE);
-        renderModeContainer.hide();
-        this.serverConfigHideableEls.set(CONFIG_KEY.CRAWL_RENDER_MODE, renderModeContainer);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+    }
 
-        const browserSetupContainer = containerEl.createDiv();
-        new Setting(browserSetupContainer)
+    /** Offered only inside a visible Crawling section, and only while the browser is missing. */
+    private applyCrawlBrowserSetupRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_CRAWL_BROWSER_SETUP)
             .setDesc(MESSAGES.DESC_CRAWL_BROWSER_SETUP)
             .addButton((btn) =>
@@ -2665,42 +3048,121 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     btn.setDisabled(false);
                     if (!installed) return;
                     this.crawlerBrowserReady = true;
-                    browserSetupContainer.hide();
+                    this.hideCrawlBrowserSetup();
                 }),
             );
-        browserSetupContainer.hide();
-        this.crawlerBrowserSetupEl = browserSetupContainer;
+        this.setRowVisible(setting.settingEl, false);
+        this.crawlerBrowserSetupEl = setting.settingEl;
+    }
 
-        const patternsSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)
-            .setDesc(MESSAGES.DESC_CRAWL_EXCLUDE_PATTERNS)
+    private hideCrawlBrowserSetup(): void {
+        if (this.usesDefinitions()) {
+            this.refreshVisibility();
+            return;
+        }
+        this.crawlerBrowserSetupEl?.hide();
+    }
+
+    private applyCrawlExcludePatternsRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addTextArea((text) => {
                 text.setValue("").onChange(async (value) => {
                     const patterns = value
                         .split("\n")
-                        .map((p) => p.trim())
-                        .filter((p) => p.length > 0);
-                    try {
-                        await this.plugin.api.updateConfig({ crawl_exclude_patterns: patterns });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS));
-                    }
+                        .map((pattern) => pattern.trim())
+                        .filter((pattern) => pattern.length > 0);
+                    await this.pushConfig(spec.key, patterns, spec.name);
                 });
                 text.inputEl.addClass("lilbee-crawl-exclude-patterns");
-                this.serverConfigTextAreas.set("crawl_exclude_patterns", text.inputEl);
+                this.serverConfigTextAreas.set(spec.key, text.inputEl);
             });
-        this.appendResetAffordance(patternsSetting, "crawl_exclude_patterns", MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
+
+    /** The wiki rows that only mean anything while the wiki is on. */
+    private rowsWikiSubSettings(): RowSpec[] {
+        const entityPrompt: ConfigRowSpec = {
+            key: "wiki_entity_page_prompt",
+            name: MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT,
+            desc: MESSAGES.DESC_WIKI_ENTITY_PAGE_PROMPT,
+        };
+        const status = MESSAGES.DESC_WIKI_STATUS_COUNTS(this.plugin.wikiPageCount, this.plugin.wikiDraftCount);
+        return [
+            this.localRow(MESSAGES.LABEL_WIKI_STATUS, status, (setting) => this.applyWikiStatusRow(setting, status)),
+            this.toggleRow({
+                key: "wiki_prune_raw",
+                name: MESSAGES.LABEL_WIKI_PRUNE_RAW,
+                desc: MESSAGES.DESC_WIKI_PRUNE_RAW,
+            }),
+            this.sliderRow(
+                {
+                    key: "wiki_embedding_faithfulness_threshold",
+                    name: MESSAGES.LABEL_WIKI_FAITHFULNESS,
+                    desc: MESSAGES.DESC_WIKI_FAITHFULNESS,
+                },
+                WIKI_FAITHFULNESS_LIMITS,
+            ),
+            this.localRow(MESSAGES.LABEL_WIKI_SEARCH_MODE, MESSAGES.DESC_WIKI_SEARCH_MODE, (setting) =>
+                this.applyWikiSearchModeRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_WIKI_SYNC_TO_VAULT, MESSAGES.DESC_WIKI_SYNC_TO_VAULT, (setting) =>
+                this.applyWikiSyncRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_WIKI_VAULT_FOLDER, MESSAGES.DESC_WIKI_VAULT_FOLDER, (setting) =>
+                this.applyWikiFolderRow(setting),
+            ),
+            this.toggleRow({
+                key: "wiki_auto_update",
+                name: MESSAGES.LABEL_WIKI_AUTO_UPDATE,
+                desc: MESSAGES.DESC_WIKI_AUTO_UPDATE,
+            }),
+            this.numberRow(
+                {
+                    key: "wiki_stub_max_chunk_refs",
+                    name: MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS,
+                    desc: MESSAGES.DESC_WIKI_STUB_MAX_CHUNK_REFS,
+                },
+                { integer: true, min: 1 },
+            ),
+            this.localRow(entityPrompt.name, entityPrompt.desc, (setting) =>
+                this.applyWikiEntityPromptRow(setting, entityPrompt),
+            ),
+            this.localRow(MESSAGES.LABEL_WIKI_RUN_LINT, MESSAGES.DESC_WIKI_RUN_LINT, (setting) =>
+                this.applyWikiActionRow(setting, MESSAGES.LABEL_WIKI_RUN_LINT, MESSAGES.DESC_WIKI_RUN_LINT, () =>
+                    this.plugin.runWikiLint(),
+                ),
+            ),
+            this.localRow(MESSAGES.LABEL_WIKI_RUN_PRUNE, MESSAGES.DESC_WIKI_RUN_PRUNE, (setting) =>
+                this.applyWikiActionRow(setting, MESSAGES.LABEL_WIKI_RUN_PRUNE, MESSAGES.DESC_WIKI_RUN_PRUNE, () =>
+                    this.plugin.runWikiPrune(),
+                ),
+            ),
+        ];
+    }
+
+    /** The sub-settings sit above the enable toggle, which is where display() has always put them. */
+    private rowsWiki(): RowSpec[] {
+        return [
+            ...this.gated(this.rowsWikiSubSettings(), () => this.plugin.settings.wikiEnabled),
+            this.localRow(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE, MESSAGES.DESC_WIKI_ENABLE_TOGGLE, (setting) =>
+                this.applyWikiEnableRow(setting),
+            ),
+        ];
     }
 
     private renderWikiSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
-        details.createEl("summary", { text: MESSAGES.LABEL_WIKI_SECTION });
-
-        // Enable wiki toggle (user preference — independent of server)
+        const details = this.openDetails(containerEl, "lilbee-advanced-details", MESSAGES.LABEL_WIKI_SECTION);
         const subSettingsContainer = details.createDiv({ cls: "lilbee-wiki-sub-settings" });
+        this.wikiSubSettingsEl = subSettingsContainer;
+        this.applyWikiEnableRow(new Setting(details));
+        this.setSubSettingsVisible(subSettingsContainer, this.plugin.settings.wikiEnabled);
+        this.renderRows(subSettingsContainer, this.rowsWikiSubSettings());
+    }
 
-        const enableSetting = new Setting(details)
+    private applyWikiEnableRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE)
             .setDesc(MESSAGES.DESC_WIKI_ENABLE_TOGGLE)
             .addToggle((toggle) => {
@@ -2709,36 +3171,27 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.plugin.settings.wikiEnabled = value;
                     this.plugin.wikiEnabled = value;
                     await this.plugin.saveSettings();
-                    this.setSubSettingsVisible(subSettingsContainer, value);
+                    this.showWikiSubSettings(value);
                 });
             });
-        this.appendLocalResetAffordance(enableSetting, "wikiEnabled", MESSAGES.LABEL_WIKI_ENABLE_TOGGLE);
+        this.appendLocalResetAffordance(setting, "wikiEnabled", MESSAGES.LABEL_WIKI_ENABLE_TOGGLE);
+    }
 
-        this.setSubSettingsVisible(subSettingsContainer, this.plugin.settings.wikiEnabled);
+    /** Reveal or hide the wiki rows after the enable toggle changed. */
+    private showWikiSubSettings(visible: boolean): void {
+        if (this.usesDefinitions()) {
+            this.refreshVisibility();
+            return;
+        }
+        if (this.wikiSubSettingsEl) this.setSubSettingsVisible(this.wikiSubSettingsEl, visible);
+    }
 
-        // Wiki status (display only)
-        const statusDesc = `Enabled — ${this.plugin.wikiPageCount} pages, ${this.plugin.wikiDraftCount} drafts`;
-        new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
+    private applyWikiStatusRow(setting: Setting, status: string): void {
+        setting.setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(status).setDisabled(true);
+    }
 
-        // Prune raw chunks
-        this.renderConfigToggle(
-            subSettingsContainer,
-            "wiki_prune_raw",
-            MESSAGES.LABEL_WIKI_PRUNE_RAW,
-            MESSAGES.DESC_WIKI_PRUNE_RAW,
-        );
-
-        // Faithfulness threshold
-        this.renderConfigSlider(
-            subSettingsContainer,
-            "wiki_embedding_faithfulness_threshold",
-            MESSAGES.LABEL_WIKI_FAITHFULNESS,
-            MESSAGES.DESC_WIKI_FAITHFULNESS,
-            { min: 0, max: 1, step: 0.05 },
-        );
-
-        // Default search mode
-        const searchModeSetting = new Setting(subSettingsContainer)
+    private applyWikiSearchModeRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_WIKI_SEARCH_MODE)
             .setDesc(MESSAGES.DESC_WIKI_SEARCH_MODE)
             .addDropdown((dropdown) => {
@@ -2752,10 +3205,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     });
             });
-        this.appendLocalResetAffordance(searchModeSetting, "searchChunkType", MESSAGES.LABEL_WIKI_SEARCH_MODE);
+        this.appendLocalResetAffordance(setting, "searchChunkType", MESSAGES.LABEL_WIKI_SEARCH_MODE);
+    }
 
-        // Sync wiki to vault
-        const syncSetting = new Setting(subSettingsContainer)
+    private applyWikiSyncRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_WIKI_SYNC_TO_VAULT)
             .setDesc(MESSAGES.DESC_WIKI_SYNC_TO_VAULT)
             .addToggle((toggle) => {
@@ -2771,81 +3225,49 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                 });
             });
-        this.appendLocalResetAffordance(syncSetting, "wikiSyncToVault", MESSAGES.LABEL_WIKI_SYNC_TO_VAULT);
+        this.appendLocalResetAffordance(setting, "wikiSyncToVault", MESSAGES.LABEL_WIKI_SYNC_TO_VAULT);
+    }
 
-        // Wiki vault folder
-        const folderSetting = new Setting(subSettingsContainer)
+    private applyWikiFolderRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_WIKI_VAULT_FOLDER)
             .setDesc(MESSAGES.DESC_WIKI_VAULT_FOLDER)
             .addText((text) => {
                 text.setValue(this.plugin.settings.wikiVaultFolder);
                 text.onChange(async (value) => {
-                    this.plugin.settings.wikiVaultFolder = value || "lilbee-wiki";
+                    this.plugin.settings.wikiVaultFolder = value || DEFAULT_WIKI_VAULT_FOLDER;
                     await this.plugin.saveSettings();
                     if (this.plugin.settings.wikiSyncToVault && this.plugin.wikiEnabled) {
                         this.plugin.initWikiSync();
                     }
                 });
             });
-        this.appendLocalResetAffordance(folderSetting, "wikiVaultFolder", MESSAGES.LABEL_WIKI_VAULT_FOLDER);
+        this.appendLocalResetAffordance(setting, "wikiVaultFolder", MESSAGES.LABEL_WIKI_VAULT_FOLDER);
+    }
 
-        // Server-side wiki behaviour. These live under the same disclosure as
-        // the vault options so everything about the wiki is in one place.
-        this.renderConfigToggle(
-            subSettingsContainer,
-            "wiki_auto_update",
-            MESSAGES.LABEL_WIKI_AUTO_UPDATE,
-            MESSAGES.DESC_WIKI_AUTO_UPDATE,
-        );
-        const stubRefs = this.renderHideableNumberField(
-            subSettingsContainer,
-            "wiki_stub_max_chunk_refs",
-            MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS,
-            MESSAGES.DESC_WIKI_STUB_MAX_CHUNK_REFS,
-            { integer: true, min: 1 },
-        );
-        this.appendResetAffordance(stubRefs, "wiki_stub_max_chunk_refs", MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS);
-
-        const entityPrompt = new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT)
-            .setDesc(MESSAGES.DESC_WIKI_ENTITY_PAGE_PROMPT)
+    /** An empty box means "use the built-in prompt", which is null rather than an empty prompt. */
+    private applyWikiEntityPromptRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addTextArea((area) => {
                 area.onChange(async (value) => {
                     const trimmed = value.trim();
-                    try {
-                        // Empty means "use the built-in prompt", which is null
-                        // rather than an empty prompt the model would be given.
-                        await this.plugin.api.updateConfig({
-                            wiki_entity_page_prompt: trimmed === "" ? null : trimmed,
-                        });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT));
-                    }
+                    await this.pushConfig(spec.key, trimmed === "" ? null : trimmed, spec.name);
                 });
-                this.serverConfigInputs.set("wiki_entity_page_prompt", area.inputEl);
+                this.serverConfigInputs.set(spec.key, area.inputEl);
             });
-        this.appendResetAffordance(entityPrompt, "wiki_entity_page_prompt", MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
 
-        // Run lint button
-        new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_RUN_LINT)
-            .setDesc(MESSAGES.DESC_WIKI_RUN_LINT)
+    private applyWikiActionRow(setting: Setting, name: string, desc: string, run: () => Promise<unknown>): void {
+        setting
+            .setName(name)
+            .setDesc(desc)
             .addButton((btn) => {
-                btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_LINT);
+                btn.setButtonText(name);
                 btn.onClick(() => {
-                    void this.plugin.runWikiLint();
-                });
-            });
-
-        // Run prune button
-        new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_RUN_PRUNE)
-            .setDesc(MESSAGES.DESC_WIKI_RUN_PRUNE)
-            .addButton((btn) => {
-                btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_PRUNE);
-                btn.onClick(() => {
-                    void this.plugin.runWikiPrune();
+                    void run();
                 });
             });
     }
@@ -2854,20 +3276,67 @@ export class LilbeeSettingTab extends PluginSettingTab {
         container.style.display = visible ? "" : "none";
     }
 
-    private renderAdvancedSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
-        details.createEl("summary", { text: MESSAGES.LABEL_ADVANCED });
-        details.createEl("p", {
-            text: MESSAGES.LABEL_ADVANCED_HELP,
-            cls: "setting-item-description",
-        });
+    private rowsAdvanced(): RowSpec[] {
+        const llm: ConfigRowSpec = {
+            key: "llm_provider",
+            name: MESSAGES.LABEL_LLM_PROVIDER,
+            desc: MESSAGES.DESC_LLM_PROVIDER,
+        };
+        return [
+            this.localRow(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT, MESSAGES.DESC_STORE_CONTENT_IN_VAULT, (setting) =>
+                this.applyStoreContentRow(setting),
+            ),
+            this.localRow(MESSAGES.LABEL_RERANKER_CANDIDATES, MESSAGES.DESC_RERANKER_CANDIDATES, (setting) =>
+                this.applyRerankCandidatesRow(setting),
+            ),
+            this.localRow(llm.name, llm.desc, (setting) => this.applyLlmProviderRow(setting, llm)),
+            ...this.gated(
+                API_KEY_FIELDS.map((field) =>
+                    this.localRow(field.name, field.desc, (setting) => this.applyApiKeyRow(setting, field)),
+                ),
+                () => this.serverSupports(CAPABILITY.API_KEYS),
+            ),
+            this.localRow(MESSAGES.LABEL_HF_TOKEN, MESSAGES.DESC_HF_TOKEN, (setting) => this.applyHfTokenRow(setting)),
+            ...LOCAL_SERVER_FIELDS.map((field) =>
+                this.localRow(field.name, field.desc, (setting) => this.applyLocalServerUrlRow(setting, field)),
+            ),
+            this.localRow(MESSAGES.LABEL_RESET_ALL_SETTINGS, MESSAGES.DESC_RESET_ALL_SETTINGS, (setting) =>
+                this.applyResetAllRow(setting),
+            ),
+        ];
+    }
 
-        const storeSetting = new Setting(details)
+    private renderAdvancedSettings(containerEl: HTMLElement): void {
+        const details = this.openDetails(
+            containerEl,
+            "lilbee-advanced-details",
+            MESSAGES.LABEL_ADVANCED,
+            MESSAGES.LABEL_ADVANCED_HELP,
+        );
+        this.applyStoreContentRow(new Setting(details));
+        this.applyRerankCandidatesRow(new Setting(details));
+        const llm: ConfigRowSpec = {
+            key: "llm_provider",
+            name: MESSAGES.LABEL_LLM_PROVIDER,
+            desc: MESSAGES.DESC_LLM_PROVIDER,
+        };
+        this.applyLlmProviderRow(new Setting(details), llm);
+        const apiKeysContainer = details.createDiv({ cls: "lilbee-api-keys-section" });
+        this.apiKeysContainerEl = apiKeysContainer;
+        for (const field of API_KEY_FIELDS) this.applyApiKeyRow(new Setting(apiKeysContainer), field);
+        this.applyHfTokenRow(new Setting(details));
+        for (const field of LOCAL_SERVER_FIELDS) this.applyLocalServerUrlRow(new Setting(details), field);
+        this.applyResetAllRow(new Setting(details));
+    }
+
+    private applyStoreContentRow(setting: Setting): void {
+        const managed = this.plugin.settings.serverMode === SERVER_MODE.MANAGED;
+        setting
             .setName(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)
             .setDesc(MESSAGES.DESC_STORE_CONTENT_IN_VAULT)
             .addToggle((toggle) => {
                 toggle.setValue(this.plugin.settings.storeContentInVault);
-                toggle.setDisabled(this.plugin.settings.serverMode !== SERVER_MODE.MANAGED);
+                toggle.setDisabled(!managed);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.storeContentInVault = value;
                     // Flipping the toggle is the way out of a refused move.
@@ -2877,15 +3346,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     void this.plugin.configureManagedStorage();
                 });
             });
-        if (this.plugin.settings.serverMode !== SERVER_MODE.MANAGED) {
-            storeSetting.settingEl.addClass("lilbee-setting-disabled");
-        }
+        if (!managed) setting.settingEl.addClass("lilbee-setting-disabled");
+    }
 
-        this.renderRerankCandidatesField(details);
-
-        const llmSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_LLM_PROVIDER)
-            .setDesc(MESSAGES.DESC_LLM_PROVIDER)
+    private applyLlmProviderRow(setting: Setting, spec: ConfigRowSpec): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
             .addDropdown((dropdown) => {
                 dropdown
                     .addOption("auto", MESSAGES.DESC_LLM_PROVIDER_AUTO)
@@ -2894,63 +3361,43 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .setValue("auto")
                     .onChange(async (value) => {
                         try {
-                            await this.plugin.api.updateConfig({ llm_provider: value });
+                            await this.plugin.api.updateConfig({ [spec.key]: value });
                             new Notice(MESSAGES.NOTICE_LLM_UPDATED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_LLM);
                         }
                     });
-                this.serverConfigInputs.set("llm_provider", dropdown.selectEl as unknown as HTMLInputElement);
+                this.serverConfigInputs.set(spec.key, dropdown.selectEl as unknown as HTMLInputElement);
             });
-        this.appendResetAffordance(llmSetting, "llm_provider", MESSAGES.LABEL_LLM_PROVIDER);
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
 
-        const apiKeyFields: { label: string; desc: string; configKey: string; provider: string }[] = [
-            {
-                label: MESSAGES.LABEL_OPENAI_API_KEY,
-                desc: MESSAGES.DESC_OPENAI_API_KEY,
-                configKey: "openai_api_key",
-                provider: "openai",
-            },
-            {
-                label: MESSAGES.LABEL_ANTHROPIC_API_KEY,
-                desc: MESSAGES.DESC_ANTHROPIC_API_KEY,
-                configKey: "anthropic_api_key",
-                provider: "anthropic",
-            },
-            {
-                label: MESSAGES.LABEL_GEMINI_API_KEY,
-                desc: MESSAGES.DESC_GEMINI_API_KEY,
-                configKey: "gemini_api_key",
-                provider: "gemini",
-            },
-        ];
+    /** Keys are written on blur, so a partly typed key is never sent. */
+    private applyApiKeyRow(setting: Setting, field: ApiKeyField): void {
+        setting
+            .setName(field.name)
+            .setDesc(field.desc)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_SK).setValue("");
+                text.inputEl.type = "password";
+                const saveKey = async (): Promise<void> => {
+                    const trimmed = text.inputEl.value.trim();
+                    if (trimmed === "") return;
+                    try {
+                        await this.plugin.api.updateConfig({ [field.key]: trimmed });
+                        this.plugin.api.invalidateCapability(CAPABILITY.API_KEYS);
+                        new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
+                    }
+                };
+                text.inputEl.addEventListener("blur", () => void saveKey());
+            });
+        setting.settingEl.setAttribute("data-lilbee-api-key", field.provider);
+    }
 
-        const apiKeysContainer = details.createDiv({ cls: "lilbee-api-keys-section" });
-        this.apiKeysContainerEl = apiKeysContainer;
-        for (const apiField of apiKeyFields) {
-            const setting = new Setting(apiKeysContainer)
-                .setName(apiField.label)
-                .setDesc(apiField.desc)
-                .addText((text) => {
-                    text.setPlaceholder(MESSAGES.PLACEHOLDER_SK).setValue("");
-                    text.inputEl.type = "password";
-                    const saveKey = async (): Promise<void> => {
-                        const trimmed = text.inputEl.value.trim();
-                        if (trimmed === "") return;
-                        try {
-                            await this.plugin.api.updateConfig({ [apiField.configKey]: trimmed });
-                            this.plugin.api.invalidateCapability(CAPABILITY.API_KEYS);
-                            new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
-                        }
-                    };
-                    text.inputEl.addEventListener("blur", () => void saveKey());
-                });
-            setting.settingEl.setAttribute("data-lilbee-api-key", apiField.provider);
-        }
-
-        new Setting(details)
+    private applyHfTokenRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_HF_TOKEN)
             .setDesc(MESSAGES.DESC_HF_TOKEN)
             .addText((text) => {
@@ -2968,49 +3415,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
             });
+    }
 
-        const localServerFields: {
-            label: string;
-            desc: string;
-            configKey: string;
-            placeholder: string;
-        }[] = [
-            {
-                label: MESSAGES.LABEL_OLLAMA_BASE_URL,
-                desc: MESSAGES.DESC_OLLAMA_BASE_URL,
-                configKey: "ollama_base_url",
-                placeholder: "http://localhost:11434",
-            },
-            {
-                label: MESSAGES.LABEL_LM_STUDIO_BASE_URL,
-                desc: MESSAGES.DESC_LM_STUDIO_BASE_URL,
-                configKey: "lm_studio_base_url",
-                placeholder: "http://localhost:1234/v1",
-            },
-        ];
-        for (const field of localServerFields) {
-            const setting = new Setting(details)
-                .setName(field.label)
-                .setDesc(field.desc)
-                .addText((text) => {
-                    text.setPlaceholder(field.placeholder)
-                        .setValue("")
-                        .onChange(async (value) => {
-                            const trimmed = value.trim();
-                            if (trimmed === "") return;
-                            try {
-                                await this.plugin.api.updateConfig({ [field.configKey]: trimmed });
-                                new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
-                            } catch {
-                                new Notice(MESSAGES.NOTICE_FAILED_LOCAL_SERVER_URL);
-                            }
-                        });
-                    this.serverConfigInputs.set(field.configKey, text.inputEl);
-                });
-            this.appendResetAffordance(setting, field.configKey, field.label);
-        }
+    private applyLocalServerUrlRow(setting: Setting, field: LocalServerField): void {
+        setting
+            .setName(field.name)
+            .setDesc(field.desc)
+            .addText((text) => {
+                text.setPlaceholder(field.placeholder)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        try {
+                            await this.plugin.api.updateConfig({ [field.key]: trimmed });
+                            new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_LOCAL_SERVER_URL);
+                        }
+                    });
+                this.serverConfigInputs.set(field.key, text.inputEl);
+            });
+        this.appendResetAffordance(setting, field.key, field.name);
+    }
 
-        new Setting(details)
+    private applyResetAllRow(setting: Setting): void {
+        setting
             .setName(MESSAGES.LABEL_RESET_ALL_SETTINGS)
             .setDesc(MESSAGES.DESC_RESET_ALL_SETTINGS)
             .addButton((btn) =>
@@ -3023,13 +3453,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         const confirmed = await confirm.result;
                         if (!confirmed) return;
                         const payload = { ...this.configDefaults };
-                        // Never wipe credential fields — resetting them would surprise the user.
+                        // Never wipe credential fields: resetting an API key has no undo path.
                         for (const k of CREDENTIAL_FIELDS) delete payload[k];
                         if (Object.keys(payload).length === 0) return;
                         try {
                             await this.plugin.api.updateConfig(payload);
                             new Notice(MESSAGES.NOTICE_SETTINGS_RESET);
-                            this.render();
+                            this.refresh();
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_RESET_ALL);
                         }
@@ -3179,7 +3609,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         new Notice(MESSAGES.NOTICE_SET_MODEL(MESSAGES.LABEL_CHAT_MODEL, label || MESSAGES.LABEL_NOT_SET.toLowerCase()));
         void this.plugin.fetchActiveModel();
-        this.render();
+        this.refresh();
     }
 
     private async pullAndSetChat(entry: CatalogEntry): Promise<void> {
@@ -3194,7 +3624,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
         }
         void this.plugin.fetchActiveModel();
-        this.render();
+        this.refresh();
     }
 
     private async streamChatPull(entry: CatalogEntry): Promise<boolean> {
@@ -3293,13 +3723,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private renderRerankCandidatesField(container: HTMLElement): void {
+    private applyRerankCandidatesRow(setting: Setting): void {
         const patch = debounce((...args: unknown[]) => {
             const num = args[0] as number;
             void this.patchRerankCandidates(num);
         }, DEBOUNCE_MS);
 
-        new Setting(container)
+        setting
             .setName(MESSAGES.LABEL_RERANKER_CANDIDATES)
             .setDesc(MESSAGES.DESC_RERANKER_CANDIDATES)
             .addText((text) => {
