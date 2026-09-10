@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import {
     CATALOG_TAB,
+    DEFAULT_SETTINGS,
     HARDWARE_FIT,
     HOSTED_SOURCES,
     LILBEE_REPO_URL,
@@ -487,7 +488,7 @@ export class SetupWizard extends Modal {
                 nextBtn.disabled = true;
                 void this.startManagedAndAdvance(step, panel, setPhase, statusEl, nextBtn, selectExternal);
             } else {
-                const url = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
+                const url = String(urlInput.value || "").trim() || DEFAULT_SETTINGS.serverUrl;
                 const token = String(tokenInput.value || "").trim();
                 statusEl.setText(MESSAGES.STATUS_CHECKING_CONNECTION);
                 nextBtn.disabled = true;
