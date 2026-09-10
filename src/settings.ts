@@ -177,7 +177,6 @@ const ADAPTIVE_THRESHOLD: ConfigRowSpec = {
 };
 const TOP_K_LIMITS: SliderLimits = { min: 1, max: 20, step: 1 };
 const WIKI_FAITHFULNESS_LIMITS: SliderLimits = { min: 0, max: 1, step: 0.05 };
-const DEFAULT_WIKI_VAULT_FOLDER = "lilbee-wiki";
 
 /** A crawl number typed into a text box. */
 interface CrawlNumericField extends ConfigRowSpec {
@@ -3264,7 +3263,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .addText((text) => {
                 text.setValue(this.plugin.settings.wikiVaultFolder);
                 text.onChange(async (value) => {
-                    this.plugin.settings.wikiVaultFolder = value || DEFAULT_WIKI_VAULT_FOLDER;
+                    this.plugin.settings.wikiVaultFolder = value || DEFAULT_SETTINGS.wikiVaultFolder;
                     await this.plugin.saveSettings();
                     if (this.plugin.settings.wikiSyncToVault && this.plugin.wikiEnabled) {
                         this.plugin.initWikiSync();

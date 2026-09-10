@@ -5189,7 +5189,7 @@ describe("managed mode settings", () => {
             for (let i = 0; i < textOnChanges.length; i++) {
                 plugin.settings.wikiVaultFolder = "something";
                 await textOnChanges[i]("");
-                if (plugin.settings.wikiVaultFolder === "lilbee-wiki") {
+                if (plugin.settings.wikiVaultFolder === DEFAULT_SETTINGS.wikiVaultFolder) {
                     return;
                 }
             }
