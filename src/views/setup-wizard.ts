@@ -117,8 +117,8 @@ function largestFitIndex(models: FeaturedModel[], memGB: number): number {
  * as the first four tiles gets an immediate sense of what's familiar. Any
  * native models outside these families backfill after.
  */
-// Substrings (lowercase) matched against `hf_repo`. Featured chat repos ship under varied orgs
-// (`Qwen/`, `unsloth/`, `ggml-org/`, `bartowski/`, …), so we don't pin to `<org>/<family>`.
+// Lowercase substrings matched against `hf_repo`, with no org prefix: featured chat repos
+// ship under varied orgs (`Qwen/`, `unsloth/`, `ggml-org/`, `bartowski/`, ...).
 // Order matters: more specific families (Qwen3 Coder) come before less specific (Qwen3).
 const PREFERRED_FAMILIES = [
     "gemma-4",
@@ -222,12 +222,9 @@ export function pickNativeChatModels(
 }
 
 /**
- * Puts the most popular candidates the wizard can offer in place of the rows
- * that will not run, in the order the server returned them. Rows left without a
- * substitute stay, behind the ones that run, so the row keeps its size.
- *
- * Nothing here drops a row, and ranking drops none either, so the picks row is
- * empty only when the server returned nothing.
+ * Replaces the rows that will not run with the most popular candidates, in server
+ * order. Rows left without a substitute stay, behind the ones that run. Never
+ * drops a row.
  */
 function substituteUnrunnable(row: FeaturedModel[], candidates: FeaturedModel[]): FeaturedModel[] {
     const unrunnable = row.filter(isUnrunnable);
@@ -856,7 +853,7 @@ export class SetupWizard extends Modal {
         const retryBtn = container.createEl("button", { text: MESSAGES.BUTTON_RETRY });
         retryBtn.addEventListener("click", () => {
             statusEl.setText("");
-            // The failed load disabled the primary action; the retry needs it back.
+            // Re-enables the primary action the failed load disabled.
             if (this.primaryBtn) this.primaryBtn.disabled = false;
             retry();
         });

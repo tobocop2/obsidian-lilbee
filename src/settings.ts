@@ -149,11 +149,11 @@ interface RowSpec {
     desc: string;
     /** Set when the connected server has to report the key before the row means anything. */
     key?: string;
-    /** Set only by gated(), which is never nested, so it is safe to overwrite. */
+    /** Set only by gated(), which is never nested. */
     visible?: () => boolean;
     /** False for rows that carry a section's own DOM rather than a setting a user searches for. */
     searchable?: boolean;
-    /** Extra search terms, so a row that reveals hidden rows answers for their names too. */
+    /** Extra search terms: the names of the hidden rows this row reveals. */
     aliases?: string[];
     /** `container` is where a row that needs more than one element puts the rest. */
     apply: (setting: Setting, container: HTMLElement) => void;
@@ -480,8 +480,7 @@ interface GenerationField extends ConfigRowSpec {
     hideable?: boolean;
 }
 
-// num_ctx is intentionally not surfaced: the server picks a context window appropriate to the
-// active model, and asking for more than the model supports only wastes RAM.
+// num_ctx is not surfaced; the server picks the context window for the active model.
 const GENERATION_FIELDS: GenerationField[] = [
     { key: "temperature", name: MESSAGES.LABEL_GEN_TEMPERATURE, desc: MESSAGES.DESC_GEN_TEMPERATURE, integer: false },
     { key: "top_p", name: MESSAGES.LABEL_GEN_TOP_P, desc: MESSAGES.DESC_GEN_TOP_P, integer: false },
@@ -656,7 +655,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return { ...spec, apply: (setting) => this.applyNumberFieldWithReset(setting, spec, opts) };
     }
 
-    /** OCR languages and the like: always shown, because the server answers with a default. */
+    /** OCR languages and the like: always shown; the server answers with a default. */
     private listRow(spec: ConfigRowSpec): RowSpec {
         return this.localRow(spec.name, spec.desc, (setting) => this.applyConfigList(setting, spec));
     }
@@ -1867,7 +1866,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.applyChatModeFromConfig(cfg);
         this.applyHideableConfigFields(cfg);
         if (!this.usesDefinitions()) return;
-        // The first config decides which rows exist and what they start at, so rebuild once.
+        // The first config rebuilds the tab; later ones only re-evaluate visibility.
         if (first) this.refresh();
         else this.refreshVisibility();
     }
@@ -1976,7 +1975,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private applyChatModeFromConfig(cfg: ConfigResponse): void {
-        // On 1.13 the row's visible predicate hides it instead, so only the value and the embedding guard apply.
+        // On 1.13 the row's visible predicate owns its visibility.
         this.setRowVisible(this.chatModeSettingEl, cfg.chat_mode !== undefined);
         if (cfg.chat_mode === undefined) return;
         if (this.chatModeDropdown) {
@@ -2051,7 +2050,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             desc: MESSAGES.DESC_GENERAL_SYSTEM_PROMPT,
         };
         return [
-            // Both prompts reach the server through /api/config, so external mode sees them too.
+            // Both prompts are server config, shown in external mode too.
             this.localRow(rag.name, rag.desc, (setting) =>
                 this.applySystemPromptRow(setting, rag, "ragSystemPrompt", this.plugin.settings.ragSystemPrompt),
             ),
@@ -2964,7 +2963,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             ...CRAWL_FIELDS.map((field) => this.crawlRow(field)),
             {
                 ...renderMode,
-                // Picking browser mode installs the browser, so this row carries the setup offer's search terms.
+                // The setup offer's search terms; picking browser mode installs the browser.
                 aliases: [MESSAGES.LABEL_CRAWL_BROWSER_SETUP],
                 apply: (setting) => this.applyCrawlRenderModeRow(setting, renderMode),
             },
@@ -3040,12 +3039,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.addOption(CRAWL_RENDER_MODE.BROWSER, MESSAGES.LABEL_CRAWL_RENDER_MODE_BROWSER);
                 dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
                 dropdown.onChange(async (value) => {
-                    // The choice can arrive before the gating probe lands, so read the capability now.
+                    // A fresh read: the gating probe can still be in flight.
                     if (
                         value === CRAWL_RENDER_MODE.BROWSER &&
                         !(await this.plugin.api.getCapability(CAPABILITY.CRAWLING_BROWSER))
                     ) {
-                        // Choosing browser mode is the request for a browser, so fetch it rather than refuse.
+                        // Browser mode without a browser installs one.
                         if (!(await this.plugin.installCrawlerBrowser())) {
                             dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
                             return;
@@ -3431,7 +3430,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .addText((text) => {
                 text.setPlaceholder(MESSAGES.PLACEHOLDER_HF_TOKEN).setValue(this.plugin.getSharedHfToken());
                 text.inputEl.type = "password";
-                // Nothing reads the token back from the server, so re-entering the stored value must still send.
+                // Tracks input events, not a value change: re-entering the stored value still sends.
                 let edited = false;
                 text.inputEl.addEventListener("input", () => {
                     edited = true;
@@ -3444,13 +3443,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.api.updateConfig({ hf_token: trimmed });
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
-                        // A refused save leaves unsaved work, so the next blur must retry it.
+                        // Still unsaved; the next blur retries.
                         edited = true;
                         return;
                     }
-                    // An edit that landed while the request was open owns the stored copy.
+                    // An edit made during the request owns the stored copy.
                     if (text.inputEl.value.trim() !== trimmed) return;
-                    // The shared copy only mirrors a token the server took, clearing included.
                     this.plugin.setSharedHfToken(trimmed);
                     new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
                 };

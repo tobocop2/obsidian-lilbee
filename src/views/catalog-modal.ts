@@ -46,7 +46,7 @@ import {
 } from "./catalog-helpers";
 
 const PAGE_SIZE = 20;
-// Search matches are spread across the hub, not sitting at one offset.
+// Page size for search; matches are spread across the hub.
 const SEARCH_PAGE_SIZE = 50;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 const DRAWER_BREAKPOINT_PX = 800;
@@ -438,7 +438,7 @@ export class CatalogModal extends Modal {
 
     private applyPage(response: CatalogResponse): void {
         this.hasMore = response.has_more;
-        // Some servers and frontier providers tag rows loosely, so the task is filtered again.
+        // Filtered by task again; some servers and frontier providers tag rows loosely.
         const filtered = this.filterTask ? response.models.filter((m) => m.task === this.filterTask) : response.models;
         this.entries.push(...filtered);
         // The server's window, not the rows received: a page can hold fewer rows than limit.
