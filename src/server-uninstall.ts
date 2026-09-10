@@ -61,7 +61,7 @@ async function stopSharedEngine(sharedRoot: string, vaultDataDir: string): Promi
     try {
         await node.execFile(binary.path, engineStopArgs(vaultDataDir), { timeout: ENGINE_STOP_TIMEOUT_MS });
     } catch {
-        // An engine that will not stop is not a reason to refuse the uninstall.
+        // The uninstall continues without the stop.
     }
 }
 

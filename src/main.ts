@@ -913,7 +913,7 @@ export default class LilbeePlugin extends Plugin {
     /** Offer the picker the first time lilbee sees an agent CLI on this machine. */
     private async maybeShowAgentPicker(): Promise<void> {
         if (this.settings.agentIntegration.pickerShown) return;
-        // The wizard re-offers pairing on close, so this defers the question rather than dropping it.
+        // Deferred, not dropped: the wizard re-offers pairing on close.
         if (this.setupWizardOpen) {
             this.agentPickerDeferred = true;
             return;
@@ -978,7 +978,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** The layout the plugin wants, or null while the data dir is unknown. */
     private wantedStorageLayout(): StorageMoveTarget | null {
-        // The server refuses to reset documents_dir, so opting out names its data dir explicitly.
+        // Opting out names the data dir explicitly; the server has no reset for documents_dir.
         const storeInVault = this.settings.storeContentInVault;
         const vaultBase = this.getVaultBasePath();
         const documentsDir = storeInVault ? `${vaultBase}/lilbee` : this.serverOwnedDocumentsDir();

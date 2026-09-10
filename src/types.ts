@@ -349,7 +349,7 @@ export interface SyncDone {
 
 /** An add stream's terminal summary: the sync it ran, plus the add-only outcomes. */
 export interface AddDone extends SyncDone {
-    /** Sources the knowledge base already tracks, so nothing was registered. Needs no user action. */
+    /** Sources the knowledge base already tracks; not registered again, and no user action needed. */
     tracked: string[];
 }
 
@@ -931,7 +931,7 @@ export interface CrawlerStatusResponse {
 
 export type CrawlerStatusField = keyof CrawlerStatusResponse;
 
-/** `PACKAGE` is the bundled crawler package; `WITH_BROWSER` also requires Chromium. */
+/** The status fields for `CAPABILITY.CRAWLING` and `CAPABILITY.CRAWLING_BROWSER`, in that order. */
 export const CRAWLER_STATUS_FIELD = {
     PACKAGE: "package_installed",
     WITH_BROWSER: "installed",
