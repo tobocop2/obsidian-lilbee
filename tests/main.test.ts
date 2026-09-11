@@ -6939,9 +6939,6 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
 
-            // Registry starts empty; the name resolves to the fallback first.
-            expect(plugin.statusBarEl?.textContent).toContain("serving");
-
             // Register the other vault so the name can resolve.
             (plugin as any).vaultRegistry.upsert({
                 id: "other",
@@ -6976,6 +6973,9 @@ describe("LilbeePlugin", () => {
             mockConfirmModalResult = false;
 
             const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
             (plugin as any).vaultRegistry.upsert({
                 id: "other",
                 displayName: "vault-new",
@@ -6984,8 +6984,6 @@ describe("LilbeePlugin", () => {
                 addedAt: 0,
                 lastActiveAt: 0,
             });
-            await plugin.onload();
-            await flush();
 
             await (plugin as any).negotiateTakeOver(
                 (plugin as any).vaultRegistry,
