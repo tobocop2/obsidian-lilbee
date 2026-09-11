@@ -104,6 +104,7 @@ export class CatalogModal extends Modal {
     private fetchedQuery = "";
     private hasMore = false;
     private isFetching = false;
+    private fetchGeneration = 0;
     private entries: CatalogEntry[] = [];
     private resultsEl: HTMLElement | null = null;
     private viewMode: CatalogViewMode = CATALOG_VIEW_MODE.GRID;
@@ -419,6 +420,7 @@ export class CatalogModal extends Modal {
     }
 
     private resetAndFetch(): void {
+        this.fetchGeneration++;
         this.offset = 0;
         this.clearResults();
         void this.fetchPage();
@@ -458,14 +460,18 @@ export class CatalogModal extends Modal {
             this.clearResults();
         }
         this.isFetching = true;
+        // Capture the request generation so a stale response (a filter changed
+        // while this page was in flight) can be discarded instead of rendering
+        // under the new filter.
+        const generation = this.fetchGeneration;
 
         let superseded = false;
         try {
             const result = await this.plugin.api.catalog(this.catalogParams(query));
             if (result.isErr()) {
                 new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
-            } else if (query !== this.filterSearch) {
-                // The term moved on while this page was in flight.
+            } else if (generation !== this.fetchGeneration) {
+                // A filter/sort/size change superseded this request while it was in flight.
                 superseded = true;
             } else {
                 this.applyPage(result.value);

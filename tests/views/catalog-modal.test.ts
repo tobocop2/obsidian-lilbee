@@ -2514,3 +2514,32 @@ describe("CatalogModal", () => {
         });
     });
 });
+
+describe("CatalogModal fetch generation", () => {
+    it("discards a stale response when the filter changes mid-flight", async () => {
+        const plugin = makePlugin();
+        // Defer the first catalog call so we can change the filter before it resolves.
+        let resolveFirst: (r: any) => void = () => {};
+        const firstPromise = new Promise<any>((r) => { resolveFirst = r; });
+        plugin.api.catalog.mockReturnValueOnce(firstPromise);
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+
+        const modal = await openModal(plugin);
+        // Start fetching the first page (in flight).
+        (modal as any).resetAndFetch();
+        expect((modal as any).isFetching).toBe(true);
+
+        // Change the filter mid-flight: increments fetchGeneration.
+        (modal as any).fetchGeneration++;
+
+        // Resolve the stale request.
+        resolveFirst(ok(makeCatalogResponse([makeEntry({ hf_repo: "stale/repo", display_name: "Stale" })])));
+        await tick();
+        await tick();
+
+        // The stale response is discarded; entries stay empty.
+        expect((modal as any).entries.length).toBe(0);
+        expect((modal as any).isFetching).toBe(false);
+        modal.close();
+    });
+});
