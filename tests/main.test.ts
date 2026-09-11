@@ -6957,12 +6957,13 @@ describe("LilbeePlugin", () => {
             expect(name).toBe("another vault");
         });
 
-        it("shows STATUS_LOCKED_BY_OTHER when another vault owns the root", async () => {
+        it("take-over prompt shows STATUS_LOCKED_BY_OTHER while waiting, not 'error'", async () => {
             const sm = await import("../src/server-manager");
             vi.mocked(sm.readScopeOwner).mockReturnValue({
                 dataDir: "/shared/vaults/other",
                 pid: 1234,
             });
+            mockConfirmModalResult = false;
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -6983,10 +6984,15 @@ describe("LilbeePlugin", () => {
                 id === "other" ? "/shared/vaults/other" : registry.resolveDataDir(id),
             );
 
-            const locked = (plugin as any).refreshLockedByOtherStatus();
-            expect(locked).toBe(true);
+            await (plugin as any).negotiateTakeOver(
+                (plugin as any).vaultRegistry,
+                undefined,
+                true,
+                "/shared/vaults/other",
+            );
+
             const el = (plugin as any).statusBarEl!;
-            expect(el.textContent).toContain("vault-new");
+            expect(el.textContent).toContain("serving");
             expect(el.textContent).not.toContain("error");
         });
     });
