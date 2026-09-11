@@ -1,6 +1,6 @@
 import { setIcon } from "obsidian";
 import type { CatalogEntry, HardwareFit, ModelCardOptions } from "../types";
-import { HARDWARE_FIT, HOSTED_SOURCES, MODEL_COMPAT, MODEL_TASK } from "../types";
+import { HARDWARE_FIT, HOSTED_SOURCES, KEY_STATUS, MODEL_COMPAT, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
 
@@ -123,7 +123,8 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
         text: tone.label,
         cls: `lilbee-model-card-status-label ${tone.labelCls}`,
     });
-    if (entry.installed) {
+    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
+    if (entry.installed && !hostedMissingKey) {
         label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
     }
     if (entry.fit && FIT_LABEL[entry.fit]) {
@@ -141,7 +142,8 @@ function statusTone(
     if (options.isActive) {
         return { dotCls: "is-active", labelCls: "is-active", label: MESSAGES.LABEL_ACTIVE };
     }
-    if (entry.installed) {
+    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
+    if (entry.installed && !hostedMissingKey) {
         return { dotCls: "is-installed", labelCls: "is-installed", label: MESSAGES.LABEL_INSTALLED };
     }
     if (entry.downloads > 0) {
