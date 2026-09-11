@@ -6179,12 +6179,14 @@ describe("ChatView — chat menu filters out non-chat models", () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         // Seed the view's internal state as fetchAndFillSelectors would.
-        (view as any).chatActive = "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf";
+        // Qwen is in the catalog (featured); Llama is manually pulled (not in catalog).
+        (view as any).chatActive = "bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf";
         (view as any).chatCatalogEntries = [
             { hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B", source: "native", task: "chat" },
         ];
         (view as any).chatInstalled = [
             { name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" },
+            { name: "bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf", source: "native" },
             { name: "BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5.Q4_K_M.gguf", source: "native" },
         ];
         (view as any).embeddingModels = [
@@ -6194,12 +6196,16 @@ describe("ChatView — chat menu filters out non-chat models", () => {
         return view;
     }
 
-    it("excludes installed embedding models from the chat menu", () => {
+    it("includes manually-pulled chat models but excludes embedding models", () => {
         const view = makeView();
         const options = (view as any).chatOtherOptions();
         const repos = options.map((o: { value: string }) => o.value);
-        expect(repos).toContain("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+        // Llama is installed but not in the featured catalog → appears in chatOtherOptions.
+        expect(repos).toContain("bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf");
+        // BGE is an embedding model → excluded from chat menu.
         expect(repos).not.toContain("BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5.Q4_K_M.gguf");
+        // Qwen is in the featured catalog → appears in chatPrimaryOptions, not here.
+        expect(repos).not.toContain("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
     });
 
     it("excludes installed vision and reranker models from the chat menu", () => {
