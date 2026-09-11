@@ -627,9 +627,7 @@ export class ChatView extends ItemView {
     }
 
     private handleChatSelection(value: string): void {
-        const uninstalled = this.chatCatalogEntries.find(
-            (e) => nativeModelRef(e.hf_repo, e.gguf_filename) === value,
-        );
+        const uninstalled = this.chatCatalogEntries.find((e) => nativeModelRef(e.hf_repo, e.gguf_filename) === value);
         if (uninstalled && !uninstalled.installed) {
             const modal = new ConfirmPullModal(this.plugin.app, {
                 displayName: uninstalled.display_name,

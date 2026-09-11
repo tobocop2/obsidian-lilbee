@@ -6188,9 +6188,7 @@ describe("ChatView chat rail activates by concrete ref", () => {
                 task: "chat",
             },
         ];
-        (view as any).chatInstalled = [
-            { name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" },
-        ];
+        (view as any).chatInstalled = [{ name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" }];
         return view;
     }
 
