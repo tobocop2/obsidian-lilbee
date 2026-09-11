@@ -710,6 +710,7 @@ export const MESSAGES = {
     STATUS_WARM_LOADING_ENGINE: "lilbee: loading the engine",
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
+    STATUS_CONNECTING: "lilbee: connecting...",
     STATUS_ERROR: "lilbee: error",
     STATUS_AUTH_ERROR: "lilbee: auth error",
     NOTICE_SERVER_UNREACHABLE: "lilbee: server unreachable",

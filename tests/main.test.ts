@@ -55,7 +55,7 @@ vi.mock("../src/api", async (importOriginal) => ({
             setTokenProvider: vi.fn(),
             setOutcomeCallback: vi.fn(),
             setBaseUrl: vi.fn(),
-            health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
+            health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } }),
             // Default config matches the test vault layout so the fire-and-forget
             // configureManagedStorage() in startManagedServer() hits the early
             // no-op exit instead of throwing on a missing method.
@@ -934,10 +934,10 @@ describe("LilbeePlugin", () => {
             );
         });
 
-        it("sets status bar text to 'lilbee: ready [external]' in external mode", async () => {
+        it("sets status bar text to 'lilbee: connecting...' in external mode after onload", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: connecting...");
         });
 
         it("registers vault watchers for the pending-sync hint plus the file-menu listener", async () => {
@@ -3814,13 +3814,21 @@ describe("LilbeePlugin", () => {
 
             plugin.api.health = vi
                 .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
+                .mockResolvedValue({
+                    isErr: () => false,
+                    isOk: () => true,
+                    value: { status: "ok", version: "0.6.66b507" },
+                });
             await (plugin as any).probeServerHealth();
             expect(plugin.serverSupportsSessions()).toBe(false);
 
             plugin.api.health = vi
                 .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.90b420" } });
+                .mockResolvedValue({
+                    isErr: () => false,
+                    isOk: () => true,
+                    value: { status: "ok", version: "0.6.90b420" },
+                });
             await (plugin as any).probeServerHealth();
             expect(plugin.serverSupportsSessions()).toBe(true);
         });
@@ -3831,9 +3839,30 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.api.health = vi
                 .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
+                .mockResolvedValue({
+                    isErr: () => false,
+                    isOk: () => true,
+                    value: { status: "ok", version: "0.6.66b507" },
+                });
             await (plugin as any).probeServerHealth();
             expect((plugin as any).externalServerVersion).toBe("");
+        });
+
+        it("probe with non-ready chat status skips setStatusReady", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({
+                    isErr: () => false,
+                    isOk: () => true,
+                    value: { status: "ok", chat_ready: false },
+                });
+            await (plugin as any).probeServerHealth();
+            // Chat is loading: reflectChatStatus paints "warming..." and the
+            // probe must not override it with "ready".
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("ready");
         });
     });
 
@@ -4829,8 +4858,10 @@ describe("LilbeePlugin", () => {
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
 
-            // Recovery: health() resolves Ok.
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            // Recovery: health() resolves Ok with status: "ok".
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
@@ -4926,7 +4957,7 @@ describe("LilbeePlugin", () => {
             plugin.activeModel = "old";
             plugin.api.health = vi
                 .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { chat_ready: true } });
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok", chat_ready: true } });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "Qwen3-235B", catalog: [], installed: [] } });
@@ -4940,7 +4971,9 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
@@ -4989,6 +5022,33 @@ describe("LilbeePlugin", () => {
             (plugin as any).healthFailureStreak = 5;
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
+        });
+
+        it("treats a 200 with a non-lilbee JSON body as a probe failure", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            // A 2020 with {} (no status: "ok") is not a lilbee server — the
+            // probe must treat it as unreachable, not ready.
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            await (plugin as any).probeServerHealth();
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
+
+        it("promotes to ready only after a probe reports status ok", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            // After onload the status is "connecting...", not "ready".
+            expect((plugin.statusBarEl as any)?.textContent).toBe("lilbee: connecting...");
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue(err(new Error("down")));
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
         });
 
         it("skips probing while a chat stream is in flight", async () => {
@@ -5318,7 +5378,7 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.activeModel).toBe("");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: connecting...");
         });
 
         it("turns show_reasoning on the first time the server reports it off, then never again", async () => {
@@ -5924,6 +5984,7 @@ describe("LilbeePlugin", () => {
         it("setStatusReady adds lilbee-status-ready class", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            (plugin as any).setStatusReady();
 
             const el = (plugin as any).statusBarEl!;
             expect(el.classList.contains("lilbee-status-ready")).toBe(true);
@@ -6956,7 +7017,7 @@ describe("LilbeePlugin", () => {
             expect(mockEnsure).toHaveBeenCalled();
         });
 
-        it("2rf: managed → external sets status to 'ready [external]', not 'stopped'", async () => {
+        it("2rf: managed → external sets status to 'connecting...', not 'stopped'", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
@@ -6966,7 +7027,7 @@ describe("LilbeePlugin", () => {
             await flush();
 
             const text = (plugin as any).statusBarEl?.textContent ?? "";
-            expect(text).toContain("[external]");
+            expect(text).toContain("connecting");
             expect(text).not.toContain("stopped");
         });
 
@@ -6988,7 +7049,7 @@ describe("LilbeePlugin", () => {
 
             const text = (plugin as any).statusBarEl?.textContent ?? "";
             expect(text).not.toContain("stopped");
-            expect(text).toContain("[external]");
+            expect(text).toContain("connecting");
         });
     });
 
@@ -7239,10 +7300,10 @@ describe("LilbeePlugin", () => {
     });
 
     describe("external mode status bar label", () => {
-        it("shows [external] in external mode", async () => {
+        it("shows 'connecting...' in external mode after onload", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: connecting...");
         });
 
         it("does not show [external] in managed mode", async () => {

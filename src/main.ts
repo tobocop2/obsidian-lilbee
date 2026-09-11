@@ -470,7 +470,7 @@ export default class LilbeePlugin extends Plugin {
                 });
             } else {
                 this.configureApi(this.settings.serverUrl);
-                this.setStatusReady();
+                this.setStatusConnecting();
                 void this.fetchActiveModel();
                 void this.warnExternalServerOutdated();
             }
@@ -1925,12 +1925,10 @@ export default class LilbeePlugin extends Plugin {
                 this.serverManager = null;
             }
             this.configureApi(this.settings.serverUrl);
-            // External mode owns its own status via the health probe; paint
-            // "ready [external]" optimistically so the user doesn't see a
-            // stale "stopped" label between the mode switch and the next
-            // probe tick. If the external server is in fact unreachable,
-            // the probe will flip to error on its next run.
-            this.setStatusReady();
+            // The first successful health probe promotes this to "ready"; until
+            // then the user sees "connecting..." so a non-lilbee server never
+            // briefly claims ready on the strength of a mode switch alone.
+            this.setStatusConnecting();
             void this.fetchActiveModel();
         }
     }
@@ -1957,6 +1955,11 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-error",
         );
         if (cls) this.statusBarEl.classList.add(cls);
+    }
+
+    private setStatusConnecting(): void {
+        this.updateStatusBar(MESSAGES.STATUS_CONNECTING, DOT_STATE.PRIMARY);
+        this.setStatusClass("lilbee-status-starting");
     }
 
     private setStatusReady(): void {
@@ -2007,7 +2010,10 @@ export default class LilbeePlugin extends Plugin {
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
         const health = await this.api.health().catch(() => null);
-        if (health?.isOk()) {
+        // A 200 with a non-lilbee JSON body (e.g. {}) parses fine but is not a
+        // healthy lilbee server. Only a body carrying status: "ok" counts, so a
+        // foreign HTTP server on the configured URL reads as unreachable.
+        if (health?.isOk() && health.value.status === "ok") {
             this.healthFailureStreak = 0;
             if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
             // Only a reconnect refetches the model: a restarted server may be on a different one.
@@ -2016,6 +2022,11 @@ export default class LilbeePlugin extends Plugin {
                 void this.fetchActiveModel();
             }
             this.reflectChatStatus(health.value);
+            // reflectChatStatus only repaints when the chat status changes to
+            // LOADING or ERROR. When the chat is READY (or unchanged), the bar
+            // still shows whatever the last state was, including the
+            // "connecting..." from a mode switch. Paint "ready" to clear it.
+            if (this.chatStatus === CHAT_STATUS.READY) this.setStatusReady();
             return;
         }
         this.healthFailureStreak += 1;
