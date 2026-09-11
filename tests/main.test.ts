@@ -6929,16 +6929,21 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
 
-            (plugin as any).vaultRegistry.upsert({
-                id: "other",
-                displayName: "vault-new",
-                dataDir: "/shared/vaults/other",
-                obsidianVaultPath: "/path/to/other",
-                addedAt: 0,
-                lastActiveAt: 0,
-            });
+            const registry = (plugin as any).vaultRegistry;
+            vi.spyOn(registry, "list").mockReturnValue([
+                {
+                    id: "other",
+                    displayName: "vault-new",
+                    dataDir: "/shared/vaults/other",
+                    obsidianVaultPath: "/path/to/other",
+                    addedAt: 0,
+                    lastActiveAt: 0,
+                },
+            ]);
+            vi.spyOn(registry, "resolveDataDir").mockImplementation((id) =>
+                id === "other" ? "/shared/vaults/other" : registry.resolveDataDir(id),
+            );
 
-            // resolveOwnerName polls the registry for the display name.
             const name = await (plugin as any).resolveOwnerName("/shared/vaults/other");
             expect(name).toBe("vault-new");
         });
@@ -6963,14 +6968,20 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
 
-            (plugin as any).vaultRegistry.upsert({
-                id: "other",
-                displayName: "vault-new",
-                dataDir: "/shared/vaults/other",
-                obsidianVaultPath: "/path/to/other",
-                addedAt: 0,
-                lastActiveAt: 0,
-            });
+            const registry = (plugin as any).vaultRegistry;
+            vi.spyOn(registry, "list").mockReturnValue([
+                {
+                    id: "other",
+                    displayName: "vault-new",
+                    dataDir: "/shared/vaults/other",
+                    obsidianVaultPath: "/path/to/other",
+                    addedAt: 0,
+                    lastActiveAt: 0,
+                },
+            ]);
+            vi.spyOn(registry, "resolveDataDir").mockImplementation((id) =>
+                id === "other" ? "/shared/vaults/other" : registry.resolveDataDir(id),
+            );
 
             const locked = (plugin as any).refreshLockedByOtherStatus();
             expect(locked).toBe(true);
