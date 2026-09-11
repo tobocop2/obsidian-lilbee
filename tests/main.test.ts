@@ -3812,23 +3812,19 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             expect(plugin.serverSupportsSessions()).toBe(true);
 
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({
-                    isErr: () => false,
-                    isOk: () => true,
-                    value: { status: "ok", version: "0.6.66b507" },
-                });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.66b507" },
+            });
             await (plugin as any).probeServerHealth();
             expect(plugin.serverSupportsSessions()).toBe(false);
 
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({
-                    isErr: () => false,
-                    isOk: () => true,
-                    value: { status: "ok", version: "0.6.90b420" },
-                });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
             await (plugin as any).probeServerHealth();
             expect(plugin.serverSupportsSessions()).toBe(true);
         });
@@ -3837,13 +3833,11 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             vi.spyOn(plugin, "ensureManagedConsentThenStart").mockResolvedValue({ kind: "canceled" } as any);
             await plugin.onload();
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({
-                    isErr: () => false,
-                    isOk: () => true,
-                    value: { status: "ok", version: "0.6.66b507" },
-                });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.66b507" },
+            });
             await (plugin as any).probeServerHealth();
             expect((plugin as any).externalServerVersion).toBe("");
         });
@@ -3852,13 +3846,11 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as any).chatStatus = CHAT_STATUS.LOADING;
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({
-                    isErr: () => false,
-                    isOk: () => true,
-                    value: { status: "ok", chat_ready: false },
-                });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", chat_ready: false },
+            });
             await (plugin as any).probeServerHealth();
             // Chat is loading: reflectChatStatus paints "warming..." and the
             // probe must not override it with "ready".
