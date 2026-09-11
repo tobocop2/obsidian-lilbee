@@ -1550,6 +1550,72 @@ describe("SetupWizard", () => {
             expect(controller.signal.aborted).toBe(true);
             expect(closeSpy).toHaveBeenCalled();
         });
+
+        it("pre-selects the server's active chat model over a larger installed one", async () => {
+            const entries = [
+                makeEntry({
+                    hf_repo: "Qwen/Qwen3-4B-GGUF",
+                    display_name: "Qwen3 4B",
+                    installed: true,
+                    min_ram_gb: 8,
+                }),
+                makeEntry({
+                    hf_repo: "janhq/Jan-v3.5-4B-gguf/Jan-v3.5-4B-Q4_K_M.gguf",
+                    display_name: "Jan v3.5 4B",
+                    installed: true,
+                    min_ram_gb: 4,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: {
+                    active: "janhq/Jan-v3.5-4B-gguf/Jan-v3.5-4B-Q4_K_M.gguf",
+                    catalog: [],
+                    installed: [],
+                },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            // recommendedIndex would pick Qwen3 (higher min_ram_gb), but the active model is Jan.
+            expect((wizard as any).selectedModel?.hf_repo).toBe("janhq/Jan-v3.5-4B-gguf/Jan-v3.5-4B-Q4_K_M.gguf");
+        });
+
+        it("falls back to recommendedIndex when listModels throws during chat load", async () => {
+            const entries = [makeEntry({ hf_repo: "bge/bge-small", display_name: "BGE Small", installed: true })];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.listModels = vi.fn().mockRejectedValue(new Error("server down"));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect((wizard as any).selectedModel?.hf_repo).toBe("bge/bge-small");
+        });
+
+        it("falls back to first pick when listModels throws during embedding load", async () => {
+            const entries = [
+                makeEntry({ hf_repo: "bge/bge-small", display_name: "BGE Small", task: "embedding" }),
+                makeEntry({ hf_repo: "nomic/nomic-embed-text", display_name: "Nomic", task: "embedding" }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.listModels = vi.fn().mockRejectedValue(new Error("server down"));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((wizard as any).selectedEmbedding?.hf_repo).toBe("bge/bge-small");
+        });
     });
 
     describe("Step 3: Sync", () => {
@@ -3187,6 +3253,29 @@ describe("SetupWizard", () => {
             expect((wizard as any).selectedEmbedding?.name).toBe("nomic-embed-text");
             expect((wizard as any).embeddingModels.length).toBe(2);
         });
+
+        it("loadEmbeddingModels pre-selects the server's active embedding model", async () => {
+            const entries = [
+                makeEntry({ hf_repo: "bge/bge-small", display_name: "BGE Small", task: "embedding" }),
+                makeEntry({
+                    hf_repo: "nomic/nomic-embed-text-v1.5",
+                    display_name: "Nomic Embed v1.5",
+                    task: "embedding",
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "", catalog: [], installed: [] },
+                embedding: { active: "nomic/nomic-embed-text-v1.5", catalog: [], installed: [] },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((wizard as any).selectedEmbedding?.hf_repo).toBe("nomic/nomic-embed-text-v1.5");
+        });
     });
 
     describe("back from step 2", () => {
@@ -4079,6 +4168,55 @@ describe("SetupWizard", () => {
             const { el } = await openPicksStep(splitCatalog(featured, wider));
 
             expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
+        });
+    });
+
+    describe("recommendation skips hosted rows", () => {
+        it("never recommends a frontier model with no key over a native installed model", () => {
+            const native = makeEntry({
+                hf_repo: "janhq/Jan-v3.5-4B-gguf/Jan-v3.5-4B-Q4_K_M.gguf",
+                display_name: "Jan v3.5 4B",
+                installed: true,
+                source: "native",
+                min_ram_gb: 6,
+            });
+            const gemini = makeEntry({
+                hf_repo: "gemini-2.0-flash-001",
+                display_name: "Gemini 2.0 Flash 001",
+                installed: true,
+                source: "frontier",
+                min_ram_gb: 0,
+                key_status: "missing_key",
+            });
+            const models = [gemini, native];
+
+            const idx = recommendedIndex(models, 32);
+
+            expect(models[idx].hf_repo).toBe("janhq/Jan-v3.5-4B-gguf/Jan-v3.5-4B-Q4_K_M.gguf");
+        });
+
+        it("picks the native installed model when a hosted row is the only installed one", () => {
+            const native = makeEntry({
+                hf_repo: "Qwen/Qwen3-4B-GGUF",
+                display_name: "Qwen3 4B",
+                installed: false,
+                source: "native",
+                min_ram_gb: 6,
+            });
+            const gemini = makeEntry({
+                hf_repo: "gemini-2.0-flash-001",
+                display_name: "Gemini 2.0 Flash 001",
+                installed: true,
+                source: "frontier",
+                min_ram_gb: 0,
+                key_status: "missing_key",
+            });
+            const models = [native, gemini];
+
+            const idx = recommendedIndex(models, 32);
+
+            // The hosted model must not be recommended; fall back to the largest native that fits.
+            expect(models[idx].source).toBe("native");
         });
     });
 

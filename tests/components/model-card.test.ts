@@ -89,6 +89,18 @@ describe("renderModelCard", () => {
             expect(label?.getAttribute("title")).toBeNull();
         });
 
+        it("does not paint a hosted model with no key as Installed (shared)", () => {
+            const c = container();
+            const card = renderModelCard(
+                c,
+                makeEntry({ installed: true, source: "frontier", key_status: "missing_key", downloads: 100 }),
+                {},
+            ) as unknown as MockElement;
+            const label = card.find("lilbee-model-card-status-label");
+            expect(label?.textContent).not.toBe(MESSAGES.LABEL_INSTALLED);
+            expect(label?.getAttribute("title")).toBeNull();
+        });
+
         it("renders an active dot+label when isActive is true", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry({ installed: true }), {

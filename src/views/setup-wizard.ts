@@ -90,6 +90,7 @@ function bestInstalledFitIndex(models: FeaturedModel[], memGB: number | null): n
     for (let i = 0; i < models.length; i++) {
         const m = models[i];
         if (!m.installed) continue;
+        if (HOSTED_SOURCES.has(m.source)) continue;
         if (memGB !== null && m.min_ram_gb > memGB) continue;
         if (m.min_ram_gb >= bestRam) {
             best = i;
@@ -811,7 +812,9 @@ export class SetupWizard extends Modal {
             return;
         }
 
-        const recommended = recommendedIndex(this.featuredModels, memGB);
+        const activeRef = await this.activeChatRef();
+        const activeIdx = activeRef ? this.featuredModels.findIndex((m) => m.hf_repo === activeRef) : -1;
+        const recommended = activeIdx >= 0 ? activeIdx : recommendedIndex(this.featuredModels, memGB);
         this.selectedModel = this.featuredModels[recommended];
         this.setPrimaryActionLabel(downloadBtn, this.selectedModel);
 
@@ -821,10 +824,31 @@ export class SetupWizard extends Modal {
         for (let i = 0; i < this.featuredModels.length; i++) {
             const entry = this.featuredModels[i];
             renderModelCard(grid, entry, {
-                // Recommended, not active: the wizard does not know what the server has loaded.
                 isSelected: i === recommended,
                 onClick: () => this.selectModel(grid, entry, downloadBtn),
             });
+        }
+    }
+
+    /** The ref of the chat model the server has active, or null if unknown. */
+    private async activeChatRef(): Promise<string | null> {
+        try {
+            const models = await this.plugin.api.listModels();
+            const ref = models.chat.active;
+            return ref && ref.length > 0 ? ref : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** The ref of the embedding model the server has active, or null if unknown. */
+    private async activeEmbeddingRef(): Promise<string | null> {
+        try {
+            const models = await this.plugin.api.listModels();
+            const ref = models.embedding?.active;
+            return ref && ref.length > 0 ? ref : null;
+        } catch {
+            return null;
         }
     }
 
@@ -1058,8 +1082,9 @@ export class SetupWizard extends Modal {
             return;
         }
 
-        const recommended = this.embeddingModels.findIndex((m) => m.hf_repo.toLowerCase().includes("nomic-embed-text"));
-        const defaultIdx = recommended >= 0 ? recommended : 0;
+        const activeRef = await this.activeEmbeddingRef();
+        const activeIdx = activeRef ? this.embeddingModels.findIndex((m) => m.hf_repo === activeRef) : -1;
+        const defaultIdx = activeIdx >= 0 ? activeIdx : 0;
         this.selectedEmbedding = this.embeddingModels[defaultIdx];
 
         this.renderSectionHeading(container, MESSAGES.WIZARD_EMBEDDING_RECOMMENDED);
