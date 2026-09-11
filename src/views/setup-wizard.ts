@@ -1086,6 +1086,7 @@ export class SetupWizard extends Modal {
         const activeIdx = activeRef ? this.embeddingModels.findIndex((m) => m.hf_repo === activeRef) : -1;
         const defaultIdx = activeIdx >= 0 ? activeIdx : 0;
         this.selectedEmbedding = this.embeddingModels[defaultIdx];
+        if (this.primaryBtn) this.setPrimaryActionLabel(this.primaryBtn, this.selectedEmbedding);
 
         this.renderSectionHeading(container, MESSAGES.WIZARD_EMBEDDING_RECOMMENDED);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
@@ -1101,6 +1102,7 @@ export class SetupWizard extends Modal {
 
     private selectEmbedding(grid: HTMLElement, model: EmbeddingModel): void {
         this.selectedEmbedding = model;
+        if (this.primaryBtn) this.setPrimaryActionLabel(this.primaryBtn, model);
         for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
             if (el.dataset.repo === model.hf_repo) {

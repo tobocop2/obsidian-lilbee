@@ -2792,7 +2792,29 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
         });
 
-        it("download & continue with installed model sets embedding and advances to sync step", async () => {
+        it("shows Use & continue for an installed embedding model", async () => {
+            const entries = [
+                makeEntry({
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "nomic-embed-text",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const primaryBtn = findButtons(el).find((b) => b.textContent === "Use & continue");
+            expect(primaryBtn).not.toBeNull();
+        });
+
+        it("installed model click sets embedding and advances to sync step", async () => {
             const entries = [
                 makeEntry({
                     hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
@@ -2816,7 +2838,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === "Use & continue")!
                 .trigger("click");
             await tick();
 
