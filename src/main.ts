@@ -1739,8 +1739,8 @@ export default class LilbeePlugin extends Plugin {
         this.syncPillEl = null;
         this.taskQueue.dispose();
         if (this.serverManager) {
-            this.journal.lifecycle("plugin unloading; stopping the managed server");
-            void this.serverManager.stop();
+            this.journal.lifecycle("plugin unloading; killing the managed server before unload");
+            this.serverManager.killChildSync();
         }
     }
 

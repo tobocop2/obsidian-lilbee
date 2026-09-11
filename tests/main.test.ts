@@ -226,6 +226,7 @@ vi.mock("../src/views/update-available-modal", () => ({
 const mockGatekeeperOpen = vi.fn();
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
+const mockServerKillChildSync = vi.fn();
 let mockServerOpts: any = null;
 
 vi.mock("../src/server-binary", () => ({
@@ -292,6 +293,7 @@ vi.mock("../src/server-manager", () => ({
         return {
             start: mockServerStart,
             stop: mockServerStop,
+            killChildSync: mockServerKillChildSync,
             restart: vi.fn(),
             get isAdopted() {
                 return mockIsAdopted;
@@ -7226,15 +7228,16 @@ describe("LilbeePlugin", () => {
     });
 
     describe("onunload with serverManager", () => {
-        it("calls serverManager.stop on unload", async () => {
+        it("calls serverManager.killChildSync on unload, not the async stop", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            mockServerStop.mockClear();
+            mockServerKillChildSync.mockClear();
             plugin.onunload();
 
-            expect(mockServerStop).toHaveBeenCalled();
+            expect(mockServerKillChildSync).toHaveBeenCalled();
+            expect(mockServerStop).not.toHaveBeenCalled();
         });
     });
 

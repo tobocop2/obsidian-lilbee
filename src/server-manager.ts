@@ -726,6 +726,31 @@ export class ServerManager {
         this.journal(`server pid ${child.pid} exit observed after ${Date.now() - stopStartedAt}ms`);
     }
 
+    /**
+     * Synchronously signal the spawned child's process group to die and remove
+     * its port file. For use in synchronous teardown (onunload) only: it does
+     * not await the process exit. The OS reaps the child; the next plugin
+     * instance finds no stale port and no lock holder, so it spawns fresh.
+     */
+    killChildSync(): void {
+        this.desired = DESIRED.STOPPED;
+        if (this.restartTimer !== null) {
+            window.clearTimeout(this.restartTimer);
+            this.restartTimer = null;
+        }
+        this.stopAdoptedWatch();
+        const child = this.child;
+        this.child = null;
+        this.childExit = null;
+        this.adopted = false;
+        this._actualPort = null;
+        this.cleanupPortFile();
+        this.setState(SERVER_STATE.STOPPED);
+        if (child) {
+            this.signalGroup(child, "SIGKILL");
+        }
+    }
+
     /** Ask an adopted server to exit; report when it will not go. */
     private async stopAdopted(): Promise<void> {
         const gone = await askServerToExit(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS);
