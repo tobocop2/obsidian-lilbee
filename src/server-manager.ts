@@ -401,7 +401,9 @@ export class ServerManager {
             // and main.ts surfaces that as STATUS_LOCKED_BY_OTHER.
             const exitedCleanly = code === 0 || signal === "SIGTERM";
             if (exitedCleanly) {
-                this.journal(`server pid ${child.pid} exited (${describeExit(code, signal)}): another vault took over the shared root`);
+                this.journal(
+                    `server pid ${child.pid} exited (${describeExit(code, signal)}): another vault took over the shared root`,
+                );
                 this.setState(SERVER_STATE.ERROR);
                 return;
             }
