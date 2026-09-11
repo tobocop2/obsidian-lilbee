@@ -395,6 +395,16 @@ export class ServerManager {
                 this.setState(SERVER_STATE.ERROR);
                 return;
             }
+            // A clean exit (code 0 or SIGTERM) while we still wanted the server
+            // running means another vault asked it to stop via a take-over. Not
+            // a crash: do not restart. The scope sidecar now names the winner,
+            // and main.ts surfaces that as STATUS_LOCKED_BY_OTHER.
+            const exitedCleanly = code === 0 || signal === "SIGTERM";
+            if (exitedCleanly) {
+                this.journal(`server pid ${child.pid} exited (${describeExit(code, signal)}): another vault took over the shared root`);
+                this.setState(SERVER_STATE.ERROR);
+                return;
+            }
             this.pushOutputLine(`server exited (${describeExit(code, signal)})`);
             this.journal(`server pid ${child.pid} exited (${describeExit(code, signal)})`);
             this.snapshotCrashOutput();

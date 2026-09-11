@@ -842,6 +842,26 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("ready");
         });
 
+        it("a clean exit (SIGTERM) is a take-over, not a crash: no restart", async () => {
+            const mgr = await startFresh();
+            child()._emit("exit", null, "SIGTERM");
+            expect(mgr.state).toBe("error");
+            expect(mgr.lastOutput).toContain("another vault took over");
+            // No crash snapshot, no restart scheduled.
+            expect(appendFileSyncSpy).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(3000);
+            expect(spawnSpy).toHaveBeenCalledTimes(1); // no restart
+        });
+
+        it("a clean exit (code 0) is a take-over, not a crash: no restart", async () => {
+            const mgr = await startFresh();
+            child()._emit("exit", 0, null);
+            expect(mgr.state).toBe("error");
+            expect(mgr.lastOutput).toContain("another vault took over");
+            await vi.advanceTimersByTimeAsync(3000);
+            expect(spawnSpy).toHaveBeenCalledTimes(1); // no restart
+        });
+
         it("a signal exit is described by its signal", async () => {
             const mgr = await startFresh();
             child()._emit("exit", null, "SIGSEGV");

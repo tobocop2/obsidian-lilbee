@@ -6624,6 +6624,24 @@ describe("LilbeePlugin", () => {
             expect(plugin.statusBarEl?.classList.contains("lilbee-status-error")).toBe(true);
         });
 
+        it("handleServerStateChange error shows STATUS_LOCKED_BY_OTHER when another vault owns the root", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 999,
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("error");
+
+            expect(plugin.statusBarEl?.textContent).toContain("serving");
+            expect(plugin.statusBarEl?.textContent).not.toContain("error");
+        });
+
         it("handleServerStateChange ready re-renders an open lilbee Settings tab (ydt)", async () => {
             const { LilbeeSettingTab } = await import("../src/settings");
             const plugin = await createPlugin({ serverMode: "managed" });

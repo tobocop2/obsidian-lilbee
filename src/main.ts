@@ -660,6 +660,20 @@ export default class LilbeePlugin extends Plugin {
         return entry?.displayName ?? "another vault";
     }
 
+    /** If another vault owns the shared root, show "serving <vault>" and return true. */
+    private refreshLockedByOtherStatus(): boolean {
+        const registry = this.vaultRegistry;
+        if (!registry) return false;
+        const owner = readScopeOwner(registry.sharedRoot);
+        if (owner === null) return false;
+        const ourDataDir = registry.resolveDataDir(this.vaultId);
+        if (owner.dataDir === ourDataDir) return false;
+        const ownerName = this.lookupVaultNameByDataDir(owner.dataDir);
+        this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+        this.setStatusClass("lilbee-status-error");
+        return true;
+    }
+
     /**
      * Gate run before a first-time managed binary download. When the binary is
      * already present we start straight away; otherwise we ask for consent and
@@ -1310,6 +1324,10 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-starting");
                 break;
             case SERVER_STATE.ERROR:
+                // A clean exit while another vault holds the shared root is a
+                // take-over, not a crash. Show "serving <vault>" instead of
+                // "error" so the loser knows who won without a restart loop.
+                if (this.refreshLockedByOtherStatus()) return;
                 this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
                 this.setStatusClass("lilbee-status-error");
                 break;
@@ -2025,6 +2043,9 @@ export default class LilbeePlugin extends Plugin {
         // Don't paint a red pill. External mode reports errors normally —
         // it points at a server the user already runs.
         if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
+        // Another vault holds the shared root: the server was asked to exit,
+        // not down. Show who won and skip the "missing token" notice.
+        if (this.refreshLockedByOtherStatus()) return;
         if (this.serverUnreachable) return;
         this.serverUnreachable = true;
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
