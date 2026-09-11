@@ -6923,6 +6923,47 @@ describe("LilbeePlugin", () => {
             expect(el.classList.contains("lilbee-status-ready")).toBe(false);
             expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
         });
+
+        it("take-over prompt shows the resolved owner name, not 'another vault'", async () => {
+            // The scope sidecar names the owner; the registry resolves its display
+            // name a tick later. The prompt must wait for the real name.
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 1234,
+            });
+            // Registry starts without the other vault, then adds it.
+            const registry = new VaultRegistry("/shared");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            (plugin as any).vaultRegistry = registry;
+            const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+
+            await plugin.onload();
+            await flush();
+
+            expect(negotiate).toHaveBeenCalled();
+            // The confirm modal received the resolved name, not the fallback.
+            const confirmCall = vi.mocked(ConfirmModal).mock.calls.at(-1);
+            expect(confirmCall?.[1]).toContain("vault-new");
+            expect(confirmCall?.[1]).not.toContain("another vault");
+        });
+
+        it("take-over prompt shows STATUS_LOCKED_BY_OTHER while waiting, not 'error'", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 1234,
+            });
+            mockConfirmModalResult = true;
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const el = (plugin as any).statusBarEl!;
+            expect(el.textContent).toContain("serving");
+            expect(el.textContent).not.toContain("error");
+        });
     });
 
     describe("saveSettings mode switching", () => {

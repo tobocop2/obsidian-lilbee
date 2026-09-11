@@ -586,10 +586,20 @@ export default class LilbeePlugin extends Plugin {
         allowTakeOver = true,
         knownOwnerDataDir: string | null = null,
     ): Promise<void> {
-        const owner: { dataDir: string; pid: number | null } | null = knownOwnerDataDir
-            ? { dataDir: knownOwnerDataDir, pid: null }
-            : readScopeOwner(registry.sharedRoot);
-        const ownerName = owner ? this.lookupVaultNameByDataDir(owner.dataDir) : "another vault";
+        // Prefer the scope sidecar (authoritative owner the server named for
+        // itself) over the pre-scanned data dir: the sidecar is what the
+        // command path reads, so both paths target the same server. Fall back
+        // to the pre-scanned dir only when the sidecar is absent.
+        const sidecarOwner = readScopeOwner(registry.sharedRoot);
+        const owner: { dataDir: string; pid: number | null } | null = sidecarOwner
+            ? { dataDir: sidecarOwner.dataDir, pid: sidecarOwner.pid }
+            : knownOwnerDataDir
+              ? { dataDir: knownOwnerDataDir, pid: null }
+              : null;
+        // The registry may not have the other vault yet at load time. Poll
+        // briefly for its name so the prompt never reads "another vault" when
+        // the real name is a heartbeat away.
+        const ownerName = owner ? await this.resolveOwnerName(owner.dataDir) : "another vault";
         if (!allowTakeOver) {
             this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
             onProgress?.({
@@ -598,6 +608,9 @@ export default class LilbeePlugin extends Plugin {
             });
             return;
         }
+        // While the prompt is up the user is waiting on the other vault's
+        // server, not on ours — show "serving <vault>", not "error".
+        this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
         const takeOver = await this.confirmTakeOver(ownerName);
         if (!takeOver) {
             this.journal.lifecycle(`take-over of the shared root declined (owner: ${ownerName})`);
@@ -658,6 +671,22 @@ export default class LilbeePlugin extends Plugin {
         const registry = this.vaultRegistry;
         const entry = registry?.list().find((e) => registry.resolveDataDir(e.id) === dataDir);
         return entry?.displayName ?? "another vault";
+    }
+
+    /** Poll the registry for the owner vault's display name for up to two seconds. */
+    private resolveOwnerName(dataDir: string): Promise<string> {
+        const deadline = Date.now() + 2000;
+        return new Promise((resolve) => {
+            const poll = () => {
+                const name = this.lookupVaultNameByDataDir(dataDir);
+                if (name !== "another vault" || Date.now() >= deadline) {
+                    resolve(name);
+                    return;
+                }
+                window.setTimeout(poll, 100);
+            };
+            poll();
+        });
     }
 
     /**
