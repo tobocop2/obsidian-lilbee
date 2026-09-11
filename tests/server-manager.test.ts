@@ -843,10 +843,11 @@ describe("ServerManager", () => {
         });
 
         it("a clean exit (SIGTERM) is a take-over, not a crash: no restart", async () => {
-            const mgr = await startFresh();
+            const journal: string[] = [];
+            const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
             child()._emit("exit", null, "SIGTERM");
             expect(mgr.state).toBe("error");
-            expect(mgr.lastOutput).toContain("another vault took over");
+            expect(journal.join("\n")).toContain("another vault took over");
             // No crash snapshot, no restart scheduled.
             expect(appendFileSyncSpy).not.toHaveBeenCalled();
             await vi.advanceTimersByTimeAsync(3000);
@@ -854,10 +855,11 @@ describe("ServerManager", () => {
         });
 
         it("a clean exit (code 0) is a take-over, not a crash: no restart", async () => {
-            const mgr = await startFresh();
+            const journal: string[] = [];
+            const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
             child()._emit("exit", 0, null);
             expect(mgr.state).toBe("error");
-            expect(mgr.lastOutput).toContain("another vault took over");
+            expect(journal.join("\n")).toContain("another vault took over");
             await vi.advanceTimersByTimeAsync(3000);
             expect(spawnSpy).toHaveBeenCalledTimes(1); // no restart
         });
