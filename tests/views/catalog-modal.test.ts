@@ -2522,7 +2522,8 @@ describe("CatalogModal fetch generation", () => {
         let resolveFirst: (r: any) => void = () => {};
         const firstPromise = new Promise<any>((r) => { resolveFirst = r; });
         plugin.api.catalog.mockReturnValueOnce(firstPromise);
-        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+        // The recursive fetch after supersedence also returns empty.
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
 
         const modal = await openModal(plugin);
         // Start fetching the first page (in flight).
@@ -2534,6 +2535,7 @@ describe("CatalogModal fetch generation", () => {
 
         // Resolve the stale request.
         resolveFirst(ok(makeCatalogResponse([makeEntry({ hf_repo: "stale/repo", display_name: "Stale" })])));
+        await tick();
         await tick();
         await tick();
 
