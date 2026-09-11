@@ -151,12 +151,7 @@ export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
 
 /** Fit rank: known fits first, then unknown (null), then tight. Lower sorts first. */
 function forYouSortKey(entry: CatalogEntry): [number, string] {
-    const rank =
-        entry.fit === HARDWARE_FIT.FITS
-            ? 0
-            : entry.fit === null || entry.fit === undefined
-              ? 1
-              : 2;
+    const rank = entry.fit === HARDWARE_FIT.FITS ? 0 : entry.fit === null || entry.fit === undefined ? 1 : 2;
     return [rank, entry.display_name.toLowerCase()];
 }
 
