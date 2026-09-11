@@ -6211,7 +6211,9 @@ describe("ChatView — chat menu filters out non-chat models", () => {
     it("excludes installed vision and reranker models from the chat menu", () => {
         const view = makeView();
         (view as any).optionalCatalog = {
-            vision: [{ hf_repo: "vikhyatk/moondream2-GGUF", display_name: "Moondream", source: "native", task: "vision" }],
+            vision: [
+                { hf_repo: "vikhyatk/moondream2-GGUF", display_name: "Moondream", source: "native", task: "vision" },
+            ],
             rerank: [],
         };
         (view as any).chatInstalled.push({ name: "vikhyatk/moondream2-GGUF/moondream2.Q4_K_M.gguf", source: "native" });
