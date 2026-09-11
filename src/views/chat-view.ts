@@ -39,7 +39,7 @@ import type {
 import { RateLimitedError, isHttpStatus } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
-import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
+import { displayLabelForRef, extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
@@ -580,14 +580,15 @@ export class ChatView extends ItemView {
     /** Featured rows that have an installed quant, then hosted rows not already listed. */
     private chatPrimaryOptions(): RailOption[] {
         const installedRepos = new Set(this.chatInstalled.map((m) => extractHfRepo(m.name)));
-        const activeRepo = extractHfRepo(this.chatActive);
+        const activeRef = this.chatActive;
         const primary: RailOption[] = [];
         for (const entry of this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo))) {
             const sourceTag = HOSTED_SOURCES.has(entry.source) ? ` [${entry.provider ?? entry.source}]` : "";
+            const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
             primary.push({
-                value: entry.hf_repo,
+                value: ref,
                 label: `${entry.display_name}${sourceTag}`,
-                checked: entry.hf_repo === activeRepo,
+                checked: ref === activeRef,
             });
         }
         // Hosted rows (frontier/ollama) are selectable even when absent from the
@@ -596,7 +597,7 @@ export class ChatView extends ItemView {
         // be both hosted and registered as installed).
         for (const [ref, label] of hostedOptions(this.chatCatalogEntries)) {
             if (installedRepos.has(ref)) continue;
-            primary.push({ value: ref, label, checked: ref === activeRepo });
+            primary.push({ value: ref, label, checked: ref === activeRef });
         }
         return primary;
     }
@@ -626,8 +627,10 @@ export class ChatView extends ItemView {
     }
 
     private handleChatSelection(value: string): void {
-        const uninstalled = this.chatCatalogEntries.find((e) => e.hf_repo === value && !e.installed);
-        if (uninstalled) {
+        const uninstalled = this.chatCatalogEntries.find(
+            (e) => nativeModelRef(e.hf_repo, e.gguf_filename) === value,
+        );
+        if (uninstalled && !uninstalled.installed) {
             const modal = new ConfirmPullModal(this.plugin.app, {
                 displayName: uninstalled.display_name,
                 sizeGb: uninstalled.size_gb,
@@ -650,8 +653,6 @@ export class ChatView extends ItemView {
         void this.plugin.api.setChatModel(value).then((result) => {
             if (result.isOk()) {
                 // Keep the menu's checkmark in sync without waiting for a refetch.
-                // Store what the server resolved, not what was sent: a bare repo
-                // comes back as the concrete quant it picked.
                 this.chatActive = result.value.model;
                 this.plugin.activeModel = result.value.model;
                 void this.plugin.fetchActiveModel();

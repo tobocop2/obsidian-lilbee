@@ -6173,3 +6173,36 @@ describe("ChatView — resume interactions with live state", () => {
         expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 });
+
+describe("ChatView chat rail activates by concrete ref", () => {
+    function makeView() {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view as any).chatActive = "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf";
+        (view as any).chatCatalogEntries = [
+            {
+                hf_repo: "Qwen/Qwen3-4B-GGUF",
+                gguf_filename: "Qwen3-4B-Q4_K_M.gguf",
+                display_name: "Qwen3 4B",
+                source: "native",
+                task: "chat",
+            },
+        ];
+        (view as any).chatInstalled = [
+            { name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" },
+        ];
+        return view;
+    }
+
+    it("sends the concrete file ref, not the bare repo", () => {
+        const view = makeView();
+        const options = (view as any).chatPrimaryOptions();
+        expect(options[0].value).toBe("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+    });
+
+    it("marks the installed quant as checked", () => {
+        const view = makeView();
+        const options = (view as any).chatPrimaryOptions();
+        expect(options[0].checked).toBe(true);
+    });
+});
