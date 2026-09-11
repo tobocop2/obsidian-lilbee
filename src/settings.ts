@@ -831,6 +831,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
 
         for (const item of Array.from(containerEl.querySelectorAll(".setting-item"))) {
+            // Rows hidden by capability (server does not report the key) must stay
+            // hidden even when the search box is cleared: clearing the box makes
+            // matches() true for every row, which would otherwise reveal them.
+            if (item.getAttribute("data-lilbee-hidden-by-capability") !== null) {
+                (item as HTMLElement).style.display = "none";
+                continue;
+            }
             (item as HTMLElement).style.display = matches(item) ? "" : "none";
         }
 
@@ -1970,6 +1977,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         for (const [key, settingEl] of this.serverConfigHideableEls) {
             if (cfg[key] !== undefined) {
                 settingEl.show();
+                settingEl.removeAttribute("data-lilbee-hidden-by-capability");
+            } else {
+                settingEl.hide();
+                settingEl.setAttribute("data-lilbee-hidden-by-capability", "true");
             }
         }
     }
