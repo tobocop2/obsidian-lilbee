@@ -6924,24 +6924,43 @@ describe("LilbeePlugin", () => {
             expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
         });
 
-        it("take-over prompt shows the resolved owner name, not 'another vault'", async () => {
-            // The scope sidecar names the owner; the registry resolves its display
-            // name a tick later. The prompt must wait for the real name.
+        it("take-over prompt resolves the owner name before showing the confirm", async () => {
+            // The scope sidecar names the owner's data dir; the registry resolves
+            // its display name a tick later. The prompt must wait for the real
+            // name instead of showing "another vault".
             const sm = await import("../src/server-manager");
             vi.mocked(sm.readScopeOwner).mockReturnValue({
                 dataDir: "/shared/vaults/other",
                 pid: 1234,
             });
-            // Registry starts without the other vault, then adds it.
-            const registry = new VaultRegistry("/shared");
-            const plugin = await createPlugin({ serverMode: "managed" });
-            (plugin as any).vaultRegistry = registry;
-            const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+            mockConfirmModalResult = false; // cancel so nothing else runs
 
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            expect(negotiate).toHaveBeenCalled();
+            // Registry starts empty; the name resolves to the fallback first.
+            expect(plugin.statusBarEl?.textContent).toContain("serving");
+
+            // Register the other vault so the name can resolve.
+            (plugin as any).vaultRegistry.upsert({
+                id: "other",
+                displayName: "vault-new",
+                dataDir: "/shared/vaults/other",
+                obsidianVaultPath: "/path/to/other",
+                addedAt: 0,
+                lastActiveAt: 0,
+            });
+
+            // Call negotiateTakeOver directly with a known owner data dir.
+            await (plugin as any).negotiateTakeOver(
+                (plugin as any).vaultRegistry,
+                undefined,
+                true,
+                "/shared/vaults/other",
+            );
+            await flush();
+
             // The confirm modal received the resolved name, not the fallback.
             const confirmCall = vi.mocked(ConfirmModal).mock.calls.at(-1);
             expect(confirmCall?.[1]).toContain("vault-new");
@@ -6954,11 +6973,26 @@ describe("LilbeePlugin", () => {
                 dataDir: "/shared/vaults/other",
                 pid: 1234,
             });
-            mockConfirmModalResult = true;
+            mockConfirmModalResult = false;
 
             const plugin = await createPlugin({ serverMode: "managed" });
+            (plugin as any).vaultRegistry.upsert({
+                id: "other",
+                displayName: "vault-new",
+                dataDir: "/shared/vaults/other",
+                obsidianVaultPath: "/path/to/other",
+                addedAt: 0,
+                lastActiveAt: 0,
+            });
             await plugin.onload();
             await flush();
+
+            await (plugin as any).negotiateTakeOver(
+                (plugin as any).vaultRegistry,
+                undefined,
+                true,
+                "/shared/vaults/other",
+            );
 
             const el = (plugin as any).statusBarEl!;
             expect(el.textContent).toContain("serving");
