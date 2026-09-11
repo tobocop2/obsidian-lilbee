@@ -159,7 +159,7 @@ describe("StatusModal", () => {
         expect(cell?.attributes["title"]).toBe("Smoffyy/Gemma4-E4B-Instruct-Pure-GGUF/Gemma4-E4B-F16.gguf");
     });
 
-    it("lists server-reported degradations with their remedies", async () => {
+    it("renders a plugin-native remedy with an action button for a known code", async () => {
         const plugin = makePlugin();
         (plugin as any).healthWarnings = [
             { code: "fts_unavailable", message: "Keyword search is unavailable.", remedy: "Run rebuild." },
@@ -169,11 +169,32 @@ describe("StatusModal", () => {
 
         const modal = new StatusModal(new App(), plugin);
         modal.open();
+        const content = (modal as any).contentEl as MockElement;
         await vi.waitFor(() => {
-            const content = (modal as any).contentEl as MockElement;
             expect(content.textContent ?? "").toContain("Keyword search is unavailable.");
         });
-        expect(((modal as any).contentEl as MockElement).textContent ?? "").toContain("Run rebuild.");
+        expect(content.textContent ?? "").toContain("Rebuild the index");
+        expect(content.textContent ?? "").toContain("Rebuild index");
+        expect(content.textContent ?? "").not.toContain("Run rebuild.");
+        expect(content.find("lilbee-status-warning-action")).not.toBeNull();
+    });
+
+    it("falls back to the server remedy for an unknown code", async () => {
+        const plugin = makePlugin();
+        (plugin as any).healthWarnings = [
+            { code: "some_future_warning", message: "Something is degraded.", remedy: "Server says do X." },
+        ];
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        const content = (modal as any).contentEl as MockElement;
+        await vi.waitFor(() => {
+            expect(content.textContent ?? "").toContain("Something is degraded.");
+        });
+        expect(content.textContent ?? "").toContain("Server says do X.");
+        expect(content.find("lilbee-status-warning-action")).toBeNull();
     });
 
     it("omits the remedy line when the server sends none", async () => {

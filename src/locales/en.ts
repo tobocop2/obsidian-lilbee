@@ -901,6 +901,8 @@ export const MESSAGES = {
     COMMAND_SYNC: "Sync vault",
     COMMAND_SYNC_RETRY_SKIPPED: RETRY_SKIPPED_COMMAND,
     COMMAND_SYNC_REBUILD: "Rebuild index",
+    WARNING_REMEDY_REBUILD: "Rebuild the index to restore full search and embeddings.",
+    BUTTON_REBUILD_INDEX: "Rebuild index",
     COMMAND_EXPORT_DATASET: "Export dataset",
     COMMAND_IMPORT_DATASET: "Import dataset",
     COMMAND_CATALOG: "Browse model catalog",

@@ -2574,7 +2574,7 @@ describe("ChatView — toolbar groups and tooltips", () => {
 });
 
 describe("ChatView health warnings", () => {
-    it("shows a server-reported degradation with its remedy", async () => {
+    it("renders a plugin-native remedy with an action button for a known code", async () => {
         const plugin = makePlugin();
         plugin.healthWarnings = [
             { code: "fts_unavailable", message: "Keyword search is unavailable.", remedy: "Run rebuild." },
@@ -2587,7 +2587,69 @@ describe("ChatView health warnings", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const text = container.textContent ?? "";
         expect(text).toContain("Keyword search is unavailable.");
-        expect(text).toContain("Run rebuild.");
+        expect(text).toContain("Rebuild the index");
+        expect(text).toContain("Rebuild index");
+        // The server's CLI remedy is not shown for codes the plugin knows.
+        expect(text).not.toContain("Run rebuild.");
+        expect(container.find("lilbee-chat-warning-action")).not.toBeNull();
+    });
+
+    it("falls back to the server remedy for an unknown code", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [
+            { code: "some_future_warning", message: "Something is degraded.", remedy: "Server says do X." },
+        ];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const text = container.textContent ?? "";
+        expect(text).toContain("Something is degraded.");
+        expect(text).toContain("Server says do X.");
+        expect(container.find("lilbee-chat-warning-action")).toBeNull();
+    });
+
+    it("triggers a rebuild when the remedy action button is clicked", async () => {
+        confirmModalResult = true;
+        const plugin = makePlugin();
+        plugin.healthWarnings = [
+            { code: "embedding_prefix_mismatch", message: "Index/embedder mismatch.", remedy: "Run rebuild." },
+        ];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const btn = container.find("lilbee-chat-warning-action");
+        expect(btn).not.toBeNull();
+        btn!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
+    });
+
+    it("does not rebuild when the user dismisses the confirm dialog", async () => {
+        confirmModalResult = false;
+        const plugin = makePlugin();
+        plugin.healthWarnings = [{ code: "stale_index", message: "Index is stale.", remedy: "Run rebuild." }];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const btn = container.find("lilbee-chat-warning-action");
+        expect(btn).not.toBeNull();
+        btn!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.triggerSync).not.toHaveBeenCalled();
+        confirmModalResult = true;
     });
 
     it("is a no-op on a view whose onOpen has not run", () => {

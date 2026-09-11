@@ -45,6 +45,7 @@ import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { addCloseButton } from "../components/close-button";
+import { remedyForWarning } from "../utils/warning-remedies";
 import { MESSAGES } from "../locales/en";
 import {
     RETRY_INTERVAL_MS,
@@ -1492,7 +1493,17 @@ export class ChatView extends ItemView {
         for (const w of this.plugin.healthWarnings) {
             const row = el.createDiv({ cls: "lilbee-chat-warning" });
             row.createSpan({ cls: "lilbee-chat-warning-message", text: w.message });
-            if (w.remedy) row.createSpan({ cls: "lilbee-chat-warning-remedy", text: w.remedy });
+            const remedy = remedyForWarning(w.code, this.plugin);
+            if (remedy) {
+                row.createSpan({ cls: "lilbee-chat-warning-remedy", text: remedy.text });
+                const btn = row.createEl("button", {
+                    text: MESSAGES.BUTTON_REBUILD_INDEX,
+                    cls: "lilbee-chat-warning-action",
+                });
+                btn.addEventListener("click", remedy.action);
+            } else if (w.remedy) {
+                row.createSpan({ cls: "lilbee-chat-warning-remedy", text: w.remedy });
+            }
         }
     }
 
