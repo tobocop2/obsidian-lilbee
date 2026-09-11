@@ -6924,22 +6924,11 @@ describe("LilbeePlugin", () => {
             expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
         });
 
-        it("take-over prompt resolves the owner name before showing the confirm", async () => {
-            // The scope sidecar names the owner's data dir; the registry resolves
-            // its display name a tick later. The prompt must wait for the real
-            // name instead of showing "another vault".
-            const sm = await import("../src/server-manager");
-            vi.mocked(sm.readScopeOwner).mockReturnValue({
-                dataDir: "/shared/vaults/other",
-                pid: 1234,
-            });
-            mockConfirmModalResult = false; // cancel so nothing else runs
-
+        it("take-over prompt resolves the owner name from the registry", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            // Register the other vault so the name can resolve.
             (plugin as any).vaultRegistry.upsert({
                 id: "other",
                 displayName: "vault-new",
@@ -6949,28 +6938,26 @@ describe("LilbeePlugin", () => {
                 lastActiveAt: 0,
             });
 
-            // Call negotiateTakeOver directly with a known owner data dir.
-            await (plugin as any).negotiateTakeOver(
-                (plugin as any).vaultRegistry,
-                undefined,
-                true,
-                "/shared/vaults/other",
-            );
-            await flush();
-
-            // The confirm modal received the resolved name, not the fallback.
-            const confirmCall = vi.mocked(ConfirmModal).mock.calls.at(-1);
-            expect(confirmCall?.[1]).toContain("vault-new");
-            expect(confirmCall?.[1]).not.toContain("another vault");
+            // resolveOwnerName polls the registry for the display name.
+            const name = await (plugin as any).resolveOwnerName("/shared/vaults/other");
+            expect(name).toBe("vault-new");
         });
 
-        it("take-over prompt shows STATUS_LOCKED_BY_OTHER while waiting, not 'error'", async () => {
+        it("take-over prompt falls back to 'another vault' when unregistered", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const name = await (plugin as any).resolveOwnerName("/shared/vaults/unknown");
+            expect(name).toBe("another vault");
+        });
+
+        it("shows STATUS_LOCKED_BY_OTHER when another vault owns the root", async () => {
             const sm = await import("../src/server-manager");
             vi.mocked(sm.readScopeOwner).mockReturnValue({
                 dataDir: "/shared/vaults/other",
                 pid: 1234,
             });
-            mockConfirmModalResult = false;
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -6985,15 +6972,10 @@ describe("LilbeePlugin", () => {
                 lastActiveAt: 0,
             });
 
-            await (plugin as any).negotiateTakeOver(
-                (plugin as any).vaultRegistry,
-                undefined,
-                true,
-                "/shared/vaults/other",
-            );
-
+            const locked = (plugin as any).refreshLockedByOtherStatus();
+            expect(locked).toBe(true);
             const el = (plugin as any).statusBarEl!;
-            expect(el.textContent).toContain("serving");
+            expect(el.textContent).toContain("vault-new");
             expect(el.textContent).not.toContain("error");
         });
     });
