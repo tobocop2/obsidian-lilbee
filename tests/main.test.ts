@@ -6653,6 +6653,15 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
         });
 
+        it("refreshLockedByOtherStatus returns false without a registry", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            (plugin as any).vaultRegistry = null;
+            expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
+        });
+
         it("refreshLockedByOtherStatus returns false when we own the root", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
