@@ -6643,6 +6643,9 @@ describe("LilbeePlugin", () => {
         });
 
         it("refreshLockedByOtherStatus returns false when no foreign owner", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue(null);
+
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
@@ -6671,7 +6674,8 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
-            // Force the server-unreachable path.
+            // Make the health probe fail so it reaches the locked-by-other check.
+            plugin.api.health = vi.fn().mockResolvedValue({ isOk: () => false, isErr: () => true });
             (plugin as any).serverEverReady = true;
             (plugin as any).healthFailureStreak = 1;
             await (plugin as any).probeServerHealth();
