@@ -834,7 +834,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             // Rows hidden by capability (server does not report the key) must stay
             // hidden even when the search box is cleared: clearing the box makes
             // matches() true for every row, which would otherwise reveal them.
-            if (item.hasAttribute("data-lilbee-hidden-by-capability")) {
+            if (item.getAttribute("data-lilbee-hidden-by-capability") !== null) {
                 (item as HTMLElement).style.display = "none";
                 continue;
             }
