@@ -1,6 +1,6 @@
 import { setIcon } from "obsidian";
 import type { CatalogEntry, HardwareFit, ModelCardOptions } from "../types";
-import { HARDWARE_FIT, HOSTED_SOURCES, KEY_STATUS, MODEL_COMPAT, MODEL_TASK } from "../types";
+import { HARDWARE_FIT, HOSTED_SOURCES, MODEL_COMPAT, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
 
@@ -123,8 +123,7 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
         text: tone.label,
         cls: `lilbee-model-card-status-label ${tone.labelCls}`,
     });
-    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
-    if (entry.installed && !hostedMissingKey) {
+    if (entry.installed && !HOSTED_SOURCES.has(entry.source)) {
         label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
     }
     if (entry.fit && FIT_LABEL[entry.fit]) {
@@ -142,8 +141,9 @@ function statusTone(
     if (options.isActive) {
         return { dotCls: "is-active", labelCls: "is-active", label: MESSAGES.LABEL_ACTIVE };
     }
-    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
-    if (entry.installed && !hostedMissingKey) {
+    // Hosted models are usable without being downloaded, so they must not
+    // read "Installed (shared)" or offer Delete: they live on the provider.
+    if (entry.installed && !HOSTED_SOURCES.has(entry.source)) {
         return { dotCls: "is-installed", labelCls: "is-installed", label: MESSAGES.LABEL_INSTALLED };
     }
     if (entry.downloads > 0) {
@@ -172,7 +172,9 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
         return;
     }
 
-    if (entry.installed) {
+    // Hosted models are usable without being downloaded, so they get a Use
+    // button but never a Remove: they live on the provider, not on disk.
+    if (entry.installed && !HOSTED_SOURCES.has(entry.source)) {
         const useBtn = actions.createEl("button", {
             text: MESSAGES.BUTTON_USE,
             cls: "lilbee-btn lilbee-btn-primary lilbee-catalog-use",
@@ -188,6 +190,15 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
         if (options.onRemove) {
             const handler = options.onRemove;
             removeBtn.addEventListener("click", () => handler(entry, removeBtn));
+        }
+    } else if (entry.installed && HOSTED_SOURCES.has(entry.source)) {
+        const useBtn = actions.createEl("button", {
+            text: MESSAGES.BUTTON_USE,
+            cls: "lilbee-btn lilbee-btn-primary lilbee-catalog-use",
+        });
+        if (options.onUse) {
+            const handler = options.onUse;
+            useBtn.addEventListener("click", () => handler(entry, useBtn));
         }
     } else if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
         // Unsupported models can't run on this server — render the pull action

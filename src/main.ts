@@ -470,7 +470,7 @@ export default class LilbeePlugin extends Plugin {
                 });
             } else {
                 this.configureApi(this.settings.serverUrl);
-                this.setStatusReady();
+                this.setStatusConnecting();
                 void this.fetchActiveModel();
                 void this.warnExternalServerOutdated();
             }
@@ -658,6 +658,36 @@ export default class LilbeePlugin extends Plugin {
         const registry = this.vaultRegistry;
         const entry = registry?.list().find((e) => registry.resolveDataDir(e.id) === dataDir);
         return entry?.displayName ?? "another vault";
+    }
+
+    /** Poll the registry for the owner vault's display name for up to two seconds. */
+    private resolveOwnerName(dataDir: string): Promise<string> {
+        const deadline = Date.now() + 2000;
+        return new Promise((resolve) => {
+            const poll = () => {
+                const name = this.lookupVaultNameByDataDir(dataDir);
+                if (name !== "another vault" || Date.now() >= deadline) {
+                    resolve(name);
+                    return;
+                }
+                window.setTimeout(poll, 100);
+            };
+            poll();
+        });
+    }
+
+    /** If another vault owns the shared root, show "serving <vault>" and return true. */
+    private refreshLockedByOtherStatus(): boolean {
+        const registry = this.vaultRegistry;
+        if (!registry) return false;
+        const owner = readScopeOwner(registry.sharedRoot);
+        if (owner === null) return false;
+        const ourDataDir = registry.resolveDataDir(this.vaultId);
+        if (owner.dataDir === ourDataDir) return false;
+        const ownerName = this.lookupVaultNameByDataDir(owner.dataDir);
+        this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+        this.setStatusClass("lilbee-status-error");
+        return true;
     }
 
     /**
@@ -999,8 +1029,8 @@ export default class LilbeePlugin extends Plugin {
         let current: Record<string, unknown>;
         try {
             current = await this.api.config();
-        } catch (err) {
-            console.error("[lilbee] could not read server config for vault setup", err);
+        } catch {
+            new Notice(MESSAGES.ERROR_STORAGE_CHECK_FAILED, NOTICE_ERROR_DURATION_MS);
             return true;
         }
         const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
@@ -1310,6 +1340,10 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-starting");
                 break;
             case SERVER_STATE.ERROR:
+                // A clean exit while another vault holds the shared root is a
+                // take-over, not a crash. Show "serving <vault>" instead of
+                // "error" so the loser knows who won without a restart loop.
+                if (this.refreshLockedByOtherStatus()) return;
                 this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
                 this.setStatusClass("lilbee-status-error");
                 break;
@@ -1739,8 +1773,8 @@ export default class LilbeePlugin extends Plugin {
         this.syncPillEl = null;
         this.taskQueue.dispose();
         if (this.serverManager) {
-            this.journal.lifecycle("plugin unloading; stopping the managed server");
-            void this.serverManager.stop();
+            this.journal.lifecycle("plugin unloading; killing the managed server before unload");
+            this.serverManager.killChildSync();
         }
     }
 
@@ -1925,12 +1959,10 @@ export default class LilbeePlugin extends Plugin {
                 this.serverManager = null;
             }
             this.configureApi(this.settings.serverUrl);
-            // External mode owns its own status via the health probe; paint
-            // "ready [external]" optimistically so the user doesn't see a
-            // stale "stopped" label between the mode switch and the next
-            // probe tick. If the external server is in fact unreachable,
-            // the probe will flip to error on its next run.
-            this.setStatusReady();
+            // The first successful health probe promotes this to "ready"; until
+            // then the user sees "connecting..." so a non-lilbee server never
+            // briefly claims ready on the strength of a mode switch alone.
+            this.setStatusConnecting();
             void this.fetchActiveModel();
         }
     }
@@ -1957,6 +1989,11 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-error",
         );
         if (cls) this.statusBarEl.classList.add(cls);
+    }
+
+    private setStatusConnecting(): void {
+        this.updateStatusBar(MESSAGES.STATUS_CONNECTING, DOT_STATE.PRIMARY);
+        this.setStatusClass("lilbee-status-starting");
     }
 
     private setStatusReady(): void {
@@ -2007,7 +2044,10 @@ export default class LilbeePlugin extends Plugin {
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
         const health = await this.api.health().catch(() => null);
-        if (health?.isOk()) {
+        // A 200 with a non-lilbee JSON body (e.g. {}) parses fine but is not a
+        // healthy lilbee server. Only a body carrying status: "ok" counts, so a
+        // foreign HTTP server on the configured URL reads as unreachable.
+        if (health?.isOk() && health.value.status === "ok") {
             this.healthFailureStreak = 0;
             if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
             // Only a reconnect refetches the model: a restarted server may be on a different one.
@@ -2016,6 +2056,10 @@ export default class LilbeePlugin extends Plugin {
                 void this.fetchActiveModel();
             }
             this.reflectChatStatus(health.value);
+            // reflectChatStatus early-returns when the chat status is unchanged,
+            // so a "connecting..." from a mode switch would never clear. Promote
+            // to ready explicitly after a successful probe.
+            this.setStatusReady();
             return;
         }
         this.healthFailureStreak += 1;
@@ -2025,6 +2069,9 @@ export default class LilbeePlugin extends Plugin {
         // Don't paint a red pill. External mode reports errors normally —
         // it points at a server the user already runs.
         if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
+        // Another vault holds the shared root: the server was asked to exit,
+        // not down. Show who won and skip the "missing token" notice.
+        if (this.refreshLockedByOtherStatus()) return;
         if (this.serverUnreachable) return;
         this.serverUnreachable = true;
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
@@ -2212,6 +2259,9 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
 
+        // The catalog search may miss the active model (e.g. it is installed
+        // but not in the featured catalog). Fall back to the first row in the
+        // response, which is close enough for the info modal.
         const repo = extractHfRepo(ref);
         const result = await this.api.catalog({ task, search: repo });
         if (result.isErr()) {

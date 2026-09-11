@@ -842,6 +842,28 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("ready");
         });
 
+        it("a clean exit (SIGTERM) is a take-over, not a crash: no restart", async () => {
+            const journal: string[] = [];
+            const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
+            child()._emit("exit", null, "SIGTERM");
+            expect(mgr.state).toBe("error");
+            expect(journal.join("\n")).toContain("another vault took over");
+            // No crash snapshot, no restart scheduled.
+            expect(appendFileSyncSpy).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(3000);
+            expect(spawnSpy).toHaveBeenCalledTimes(1); // no restart
+        });
+
+        it("a clean exit (code 0) is a take-over, not a crash: no restart", async () => {
+            const journal: string[] = [];
+            const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
+            child()._emit("exit", 0, null);
+            expect(mgr.state).toBe("error");
+            expect(journal.join("\n")).toContain("another vault took over");
+            await vi.advanceTimersByTimeAsync(3000);
+            expect(spawnSpy).toHaveBeenCalledTimes(1); // no restart
+        });
+
         it("a signal exit is described by its signal", async () => {
             const mgr = await startFresh();
             child()._emit("exit", null, "SIGSEGV");
@@ -1240,6 +1262,73 @@ describe("ServerManager", () => {
             await stopP;
             expect(mgr.state).toBe("stopped");
             expect(failures).toHaveLength(1);
+        });
+    });
+
+    // ── killChildSync ───────────────────────────────────────────────
+
+    describe("killChildSync", () => {
+        it("sends SIGKILL to the child and cleans up the port file, synchronously", async () => {
+            const mgr = await startFresh();
+            const c = child();
+            expect(mgr.state).toBe("ready");
+
+            mgr.killChildSync();
+
+            expect(c.kill).toHaveBeenCalledWith("SIGKILL");
+            expect(unlinkSyncSpy).toHaveBeenCalled();
+            expect(mgr.state).toBe("stopped");
+            expect(mgr.serverUrl).toBe("");
+        });
+
+        it("signals the process group when the group exists", async () => {
+            processKillSpy.mockImplementation(() => true);
+            const mgr = await startFresh();
+            const c = child();
+
+            mgr.killChildSync();
+
+            expect(processKillSpy).toHaveBeenCalledWith(-c.pid, "SIGKILL");
+        });
+
+        it("is a no-op when nothing is running", () => {
+            const mgr = new ServerManager(defaultOpts());
+            expect(() => mgr.killChildSync()).not.toThrow();
+            expect(mgr.state).toBe("stopped");
+        });
+
+        it("clears the restart timer so a queued restart does not fire after unload", async () => {
+            const mgr = await startFresh();
+            const c = child();
+            (mgr as any).restartTimer = 42;
+
+            mgr.killChildSync();
+
+            expect((mgr as any).restartTimer).toBeNull();
+            expect(c.kill).toHaveBeenCalledWith("SIGKILL");
+        });
+
+        it("cleans up an adopted server's state without killing anything", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            expect(mgr.isAdopted).toBe(true);
+
+            mgr.killChildSync();
+
+            expect(mgr.isAdopted).toBe(false);
+            expect(mgr.serverUrl).toBe("");
+            expect(unlinkSyncSpy).toHaveBeenCalled();
+        });
+
+        it("returns without awaiting — the child exit is not required to proceed", async () => {
+            const mgr = await startFresh();
+            const c = child();
+            // kill does NOT trigger an exit event; killChildSync still returns.
+            c.kill.mockImplementation(() => true);
+
+            expect(() => mgr.killChildSync()).not.toThrow();
+            expect(c.kill).toHaveBeenCalledWith("SIGKILL");
         });
     });
 

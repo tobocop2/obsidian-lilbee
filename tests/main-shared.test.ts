@@ -642,12 +642,12 @@ describe("startManagedServer guards", () => {
 });
 
 describe("onunload", () => {
-    it("stops the managed server", async () => {
+    it("kills the managed server synchronously on unload", async () => {
         const plugin = await createPlugin();
-        const stop = vi.fn().mockResolvedValue(undefined);
-        (plugin as any).serverManager = { stop };
+        const killChildSync = vi.fn();
+        (plugin as any).serverManager = { killChildSync };
         plugin.onunload();
-        expect(stop).toHaveBeenCalled();
+        expect(killChildSync).toHaveBeenCalled();
     });
 });
 

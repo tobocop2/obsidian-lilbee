@@ -55,7 +55,7 @@ vi.mock("../src/api", async (importOriginal) => ({
             setTokenProvider: vi.fn(),
             setOutcomeCallback: vi.fn(),
             setBaseUrl: vi.fn(),
-            health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
+            health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } }),
             // Default config matches the test vault layout so the fire-and-forget
             // configureManagedStorage() in startManagedServer() hits the early
             // no-op exit instead of throwing on a missing method.
@@ -226,6 +226,7 @@ vi.mock("../src/views/update-available-modal", () => ({
 const mockGatekeeperOpen = vi.fn();
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
+const mockServerKillChildSync = vi.fn();
 let mockServerOpts: any = null;
 
 vi.mock("../src/server-binary", () => ({
@@ -292,6 +293,7 @@ vi.mock("../src/server-manager", () => ({
         return {
             start: mockServerStart,
             stop: mockServerStop,
+            killChildSync: mockServerKillChildSync,
             restart: vi.fn(),
             get isAdopted() {
                 return mockIsAdopted;
@@ -934,10 +936,10 @@ describe("LilbeePlugin", () => {
             );
         });
 
-        it("sets status bar text to 'lilbee: ready [external]' in external mode", async () => {
+        it("sets status bar text to 'lilbee: connecting...' in external mode after onload", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: connecting...");
         });
 
         it("registers vault watchers for the pending-sync hint plus the file-menu listener", async () => {
@@ -3812,15 +3814,19 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             expect(plugin.serverSupportsSessions()).toBe(true);
 
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.66b507" },
+            });
             await (plugin as any).probeServerHealth();
             expect(plugin.serverSupportsSessions()).toBe(false);
 
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.90b420" } });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
             await (plugin as any).probeServerHealth();
             expect(plugin.serverSupportsSessions()).toBe(true);
         });
@@ -3829,11 +3835,28 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             vi.spyOn(plugin, "ensureManagedConsentThenStart").mockResolvedValue({ kind: "canceled" } as any);
             await plugin.onload();
-            plugin.api.health = vi
-                .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.66b507" },
+            });
             await (plugin as any).probeServerHealth();
             expect((plugin as any).externalServerVersion).toBe("");
+        });
+
+        it("probe with non-ready chat status skips setStatusReady", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).chatStatus = CHAT_STATUS.LOADING;
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", chat_ready: false },
+            });
+            await (plugin as any).probeServerHealth();
+            // Chat is loading: reflectChatStatus paints "warming..." and the
+            // probe must not override it with "ready".
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("ready");
         });
     });
 
@@ -4829,8 +4852,10 @@ describe("LilbeePlugin", () => {
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
 
-            // Recovery: health() resolves Ok.
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            // Recovery: health() resolves Ok with status: "ok".
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
@@ -4926,7 +4951,7 @@ describe("LilbeePlugin", () => {
             plugin.activeModel = "old";
             plugin.api.health = vi
                 .fn()
-                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { chat_ready: true } });
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok", chat_ready: true } });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "Qwen3-235B", catalog: [], installed: [] } });
@@ -4940,7 +4965,9 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
             await (plugin as any).probeServerHealth();
-            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } });
             plugin.api.listModels = vi
                 .fn()
                 .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
@@ -4989,6 +5016,33 @@ describe("LilbeePlugin", () => {
             (plugin as any).healthFailureStreak = 5;
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
+        });
+
+        it("treats a 200 with a non-lilbee JSON body as a probe failure", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            // A 2020 with {} (no status: "ok") is not a lilbee server — the
+            // probe must treat it as unreachable, not ready.
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            await (plugin as any).probeServerHealth();
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
+
+        it("promotes to ready only after a probe reports status ok", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            // After onload the status is "connecting...", not "ready".
+            expect((plugin.statusBarEl as any)?.textContent).toBe("lilbee: connecting...");
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { status: "ok" } });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue(err(new Error("down")));
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
         });
 
         it("skips probing while a chat stream is in flight", async () => {
@@ -5318,7 +5372,7 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.activeModel).toBe("");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: connecting...");
         });
 
         it("turns show_reasoning on the first time the server reports it off, then never again", async () => {
@@ -5924,6 +5978,7 @@ describe("LilbeePlugin", () => {
         it("setStatusReady adds lilbee-status-ready class", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            (plugin as any).setStatusReady();
 
             const el = (plugin as any).statusBarEl!;
             expect(el.classList.contains("lilbee-status-ready")).toBe(true);
@@ -6624,6 +6679,75 @@ describe("LilbeePlugin", () => {
             expect(plugin.statusBarEl?.classList.contains("lilbee-status-error")).toBe(true);
         });
 
+        it("handleServerStateChange error shows STATUS_LOCKED_BY_OTHER when another vault owns the root", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 999,
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("error");
+
+            expect(plugin.statusBarEl?.textContent).toContain("serving");
+            expect(plugin.statusBarEl?.textContent).not.toContain("error");
+        });
+
+        it("refreshLockedByOtherStatus returns false when no foreign owner", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue(null);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
+        });
+
+        it("refreshLockedByOtherStatus returns false without a registry", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            (plugin as any).vaultRegistry = null;
+            expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
+        });
+
+        it("refreshLockedByOtherStatus returns false when we own the root", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const sm = await import("../src/server-manager");
+            const ourDataDir = (plugin as any).vaultRegistry.resolveDataDir((plugin as any).vaultId);
+            vi.mocked(sm.readScopeOwner).mockReturnValue({ dataDir: ourDataDir, pid: 1 });
+
+            expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
+        });
+
+        it("health probe shows STATUS_LOCKED_BY_OTHER and skips token notice", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 999,
+            });
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            // Make the health probe fail so it reaches the locked-by-other check.
+            plugin.api.health = vi.fn().mockResolvedValue({ isOk: () => false, isErr: () => true });
+            (plugin as any).serverEverReady = true;
+            (plugin as any).healthFailureStreak = 1;
+            await (plugin as any).probeServerHealth();
+
+            expect(plugin.statusBarEl?.textContent).toContain("serving");
+            expect(Notice.instances.some((n) => n.message.includes("session token"))).toBe(false);
+        });
+
         it("handleServerStateChange ready re-renders an open lilbee Settings tab (ydt)", async () => {
             const { LilbeeSettingTab } = await import("../src/settings");
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -6923,6 +7047,78 @@ describe("LilbeePlugin", () => {
             expect(el.classList.contains("lilbee-status-ready")).toBe(false);
             expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
         });
+
+        it("take-over prompt resolves the owner name from the registry", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const registry = (plugin as any).vaultRegistry;
+            vi.spyOn(registry, "list").mockReturnValue([
+                {
+                    id: "other",
+                    displayName: "vault-new",
+                    dataDir: "/shared/vaults/other",
+                    obsidianVaultPath: "/path/to/other",
+                    addedAt: 0,
+                    lastActiveAt: 0,
+                },
+            ]);
+            vi.spyOn(registry, "resolveDataDir").mockImplementation((id) =>
+                id === "other" ? "/shared/vaults/other" : registry.resolveDataDir(id),
+            );
+
+            const name = await (plugin as any).resolveOwnerName("/shared/vaults/other");
+            expect(name).toBe("vault-new");
+        });
+
+        it("take-over prompt falls back to 'another vault' when unregistered", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const name = await (plugin as any).resolveOwnerName("/shared/vaults/unknown");
+            expect(name).toBe("another vault");
+        });
+
+        it("take-over prompt shows STATUS_LOCKED_BY_OTHER while waiting, not 'error'", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 1234,
+            });
+            mockConfirmModalResult = false;
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const registry = (plugin as any).vaultRegistry;
+            vi.spyOn(registry, "list").mockReturnValue([
+                {
+                    id: "other",
+                    displayName: "vault-new",
+                    dataDir: "/shared/vaults/other",
+                    obsidianVaultPath: "/path/to/other",
+                    addedAt: 0,
+                    lastActiveAt: 0,
+                },
+            ]);
+            vi.spyOn(registry, "resolveDataDir").mockImplementation((id) =>
+                id === "other" ? "/shared/vaults/other" : registry.resolveDataDir(id),
+            );
+
+            await (plugin as any).negotiateTakeOver(
+                (plugin as any).vaultRegistry,
+                undefined,
+                true,
+                "/shared/vaults/other",
+            );
+
+            const el = (plugin as any).statusBarEl!;
+            expect(el.textContent).toContain("serving");
+            expect(el.textContent).not.toContain("error");
+        });
     });
 
     describe("saveSettings mode switching", () => {
@@ -6956,7 +7152,7 @@ describe("LilbeePlugin", () => {
             expect(mockEnsure).toHaveBeenCalled();
         });
 
-        it("2rf: managed → external sets status to 'ready [external]', not 'stopped'", async () => {
+        it("2rf: managed → external sets status to 'connecting...', not 'stopped'", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
@@ -6966,7 +7162,7 @@ describe("LilbeePlugin", () => {
             await flush();
 
             const text = (plugin as any).statusBarEl?.textContent ?? "";
-            expect(text).toContain("[external]");
+            expect(text).toContain("connecting");
             expect(text).not.toContain("stopped");
         });
 
@@ -6988,7 +7184,7 @@ describe("LilbeePlugin", () => {
 
             const text = (plugin as any).statusBarEl?.textContent ?? "";
             expect(text).not.toContain("stopped");
-            expect(text).toContain("[external]");
+            expect(text).toContain("connecting");
         });
     });
 
@@ -7226,23 +7422,24 @@ describe("LilbeePlugin", () => {
     });
 
     describe("onunload with serverManager", () => {
-        it("calls serverManager.stop on unload", async () => {
+        it("calls serverManager.killChildSync on unload, not the async stop", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            mockServerStop.mockClear();
+            mockServerKillChildSync.mockClear();
             plugin.onunload();
 
-            expect(mockServerStop).toHaveBeenCalled();
+            expect(mockServerKillChildSync).toHaveBeenCalled();
+            expect(mockServerStop).not.toHaveBeenCalled();
         });
     });
 
     describe("external mode status bar label", () => {
-        it("shows [external] in external mode", async () => {
+        it("shows 'connecting...' in external mode after onload", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: connecting...");
         });
 
         it("does not show [external] in managed mode", async () => {

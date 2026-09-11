@@ -132,20 +132,21 @@ function forYouSortKey(entry: CatalogEntry): [number, string] {
     return [entry.fit === HARDWARE_FIT.FITS ? 0 : 1, entry.display_name.toLowerCase()];
 }
 
+/** A catalog row a user can run: featured, supported, and not known unrunnable. */
+export function isRunnablePick(entry: CatalogEntry): boolean {
+    return entry.featured && entry.compat === MODEL_COMPAT.SUPPORTED && entry.fit !== HARDWARE_FIT.WONT_RUN;
+}
+
 /**
  * One runnable pick per role, in role order.
  *
  * Featured is not a curated list — the server resolves it from HuggingFace
- * trending at runtime, so a pick is only as safe as its hardware fit. A row
- * qualifies only when the engine supports its architecture and the machine can
- * hold it, which makes every card a one-click install rather than a coin flip.
- * Rows with no fit chip are excluded outright: an unknown size cannot be
- * promised.
+ * trending at runtime, so a pick is only as safe as its hardware fit. Rows with
+ * no fit chip are kept (a failed probe must not empty the rail); only wont_run
+ * and unsupported are excluded.
  */
 export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
-    const runnable = entries.filter(
-        (e) => e.featured && e.compat === MODEL_COMPAT.SUPPORTED && e.fit != null && e.fit !== HARDWARE_FIT.WONT_RUN,
-    );
+    const runnable = entries.filter(isRunnablePick);
     const picks: CatalogEntry[] = [];
     for (const task of FOR_YOU_ROLE_ORDER) {
         const best = runnable

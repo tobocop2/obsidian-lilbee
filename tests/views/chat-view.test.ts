@@ -1112,6 +1112,35 @@ describe("ChatView.sendMessage — sources", () => {
         expect(assistantBubble.find("lilbee-chat-sources")).toBeNull();
     });
 
+    it("ignores a malformed sources frame without replacing the answer", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "Partial answer" },
+            // Malformed: object instead of array
+            { event: SSE_EVENT.SOURCES, data: { sources: [] } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "malformed sources";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const textEl = assistantBubble.find("lilbee-chat-content");
+        // The answer must show the tokens, not a TypeError.
+        expect(textEl!.textContent).toContain("Partial answer");
+        expect(textEl!.textContent).not.toContain("TypeError");
+    });
+
     it("pushes assistant message into history after done event", async () => {
         Notice.clear();
         const plugin = makePlugin();
@@ -2574,7 +2603,7 @@ describe("ChatView — toolbar groups and tooltips", () => {
 });
 
 describe("ChatView health warnings", () => {
-    it("shows a server-reported degradation with its remedy", async () => {
+    it("renders a plugin-native remedy with an action button for a known code", async () => {
         const plugin = makePlugin();
         plugin.healthWarnings = [
             { code: "fts_unavailable", message: "Keyword search is unavailable.", remedy: "Run rebuild." },
@@ -2587,7 +2616,69 @@ describe("ChatView health warnings", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const text = container.textContent ?? "";
         expect(text).toContain("Keyword search is unavailable.");
-        expect(text).toContain("Run rebuild.");
+        expect(text).toContain("Rebuild the index");
+        expect(text).toContain("Rebuild index");
+        // The server's CLI remedy is not shown for codes the plugin knows.
+        expect(text).not.toContain("Run rebuild.");
+        expect(container.find("lilbee-chat-warning-action")).not.toBeNull();
+    });
+
+    it("falls back to the server remedy for an unknown code", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [
+            { code: "some_future_warning", message: "Something is degraded.", remedy: "Server says do X." },
+        ];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const text = container.textContent ?? "";
+        expect(text).toContain("Something is degraded.");
+        expect(text).toContain("Server says do X.");
+        expect(container.find("lilbee-chat-warning-action")).toBeNull();
+    });
+
+    it("triggers a rebuild when the remedy action button is clicked", async () => {
+        confirmModalResult = true;
+        const plugin = makePlugin();
+        plugin.healthWarnings = [
+            { code: "embedding_prefix_mismatch", message: "Index/embedder mismatch.", remedy: "Run rebuild." },
+        ];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const btn = container.find("lilbee-chat-warning-action");
+        expect(btn).not.toBeNull();
+        btn!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
+    });
+
+    it("does not rebuild when the user dismisses the confirm dialog", async () => {
+        confirmModalResult = false;
+        const plugin = makePlugin();
+        plugin.healthWarnings = [{ code: "stale_index", message: "Index is stale.", remedy: "Run rebuild." }];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const btn = container.find("lilbee-chat-warning-action");
+        expect(btn).not.toBeNull();
+        btn!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.triggerSync).not.toHaveBeenCalled();
+        confirmModalResult = true;
     });
 
     it("is a no-op on a view whose onOpen has not run", () => {
@@ -6171,5 +6262,85 @@ describe("ChatView — resume interactions with live state", () => {
 
         expect(plugin.settings.searchChunkType).toBe("all");
         expect(plugin.saveSettings).not.toHaveBeenCalled();
+    });
+});
+
+describe("ChatView — chat menu filters out non-chat models", () => {
+    function makeView() {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        // Seed the view's internal state as fetchAndFillSelectors would.
+        // Qwen is in the catalog (featured); Llama is manually pulled (not in catalog).
+        (view as any).chatActive = "bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf";
+        (view as any).chatCatalogEntries = [
+            { hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B", source: "native", task: "chat" },
+        ];
+        (view as any).chatInstalled = [
+            { name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" },
+            { name: "bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf", source: "native" },
+            { name: "BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5.Q4_K_M.gguf", source: "native" },
+        ];
+        (view as any).embeddingModels = [
+            { hf_repo: "BAAI/bge-small-en-v1.5-GGUF", display_name: "BGE Small", source: "native", task: "embedding" },
+        ];
+        (view as any).optionalCatalog = { vision: [], rerank: [] };
+        return view;
+    }
+
+    it("includes manually-pulled chat models but excludes embedding models", () => {
+        const view = makeView();
+        const options = (view as any).chatOtherOptions();
+        const repos = options.map((o: { value: string }) => o.value);
+        // Llama is installed but not in the featured catalog → appears in chatOtherOptions.
+        expect(repos).toContain("bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf");
+        // BGE is an embedding model → excluded from chat menu.
+        expect(repos).not.toContain("BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5.Q4_K_M.gguf");
+        // Qwen is in the featured catalog → appears in chatPrimaryOptions, not here.
+        expect(repos).not.toContain("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+    });
+
+    it("excludes installed vision and reranker models from the chat menu", () => {
+        const view = makeView();
+        (view as any).optionalCatalog = {
+            vision: [
+                { hf_repo: "vikhyatk/moondream2-GGUF", display_name: "Moondream", source: "native", task: "vision" },
+            ],
+            rerank: [],
+        };
+        (view as any).chatInstalled.push({ name: "vikhyatk/moondream2-GGUF/moondream2.Q4_K_M.gguf", source: "native" });
+        const options = (view as any).chatOtherOptions();
+        const repos = options.map((o: { value: string }) => o.value);
+        expect(repos).not.toContain("vikhyatk/moondream2-GGUF/moondream2.Q4_K_M.gguf");
+    });
+});
+
+describe("ChatView chat rail activates by concrete ref", () => {
+    function makeView() {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view as any).chatActive = "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf";
+        (view as any).chatCatalogEntries = [
+            {
+                hf_repo: "Qwen/Qwen3-4B-GGUF",
+                gguf_filename: "Qwen3-4B-Q4_K_M.gguf",
+                display_name: "Qwen3 4B",
+                source: "native",
+                task: "chat",
+            },
+        ];
+        (view as any).chatInstalled = [{ name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" }];
+        return view;
+    }
+
+    it("sends the concrete file ref, not the bare repo", () => {
+        const view = makeView();
+        const options = (view as any).chatPrimaryOptions();
+        expect(options[0].value).toBe("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+    });
+
+    it("marks the installed quant as checked", () => {
+        const view = makeView();
+        const options = (view as any).chatPrimaryOptions();
+        expect(options[0].checked).toBe(true);
     });
 });

@@ -294,6 +294,7 @@ export const MESSAGES = {
         "Materialize crawled pages and imported files inside your vault so you can browse them in Obsidian. Disabled for external servers — their files live on the server machine, not your computer.",
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
+    ERROR_STORAGE_CHECK_FAILED: "Could not read the lilbee server config to check storage location.",
     NOTICE_STORAGE_REORGANIZE_FAILED: (reason: string | null, logPath: string | null, willRetry: boolean): string =>
         [
             "Could not move lilbee storage.",
@@ -710,6 +711,7 @@ export const MESSAGES = {
     STATUS_WARM_LOADING_ENGINE: "lilbee: loading the engine",
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
+    STATUS_CONNECTING: "lilbee: connecting...",
     STATUS_ERROR: "lilbee: error",
     STATUS_AUTH_ERROR: "lilbee: auth error",
     NOTICE_SERVER_UNREACHABLE: "lilbee: server unreachable",
@@ -901,6 +903,8 @@ export const MESSAGES = {
     COMMAND_SYNC: "Sync vault",
     COMMAND_SYNC_RETRY_SKIPPED: RETRY_SKIPPED_COMMAND,
     COMMAND_SYNC_REBUILD: "Rebuild index",
+    WARNING_REMEDY_REBUILD: "Rebuild the index to restore full search and embeddings.",
+    BUTTON_REBUILD_INDEX: "Rebuild index",
     COMMAND_EXPORT_DATASET: "Export dataset",
     COMMAND_IMPORT_DATASET: "Import dataset",
     COMMAND_CATALOG: "Browse model catalog",

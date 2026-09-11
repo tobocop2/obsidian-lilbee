@@ -84,8 +84,8 @@ export class DocumentsModal extends Modal {
         const confirmed = await confirm.result;
         if (!confirmed) return;
         try {
-            const result = await this.plugin.api.removeDocuments(names);
-            new Notice(MESSAGES.NOTICE_DELETED(result.removed));
+            await this.plugin.api.removeDocuments(names);
+            new Notice(MESSAGES.NOTICE_DELETED(names.length));
             this.resetAndFetch();
         } catch {
             new Notice(MESSAGES.ERROR_DELETE_DOCUMENTS);
