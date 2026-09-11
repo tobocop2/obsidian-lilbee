@@ -1102,8 +1102,7 @@ export const MESSAGES = {
         "Write wiki pages as files in your vault so they appear in graph view, search, and backlinks",
     LABEL_WIKI_VAULT_FOLDER: "Wiki vault folder",
     DESC_WIKI_VAULT_FOLDER: "Folder in your vault where wiki pages are written",
-    NOTICE_WIKI_SYNC: (written: number, removed: number) =>
-        `lilbee: wiki sync: ${written} written, ${removed} removed`,
+    NOTICE_WIKI_SYNC: (written: number, removed: number) => `lilbee: wiki sync: ${written} written, ${removed} removed`,
 
     // Search mode
     LABEL_SEARCH_ALL: "All",
