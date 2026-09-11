@@ -121,6 +121,8 @@ interface StreamState {
     /** Set at DONE/stop/error so a queued animation-frame plain-text repaint
      *  can't overwrite the final markdown render. */
     streamEnded: boolean;
+    /** True once a DONE event arrives. A stream that ends without one was truncated. */
+    sawDone: boolean;
     /** The turn's user bubble; compaction markers are inserted above it. */
     anchorEl: HTMLElement;
     /** The condensing card, held so progress can advance it and the outcome can settle it. */
@@ -1136,6 +1138,7 @@ export class ChatView extends ItemView {
             reasoningDetailsEl: null,
             answerStarted: false,
             streamEnded: false,
+            sawDone: false,
             anchorEl: userBubble,
             compaction: null,
             spinnerEl: spinner,
@@ -1215,6 +1218,12 @@ export class ChatView extends ItemView {
             }
         } finally {
             state.streamEnded = true;
+            // A stream that closes without DONE is a truncated answer: the
+            // connection dropped between the last token and the done frame.
+            // Surface it the same way a truncated frame is reported.
+            if (!state.sawDone && state.fullContent && !this.streamController?.signal.aborted) {
+                this.renderInlineError(assistantBubble, streamInterruptedMessage(this.plugin.settings.serverMode));
+            }
             this.sending = false;
             this.streamController = null;
             this.plugin.notifyChatEnd();
@@ -1285,6 +1294,7 @@ export class ChatView extends ItemView {
             case SSE_EVENT.DONE: {
                 revealContent();
                 state.streamEnded = true;
+                state.sawDone = true;
                 const rendered = state.fullContent;
                 // Banner and sources grow the bubble after the last token; render
                 // them inside one follow so the view ends pinned to the bottom.

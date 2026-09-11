@@ -676,6 +676,33 @@ describe("ChatView.sendMessage — token streaming", () => {
         const textEl = assistantBubble.find("lilbee-chat-content");
         expect(textEl!.textContent).toBe("Hello world");
     });
+
+    it("reports a stream that closes without done as interrupted", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // Stream sends tokens but closes without a DONE event.
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "Hello" },
+            { event: SSE_EVENT.TOKEN, data: " world" },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "stream test";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const errorEl = assistantBubble.find("lilbee-chat-error");
+        // A stream that closes without done must surface an error, not end silently.
+        expect(errorEl).not.toBeNull();
+    });
 });
 
 describe("ChatView.sendMessage — reasoning tokens", () => {
