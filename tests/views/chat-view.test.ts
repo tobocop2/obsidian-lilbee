@@ -6173,3 +6173,44 @@ describe("ChatView — resume interactions with live state", () => {
         expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 });
+
+describe("ChatView — chat menu filters out non-chat models", () => {
+    function makeView() {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        // Seed the view's internal state as fetchAndFillSelectors would.
+        (view as any).chatActive = "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf";
+        (view as any).chatCatalogEntries = [
+            { hf_repo: "Qwen/Qwen3-4B-GGUF", display_name: "Qwen3 4B", source: "native", task: "chat" },
+        ];
+        (view as any).chatInstalled = [
+            { name: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf", source: "native" },
+            { name: "BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5.Q4_K_M.gguf", source: "native" },
+        ];
+        (view as any).embeddingModels = [
+            { hf_repo: "BAAI/bge-small-en-v1.5-GGUF", display_name: "BGE Small", source: "native", task: "embedding" },
+        ];
+        (view as any).optionalCatalog = { vision: [], rerank: [] };
+        return view;
+    }
+
+    it("excludes installed embedding models from the chat menu", () => {
+        const view = makeView();
+        const options = (view as any).chatOtherOptions();
+        const repos = options.map((o: { value: string }) => o.value);
+        expect(repos).toContain("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+        expect(repos).not.toContain("BAAI/bge-small-en-v1.5-GGUF/bge-small-en-v1.5.Q4_K_M.gguf");
+    });
+
+    it("excludes installed vision and reranker models from the chat menu", () => {
+        const view = makeView();
+        (view as any).optionalCatalog = {
+            vision: [{ hf_repo: "vikhyatk/moondream2-GGUF", display_name: "Moondream", source: "native", task: "vision" }],
+            rerank: [],
+        };
+        (view as any).chatInstalled.push({ name: "vikhyatk/moondream2-GGUF/moondream2.Q4_K_M.gguf", source: "native" });
+        const options = (view as any).chatOtherOptions();
+        const repos = options.map((o: { value: string }) => o.value);
+        expect(repos).not.toContain("vikhyatk/moondream2-GGUF/moondream2.Q4_K_M.gguf");
+    });
+});

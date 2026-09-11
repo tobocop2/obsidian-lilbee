@@ -601,11 +601,16 @@ export class ChatView extends ItemView {
         return primary;
     }
 
-    /** Installed builds that aren't in the featured catalog (manually pulled, ollama/, openai/, …). */
+    /** Installed builds that aren't in the featured catalog (manually pulled, ollama/, openai/, …).
+     *  The server's installedModels endpoint returns models for every task, so filter out
+     *  repos that serve another role — an installed embedding/vision/reranker model must
+     *  not leak into the chat menu. */
     private chatOtherOptions(): RailOption[] {
         const sourceMap = new Map(this.chatInstalled.map((m) => [m.name, m.source]));
         const featuredRepos = new Set(this.chatCatalogEntries.map((e) => e.hf_repo));
+        const nonChatRepos = this.nonChatRepos();
         return this.chatInstalled
+            .filter((m) => !nonChatRepos.has(extractHfRepo(m.name)))
             .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((m) => {
@@ -617,6 +622,16 @@ export class ChatView extends ItemView {
                     checked: m.name === this.chatActive,
                 };
             });
+    }
+
+    /** Repos that serve embedding, vision, or reranker roles — never chat. */
+    private nonChatRepos(): Set<string> {
+        const repos = new Set<string>();
+        for (const m of this.embeddingModels) repos.add(m.hf_repo);
+        for (const task of [MODEL_TASK.VISION, MODEL_TASK.RERANK] as const) {
+            for (const m of this.optionalCatalog[task]) repos.add(m.hf_repo);
+        }
+        return repos;
     }
 
     private openChatMenu(event: MouseEvent): void {
