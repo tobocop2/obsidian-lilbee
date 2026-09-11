@@ -219,12 +219,12 @@ export const MESSAGES = {
     COMMAND_MODEL_PICKER_EMBED: "Pick embedding model",
     DESC_CHAT_MODE: "Search uses your documents and returns citations. Chat is a general assistant with no retrieval.",
     TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING: "Configure an embedding model to enable Search.",
-    TOOLTIP_MODE_SEARCH: "Search your vault — finds relevant passages and answers with citations.",
-    TOOLTIP_MODE_CHAT: "Chat with the model directly — no vault retrieval.",
-    TOOLTIP_ROLE_CHAT: "Chat model — writes the answers.",
-    TOOLTIP_ROLE_EMBED: "Embedding model — indexes your notes so search can find them.",
-    TOOLTIP_ROLE_VISION: "Vision model — reads scanned or image-only PDFs. Optional.",
-    TOOLTIP_ROLE_RERANK: "Reranker — reorders search hits for sharper relevance. Optional.",
+    TOOLTIP_MODE_SEARCH: "Search your vault: finds relevant passages and answers with citations.",
+    TOOLTIP_MODE_CHAT: "Chat with the model directly: no vault retrieval.",
+    TOOLTIP_ROLE_CHAT: "Chat model: writes the answers.",
+    TOOLTIP_ROLE_EMBED: "Embedding model: indexes your notes so search can find them.",
+    TOOLTIP_ROLE_VISION: "Vision model: reads scanned or image-only PDFs. Optional.",
+    TOOLTIP_ROLE_RERANK: "Reranker: reorders search hits for sharper relevance. Optional.",
     LABEL_GEN_TEMPERATURE: "Creativity",
     LABEL_GEN_TOP_P: "Top P",
     LABEL_GEN_TOP_K: "Top K (sampling)",
@@ -291,7 +291,7 @@ export const MESSAGES = {
     LABEL_ADVANCED: "Advanced",
     LABEL_STORE_CONTENT_IN_VAULT: STORE_CONTENT_IN_VAULT_LABEL,
     DESC_STORE_CONTENT_IN_VAULT:
-        "Materialize crawled pages and imported files inside your vault so you can browse them in Obsidian. Disabled for external servers — their files live on the server machine, not your computer.",
+        "Materialize crawled pages and imported files inside your vault so you can browse them in Obsidian. Disabled for external servers: their files live on the server machine, not your computer.",
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
     NOTICE_STORAGE_REORGANIZE_FAILED: (reason: string | null, logPath: string | null, willRetry: boolean): string =>
@@ -317,7 +317,7 @@ export const MESSAGES = {
     STATUS_LOCKED_BY_OTHER: (vaultName: string): string => `lilbee: serving "${vaultName}"`,
     COMMAND_TAKE_OVER: "Take over the managed lilbee server",
     TOOLTIP_MODEL_INSTALLED_SHARED:
-        "Installed in the shared lilbee models directory — every vault on this computer can use it without re-downloading.",
+        "Installed in the shared lilbee models directory: every vault on this computer can use it without re-downloading.",
     LABEL_SHARED_ROOT: "Shared lilbee directory",
     DESC_SHARED_ROOT: (resolved: string): string =>
         `Holds the lilbee binary, model cache, and one subfolder per vault. Leave blank to use the platform default (currently ${resolved}). Restart the plugin or Obsidian for changes to take effect.`,
@@ -349,7 +349,7 @@ export const MESSAGES = {
     LABEL_VISION_DISABLED: "(disabled)",
     LABEL_VISION_HOSTED_GROUP: "Hosted via LiteLLM",
     DESC_VISION_MODEL:
-        "Used to read scanned PDFs when OCR fails. Separate from the chat model — vision models run only on image-only documents.",
+        "Used to read scanned PDFs when OCR fails. Separate from the chat model: vision models run only on image-only documents.",
     NOTICE_VISION_UPDATED: "lilbee: vision model updated",
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",
@@ -386,7 +386,7 @@ export const MESSAGES = {
     LABEL_TASK_STATE_FAILED: "failed",
     LABEL_TASK_STATE_CANCELLED: "cancelled",
     LABEL_TASK_STATE_WAITING: "waiting on server",
-    STATUS_WAITING_ON_SERVER: "Already ingesting on the server — waiting for it to finish",
+    STATUS_WAITING_ON_SERVER: "Already ingesting on the server: waiting for it to finish",
     STATUS_TASKS_RUNNING_PLURAL: "{count} tasks running · {name} {pct}%",
     STATUS_TASK_RUNNING_SINGLE: "{name} {pct}%",
     // A job whose length cannot be known reads as stuck when it is labelled 0%,
@@ -411,7 +411,7 @@ export const MESSAGES = {
     LABEL_RIBBON_UPDATE_AVAILABLE: (version: string) =>
         `lilbee server ${version} is available. Open the update settings.`,
     LABEL_STATUSBAR_OPEN_SETTINGS: "Open lilbee settings",
-    ERROR_STREAM_IDLE: "server stopped sending events — check that lilbee is running",
+    ERROR_STREAM_IDLE: "server stopped sending events: check that lilbee is running",
     LABEL_OUR_PICKS: "Our picks",
     LABEL_SECTION_INSTALLED: "Installed",
     LABEL_SECTION_CHAT: "Chat",
@@ -556,7 +556,7 @@ export const MESSAGES = {
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
     LABEL_MANUAL_TOKEN: "Session token",
     DESC_MANUAL_TOKEN:
-        "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
+        "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically: leave this blank.",
     DESC_SWITCH_MANAGED: "Stop using an external server and start the built-in one",
     DESC_MODELS_HELP: "Browse the catalog for available models. Requires the lilbee server.",
     DESC_REFRESH_MODELS: "Fetch available models from the server",
@@ -718,7 +718,7 @@ export const MESSAGES = {
     STATUS_ADDING: "lilbee: adding {label}...",
     STATUS_NOTHING_NEW: "lilbee: nothing new to add",
     STATUS_ADD_CANCELLED: "lilbee: add cancelled",
-    STATUS_SYNCED: "lilbee: synced — {summary}",
+    STATUS_SYNCED: "lilbee: synced: {summary}",
     STATUS_SYNC_CANCELLED: "lilbee: sync cancelled",
     STATUS_SYNC_FAILED: "lilbee: sync failed",
     STATUS_SYNC_PILL: (n: number) => `⟳ ${n}`,
@@ -800,11 +800,11 @@ export const MESSAGES = {
     ERROR_COULD_NOT_CONNECT_EXT: "Could not connect. Check the URL and make sure the server is running.",
     ERROR_DOWNLOAD_FAILED: "Download failed. Please try again or pick a different model.",
     ERROR_INDEXING_FAILED: "Indexing failed. You can retry from the settings tab.",
-    ERROR_CRAWL_FAILED: "lilbee: crawl failed — {msg}",
-    ERROR_CRAWL_ERROR: "lilbee: crawl error — {msg}",
+    ERROR_CRAWL_FAILED: "lilbee: crawl failed: {msg}",
+    ERROR_CRAWL_ERROR: "lilbee: crawl error: {msg}",
     ERROR_CRAWLER_SETUP_FAILED:
         "Crawler setup failed: {error}. Run 'make crawl-setup' in the lilbee repo or 'lilbee setup crawler' to retry.",
-    ERROR_CRAWLER_SETUP_FAILED_SHORT: "Chromium setup failed — see setup task",
+    ERROR_CRAWLER_SETUP_FAILED_SHORT: "Chromium setup failed: see setup task",
     ERROR_CRAWLER_SETUP_INCOMPLETE: "The server stopped the Chromium download before it finished.",
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
@@ -818,23 +818,23 @@ export const MESSAGES = {
         retryAfterSeconds !== null
             ? `lilbee is busy with another request. Try again in ${retryAfterSeconds} seconds.`
             : `lilbee is busy with another request. Try again in a moment.`,
-    ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed — ${msg}`,
+    ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed: ${msg}`,
     NOTICE_ALREADY_INGESTING: (source: string) =>
-        `lilbee: server is already ingesting ${source} — waiting for it to finish`,
+        `lilbee: server is already ingesting ${source}, waiting for it to finish`,
 
-    NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
+    NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set: select one in settings",
     NOTICE_FLEET_WARMING: "lilbee: the model is still loading, try again in a moment",
     NOTICE_FLEET_ERROR: (reason: string | null): string =>
         reason ? `lilbee: ${reason}` : "lilbee: the chat model failed to load. Pick another model in settings.",
     NOTICE_MODEL_ACTIVATED: (model: string) => `Now using ${model}`,
     NOTICE_PULL_CANCELLED: "lilbee: pull cancelled",
-    NOTICE_NO_TOKEN_MANAGED: "lilbee: managed server didn't produce a session token — try restarting the plugin",
+    NOTICE_NO_TOKEN_MANAGED: "lilbee: managed server didn't produce a session token: try restarting the plugin",
     NOTICE_NO_TOKEN_EXTERNAL:
-        "lilbee: no session token — run 'lilbee token' and paste it in Settings → Session token, or set LILBEE_DATA",
-    NOTICE_SESSION_TOKEN_INVALID: "lilbee: session token invalid — paste a new one in Settings → Session token",
+        "lilbee: no session token: run 'lilbee token' and paste it in Settings → Session token, or set LILBEE_DATA",
+    NOTICE_SESSION_TOKEN_INVALID: "lilbee: session token invalid: paste a new one in Settings → Session token",
     NOTICE_SESSION_TOKEN_INVALID_MANAGED:
-        "lilbee: managed server rejected its own token — restart the server from Settings → Switch to managed server, or open Status for logs",
-    NOTICE_QUEUE_FULL: "lilbee: too many tasks queued — wait for some to finish",
+        "lilbee: managed server rejected its own token: restart the server from Settings → Switch to managed server, or open Status for logs",
+    NOTICE_QUEUE_FULL: "lilbee: too many tasks queued: wait for some to finish",
     NOTICE_SYNC_IN_PROGRESS:
         "lilbee: a sync is already running or queued. Wait for it to finish, or cancel it in the Task Center.",
     LABEL_DATASET_FILTER: "lilbee dataset",
@@ -842,13 +842,13 @@ export const MESSAGES = {
     STATUS_DATASET_IMPORTING: "Re-embedding pages…",
     STATUS_DATASET_EMBEDDING: (file: string) => `Re-embedding ${file}…`,
     NOTICE_DATASET_EXPORTED: (path: string) => `lilbee: exported dataset to ${path}`,
-    ERROR_DATASET_EXPORT: (msg: string) => `lilbee: export failed — ${msg}`,
-    ERROR_DATASET_READ: (msg: string) => `lilbee: could not read dataset — ${msg}`,
+    ERROR_DATASET_EXPORT: (msg: string) => `lilbee: export failed: ${msg}`,
+    ERROR_DATASET_READ: (msg: string) => `lilbee: could not read dataset: ${msg}`,
     ERROR_DATASET_TOO_LARGE:
-        "lilbee: dataset exceeds the 10 MB upload limit — use `lilbee import` from the CLI for larger files",
+        "lilbee: dataset exceeds the 10 MB upload limit: use `lilbee import` from the CLI for larger files",
     NOTICE_DATASET_IMPORTED: (sources: number, pages: number, chunks: number, folder: string) =>
         `lilbee: imported ${sources} source(s) into "${folder}/" (${pages} page(s), ${chunks} chunk(s))`,
-    ERROR_DATASET_IMPORT: (msg: string) => `lilbee: import failed — ${msg}`,
+    ERROR_DATASET_IMPORT: (msg: string) => `lilbee: import failed: ${msg}`,
     NOTICE_MODEL_ACTIVATED_FULL: (model: string) => `lilbee: ${model} pulled and activated`,
     NOTICE_SET_MODEL: (type: string, model: string) => `${type} set to ${model}`,
     NOTICE_FAILED_SET_MODEL: (type: string) => `Failed to set ${type} model`,
@@ -859,7 +859,7 @@ export const MESSAGES = {
     NOTICE_FAILED_RESET: (field: string) => `lilbee: failed to reset ${field}`,
     NOTICE_SETTINGS_RESET: "lilbee: settings reset to defaults",
     NOTICE_FAILED_RESET_ALL: "lilbee: failed to reset settings",
-    NOTICE_REINDEX_REQUIRED: "lilbee: re-indexing required — starting sync...",
+    NOTICE_REINDEX_REQUIRED: "lilbee: re-indexing required: starting sync...",
     NOTICE_API_KEY_SAVED: "lilbee: API key saved",
     NOTICE_HF_TOKEN_SAVED: "lilbee: HuggingFace token saved",
     NOTICE_FAILED_HF_TOKEN: "lilbee: failed to save HuggingFace token",
@@ -875,7 +875,7 @@ export const MESSAGES = {
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
-    NOTICE_CRAWL_DONE: (pages: number) => `lilbee: crawl done — ${pages} pages`,
+    NOTICE_CRAWL_DONE: (pages: number) => `lilbee: crawl done: ${pages} pages`,
     NOTICE_ENTER_URL: "lilbee: please enter a URL",
     NOTICE_DOWNLOAD_CANCELLED: "lilbee: download cancelled",
     NOTICE_INDEXING_CANCELLED: "lilbee: indexing cancelled",
@@ -980,7 +980,7 @@ export const MESSAGES = {
     LABEL_DRAFT_KIND_BAD_TITLE: "BAD TITLE",
     LABEL_DRAFT_PUBLISHED: "pub",
     LABEL_DRAFT_NEW: "new",
-    LABEL_DRAFT_FAITH_NA: "faith —",
+    LABEL_DRAFT_FAITH_NA: "faith",
     LABEL_DRAFT_FAITH: (score: number) => `faith ${score.toFixed(2)}`,
     LABEL_DRAFT_DRIFT: (pct: number) => `${pct}% drift`,
     LABEL_NO_DRAFTS: "No pending wiki drafts.",
@@ -1002,7 +1002,7 @@ export const MESSAGES = {
     LABEL_PREVIEW_CLOSE: "Close",
     LABEL_PREVIEW_SAVE_TO_VAULT: "Save to vault",
     LABEL_PREVIEW_OPEN_IN_VAULT: "Open in vault",
-    TOOLTIP_PREVIEW_SAVE_SOON: "Coming soon — available once the server supports vault storage.",
+    TOOLTIP_PREVIEW_SAVE_SOON: "Coming soon: available once the server supports vault storage.",
     ERROR_PREVIEW_INVALID_SOURCE: "Cannot preview: source reference is empty.",
     ERROR_PREVIEW_LOAD: (reason: string) => `Failed to load source: ${reason}`,
     ERROR_PREVIEW_UNSUPPORTED: (mime: string) =>
@@ -1103,7 +1103,7 @@ export const MESSAGES = {
     LABEL_WIKI_VAULT_FOLDER: "Wiki vault folder",
     DESC_WIKI_VAULT_FOLDER: "Folder in your vault where wiki pages are written",
     NOTICE_WIKI_SYNC: (written: number, removed: number) =>
-        `lilbee: wiki sync — ${written} written, ${removed} removed`,
+        `lilbee: wiki sync: ${written} written, ${removed} removed`,
 
     // Search mode
     LABEL_SEARCH_ALL: "All",
@@ -1111,7 +1111,7 @@ export const MESSAGES = {
     LABEL_SEARCH_RAW: "Raw",
 
     // Wiki tasks/notices
-    NOTICE_WIKI_LINT_DONE: (issues: number) => `lilbee: lint complete — ${issues} issues found`,
+    NOTICE_WIKI_LINT_DONE: (issues: number) => `lilbee: lint complete: ${issues} issues found`,
     NOTICE_WIKI_UPDATE_DONE: (count: number) => `lilbee: wiki updated, ${count} pages`,
     NOTICE_WIKI_PRUNE_DONE: (archived: number) => `lilbee: pruned ${archived} pages`,
     NOTICE_WIKI_PRUNE_CONFIRM: "This will archive wiki pages with broken citations. Continue?",
@@ -1137,7 +1137,7 @@ export const MESSAGES = {
     WIZARD_STEP_CHOOSE_SERVER: "Choose where lilbee runs (this machine, or an existing server)",
     WIZARD_STEP_CHOOSE_MODEL: "Choose an AI model that fits the host's RAM",
     WIZARD_STEP_INDEX: "Index your vault so you can search and chat",
-    WIZARD_LOCAL_ONLY_MANAGED: "Managed mode runs on this machine — your notes never leave your laptop.",
+    WIZARD_LOCAL_ONLY_MANAGED: "Managed mode runs on this machine: your notes never leave your laptop.",
     WIZARD_LOCAL_ONLY_EXTERNAL:
         "External mode talks to your existing lilbee server. Your notes stay on whichever host runs it.",
     WIZARD_MODEL_HELP:
@@ -1180,7 +1180,7 @@ export const MESSAGES = {
     WIZARD_WIKI_PRO_ANSWERS: "Chat and search can reference wiki pages for more coherent answers",
     WIZARD_WIKI_CONS_HEADING: "Worth knowing",
     WIZARD_WIKI_CON_TOKENS: "Each page run uses LLM compute / API tokens",
-    WIZARD_WIKI_CON_ACCURACY: "Small models can hallucinate — always verify against source",
+    WIZARD_WIKI_CON_ACCURACY: "Small models can hallucinate: always verify against source",
     WIZARD_WIKI_CON_SEARCH: "Search may prioritise wiki chunks over raw ones if you include both",
     WIZARD_WIKI_CON_COMPLEXITY: "Adds a second index shape to maintain alongside raw embeddings",
     WIZARD_WIKI_ENABLE: "Enable wiki (on-demand generation)",
@@ -1265,7 +1265,7 @@ export const MESSAGES = {
     PLACEMENT_ROLE_VRAM: (size: string): string => `~${size}`,
     PLACEMENT_TIP_ROLE_VRAM: (role: WorkerRole): string => `Estimated memory the ${roleNoun(role)} model needs`,
     PLACEMENT_UTIL: (pct: number): string => `${pct}%`,
-    PLACEMENT_UTIL_NA: "—",
+    PLACEMENT_UTIL_NA: "N/A",
     PLACEMENT_METER_UTIL: "util",
     PLACEMENT_METER_VRAM: "vram",
     PLACEMENT_HINT_SPLIT: "split",

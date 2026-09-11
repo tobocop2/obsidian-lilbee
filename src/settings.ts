@@ -2679,7 +2679,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const localInstalled = catalogEntries.filter((e) => !HOSTED_SOURCES.has(e.source) && isInstalled(e));
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
         for (const [ref, label] of hostedOptions(catalogEntries)) {
-            opts.push([ref, `${label} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
+            opts.push([ref, `${label} [${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}]`]);
         }
         return opts;
     }
@@ -2830,7 +2830,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         );
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
         for (const [ref, label] of hostedOptions(catalogEntries)) {
-            opts.push([ref, `${label} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
+            opts.push([ref, `${label} [${MESSAGES.LABEL_VISION_HOSTED_GROUP}]`]);
         }
         return opts;
     }

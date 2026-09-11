@@ -131,7 +131,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
             expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
             expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
-                "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
+                "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically: leave this blank.",
             );
             expect(MESSAGES.LABEL_WIKI_SECTION).toBe("Wiki (beta)");
             expect(MESSAGES.DESC_WIKI_ENABLE_TOGGLE).toBe(
@@ -251,12 +251,12 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_CRAWL_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done — 10 pages");
+            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done: 10 pages");
         });
 
         it("NOTICE_ALREADY_INGESTING produces correct output", () => {
             expect(MESSAGES.NOTICE_ALREADY_INGESTING("doc.pdf")).toBe(
-                "lilbee: server is already ingesting doc.pdf — waiting for it to finish",
+                "lilbee: server is already ingesting doc.pdf, waiting for it to finish",
             );
         });
 
@@ -282,7 +282,7 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_CRAWL_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done — 10 pages");
+            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done: 10 pages");
         });
 
         it("NOTICE_SYNC_SUMMARY produces correct output", () => {
@@ -309,8 +309,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_WIKI_LINT_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(3)).toBe("lilbee: lint complete — 3 issues found");
-            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(0)).toBe("lilbee: lint complete — 0 issues found");
+            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(3)).toBe("lilbee: lint complete: 3 issues found");
+            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(0)).toBe("lilbee: lint complete: 0 issues found");
         });
 
         it("NOTICE_WIKI_UPDATE_DONE produces correct output", () => {
@@ -346,8 +346,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_WIKI_SYNC produces correct output", () => {
-            expect(MESSAGES.NOTICE_WIKI_SYNC(3, 1)).toBe("lilbee: wiki sync — 3 written, 1 removed");
-            expect(MESSAGES.NOTICE_WIKI_SYNC(0, 0)).toBe("lilbee: wiki sync — 0 written, 0 removed");
+            expect(MESSAGES.NOTICE_WIKI_SYNC(3, 1)).toBe("lilbee: wiki sync: 3 written, 1 removed");
+            expect(MESSAGES.NOTICE_WIKI_SYNC(0, 0)).toBe("lilbee: wiki sync: 0 written, 0 removed");
         });
     });
 
