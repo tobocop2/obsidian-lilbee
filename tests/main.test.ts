@@ -6642,6 +6642,44 @@ describe("LilbeePlugin", () => {
             expect(plugin.statusBarEl?.textContent).not.toContain("error");
         });
 
+        it("refreshLockedByOtherStatus returns false when no foreign owner", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
+        });
+
+        it("refreshLockedByOtherStatus returns false when we own the root", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const sm = await import("../src/server-manager");
+            const ourDataDir = (plugin as any).vaultRegistry.resolveDataDir((plugin as any).vaultId);
+            vi.mocked(sm.readScopeOwner).mockReturnValue({ dataDir: ourDataDir, pid: 1 });
+
+            expect((plugin as any).refreshLockedByOtherStatus()).toBe(false);
+        });
+
+        it("health probe shows STATUS_LOCKED_BY_OTHER and skips token notice", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 999,
+            });
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            // Force the server-unreachable path.
+            (plugin as any).serverEverReady = true;
+            (plugin as any).healthFailureStreak = 1;
+            await (plugin as any).probeServerHealth();
+
+            expect(plugin.statusBarEl?.textContent).toContain("serving");
+            expect(Notice.instances.some((n) => n.message.includes("session token"))).toBe(false);
+        });
+
         it("handleServerStateChange ready re-renders an open lilbee Settings tab (ydt)", async () => {
             const { LilbeeSettingTab } = await import("../src/settings");
             const plugin = await createPlugin({ serverMode: "managed" });
