@@ -2520,7 +2520,9 @@ describe("CatalogModal fetch generation", () => {
         const plugin = makePlugin();
         // Defer the first catalog call so we can change the filter before it resolves.
         let resolveFirst: (r: any) => void = () => {};
-        const firstPromise = new Promise<any>((r) => { resolveFirst = r; });
+        const firstPromise = new Promise<any>((r) => {
+            resolveFirst = r;
+        });
         plugin.api.catalog.mockReturnValueOnce(firstPromise);
         // The recursive fetch after supersedence also returns empty.
         plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
