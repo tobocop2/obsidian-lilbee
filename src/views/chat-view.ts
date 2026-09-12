@@ -589,7 +589,7 @@ export class ChatView extends ItemView {
             primary.push({
                 value: ref,
                 label: `${entry.display_name}${sourceTag}`,
-                checked: ref === activeRef,
+                checked: false,
             });
         }
         // Hosted rows (frontier/ollama) are selectable even when absent from the
@@ -598,7 +598,16 @@ export class ChatView extends ItemView {
         // be both hosted and registered as installed).
         for (const [ref, label] of hostedOptions(this.chatCatalogEntries)) {
             if (installedRepos.has(ref)) continue;
-            primary.push({ value: ref, label, checked: ref === activeRef });
+            primary.push({ value: ref, label, checked: false });
+        }
+        // Exactly one checkmark: the concrete ref first, else the first quant of
+        // the reported repo (the server sometimes reports a bare repository).
+        const exact = primary.findIndex((o) => o.value === activeRef);
+        if (exact >= 0) {
+            primary[exact].checked = true;
+        } else {
+            const repoMatch = primary.findIndex((o) => extractHfRepo(o.value) === extractHfRepo(activeRef));
+            if (repoMatch >= 0) primary[repoMatch].checked = true;
         }
         return primary;
     }
@@ -632,6 +641,11 @@ export class ChatView extends ItemView {
         for (const m of this.embeddingModels) repos.add(m.hf_repo);
         for (const task of [MODEL_TASK.VISION, MODEL_TASK.RERANK] as const) {
             for (const m of this.optionalCatalog[task]) repos.add(m.hf_repo);
+        }
+        // A manually installed non-chat build can be absent from every catalog
+        // response; the server's active role refs still name it.
+        for (const ref of [this.activeEmbeddingModel, this.optionalActive.vision, this.optionalActive.rerank]) {
+            if (ref) repos.add(extractHfRepo(ref));
         }
         return repos;
     }
@@ -900,13 +914,14 @@ export class ChatView extends ItemView {
 
         this.plugin.taskQueue.complete(taskId);
 
-        const result = await this.plugin.api.setChatModel(entry.hf_repo);
+        const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
+        const result = await this.plugin.api.setChatModel(ref);
         if (result.isErr()) {
             new Notice(
                 noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.display_name)),
             );
         } else {
-            this.plugin.activeModel = entry.hf_repo;
+            this.plugin.activeModel = ref;
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
             this.plugin.refreshSettingsTab();
         }
@@ -1197,6 +1212,9 @@ export class ChatView extends ItemView {
                 { summary: this.summary, sessionId: this.sessionId },
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
+            }
+            if (!state.streamEnded && !this.streamController?.signal.aborted) {
+                this.renderInlineError(assistantBubble, streamInterruptedMessage(this.plugin.settings.serverMode));
             }
         } catch (err) {
             // Trust the signal over the error shape: an aborted fetch reaches

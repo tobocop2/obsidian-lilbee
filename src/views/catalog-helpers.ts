@@ -132,9 +132,12 @@ function forYouSortKey(entry: CatalogEntry): [number, string] {
     return [entry.fit === HARDWARE_FIT.FITS ? 0 : 1, entry.display_name.toLowerCase()];
 }
 
-/** A catalog row a user can run: featured, supported, and not known unrunnable. */
+/** A catalog row a user can run: featured, supported, not known unrunnable, and key-ready when hosted. */
 export function isRunnablePick(entry: CatalogEntry): boolean {
-    return entry.featured && entry.compat === MODEL_COMPAT.SUPPORTED && entry.fit !== HARDWARE_FIT.WONT_RUN;
+    if (!entry.featured || entry.compat !== MODEL_COMPAT.SUPPORTED || entry.fit === HARDWARE_FIT.WONT_RUN) {
+        return false;
+    }
+    return !HOSTED_SOURCES.has(entry.source) || isUsableHostedRow(entry);
 }
 
 /**

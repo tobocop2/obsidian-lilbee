@@ -398,9 +398,12 @@ export class ServerManager {
             // A clean exit (code 0 or SIGTERM) while we still wanted the server
             // running means another vault asked it to stop via a take-over. Not
             // a crash: do not restart. The scope sidecar now names the winner,
-            // and main.ts surfaces that as STATUS_LOCKED_BY_OTHER.
+            // and main.ts surfaces that as STATUS_LOCKED_BY_OTHER. Without a
+            // foreign owner on record this is an ordinary clean shutdown, so it
+            // keeps the crash path instead of claiming a take-over.
             const exitedCleanly = code === 0 || signal === "SIGTERM";
-            if (exitedCleanly) {
+            const owner = exitedCleanly ? readScopeOwner(this.opts.sharedRoot) : null;
+            if (owner && owner.dataDir !== this.opts.dataDir) {
                 this.journal(
                     `server pid ${child.pid} exited (${describeExit(code, signal)}): another vault took over the shared root`,
                 );
@@ -750,6 +753,7 @@ export class ServerManager {
             window.clearTimeout(this.restartTimer);
             this.restartTimer = null;
         }
+        const wasAdopted = this.adopted;
         this.stopAdoptedWatch();
         const child = this.child;
         this.child = null;
@@ -759,7 +763,17 @@ export class ServerManager {
         this.cleanupPortFile();
         this.setState(SERVER_STATE.STOPPED);
         if (child) {
-            this.signalGroup(child, "SIGKILL");
+            if (process.platform === PLATFORM.WIN32) {
+                this.journal(`sent taskkill /f /t to pid ${child.pid}`);
+                void node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]).catch((err: unknown) => {
+                    this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
+                });
+                child.kill("SIGKILL");
+            } else {
+                this.signalGroup(child, "SIGKILL");
+            }
+        } else if (wasAdopted) {
+            void requestServerShutdown(this.opts.dataDir);
         }
     }
 

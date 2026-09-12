@@ -369,6 +369,9 @@ export default class LilbeePlugin extends Plugin {
     private chatInFlight = 0;
     // Counts consecutive failed probes against HEALTH_FAILURE_STREAK_THRESHOLD.
     private healthFailureStreak = 0;
+    // True once a health probe has validated status "ok". External readiness
+    // belongs to the probe, never to a model-list response.
+    private healthValidated = false;
     // External-mode server version, cached from the health probe; managed mode
     // reads the recorded install version instead.
     private externalServerVersion = "";
@@ -589,7 +592,11 @@ export default class LilbeePlugin extends Plugin {
         const owner: { dataDir: string; pid: number | null } | null = knownOwnerDataDir
             ? { dataDir: knownOwnerDataDir, pid: null }
             : readScopeOwner(registry.sharedRoot);
-        const ownerName = owner ? this.lookupVaultNameByDataDir(owner.dataDir) : "another vault";
+        const ownerName = owner ? await this.resolveOwnerName(owner.dataDir) : MESSAGES.LABEL_UNKNOWN_VAULT;
+        if (owner) {
+            this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+            this.setStatusClass("lilbee-status-muted");
+        }
         if (!allowTakeOver) {
             this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
             onProgress?.({
@@ -657,7 +664,7 @@ export default class LilbeePlugin extends Plugin {
     private lookupVaultNameByDataDir(dataDir: string): string {
         const registry = this.vaultRegistry;
         const entry = registry?.list().find((e) => registry.resolveDataDir(e.id) === dataDir);
-        return entry?.displayName ?? "another vault";
+        return entry?.displayName ?? MESSAGES.LABEL_UNKNOWN_VAULT;
     }
 
     /** Poll the registry for the owner vault's display name for up to two seconds. */
@@ -666,7 +673,7 @@ export default class LilbeePlugin extends Plugin {
         return new Promise((resolve) => {
             const poll = () => {
                 const name = this.lookupVaultNameByDataDir(dataDir);
-                if (name !== "another vault" || Date.now() >= deadline) {
+                if (name !== MESSAGES.LABEL_UNKNOWN_VAULT || Date.now() >= deadline) {
                     resolve(name);
                     return;
                 }
@@ -686,7 +693,7 @@ export default class LilbeePlugin extends Plugin {
         if (owner.dataDir === ourDataDir) return false;
         const ownerName = this.lookupVaultNameByDataDir(owner.dataDir);
         this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
-        this.setStatusClass("lilbee-status-error");
+        this.setStatusClass("lilbee-status-muted");
         return true;
     }
 
@@ -1987,6 +1994,7 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-ready",
             "lilbee-status-adding",
             "lilbee-status-error",
+            "lilbee-status-muted",
         );
         if (cls) this.statusBarEl.classList.add(cls);
     }
@@ -2049,6 +2057,7 @@ export default class LilbeePlugin extends Plugin {
         // foreign HTTP server on the configured URL reads as unreachable.
         if (health?.isOk() && health.value.status === "ok") {
             this.healthFailureStreak = 0;
+            this.healthValidated = true;
             if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
             // Only a reconnect refetches the model: a restarted server may be on a different one.
             if (this.serverUnreachable) {
@@ -2280,7 +2289,12 @@ export default class LilbeePlugin extends Plugin {
         try {
             const models = await this.api.listModels();
             this.activeModel = models.chat.active;
-            this.setStatusReady();
+            // Repaint the pill so a new model name shows without claiming
+            // ready: only a validated probe promotes to ready.
+            if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+                if (this.healthValidated) this.setStatusReady();
+                else this.setStatusConnecting();
+            }
             await this.applyReasoningDefaultOnce();
         } catch {
             // Silently fail - will retry on next action

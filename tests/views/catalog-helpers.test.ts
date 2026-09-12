@@ -327,6 +327,20 @@ describe("catalog-helpers", () => {
             expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
+        it("forYouRail excludes a hosted row missing its provider key", () => {
+            const rows = [
+                pick({
+                    hf_repo: "openai/gpt-5",
+                    task: "chat",
+                    source: "frontier",
+                    provider: "openai",
+                    key_status: "missing_key",
+                }),
+                pick({ hf_repo: "f/ok", task: "chat" }),
+            ];
+            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+        });
+
         it("forYouRail ignores rows that are not featured", () => {
             const rows = [row({ hf_repo: "p/plain", compat: "supported", fit: "fits" })];
             expect(forYouRail(rows)).toEqual([]);

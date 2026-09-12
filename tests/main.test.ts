@@ -5045,6 +5045,20 @@ describe("LilbeePlugin", () => {
             expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
         });
 
+        it("stays connecting when listModels succeeds but the health probe fails", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            await plugin.fetchActiveModel();
+            expect(plugin.activeModel).toBe("qwen3:4b");
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("connecting");
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("ready");
+        });
+
         it("skips probing while a chat stream is in flight", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -5347,7 +5361,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("active model in status bar", () => {
-        it("fetchActiveModel sets activeModel and updates status bar", async () => {
+        it("fetchActiveModel sets activeModel without claiming ready before the health probe", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -5359,7 +5373,8 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.activeModel).toBe("qwen3:8b");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external] (qwen3:8b)");
+            expect((plugin as any).statusBarEl?.textContent).toContain("connecting");
+            expect((plugin as any).statusBarEl?.textContent).not.toContain("ready");
         });
 
         it("fetchActiveModel silently fails on API error", async () => {
@@ -7079,6 +7094,45 @@ describe("LilbeePlugin", () => {
 
             const name = await (plugin as any).resolveOwnerName("/shared/vaults/unknown");
             expect(name).toBe("another vault");
+        });
+
+        it("take-over prompt waits for a lagging registry heartbeat instead of 'another vault'", async () => {
+            const sm = await import("../src/server-manager");
+            vi.mocked(sm.readScopeOwner).mockReturnValue({
+                dataDir: "/shared/vaults/other",
+                pid: 1234,
+            });
+            mockConfirmModalResult = false;
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const entry = {
+                id: "other",
+                displayName: "vault-new",
+                dataDir: "/shared/vaults/other",
+                obsidianVaultPath: "/path/to/other",
+                addedAt: 0,
+                lastActiveAt: 0,
+            };
+            const registry = (plugin as any).vaultRegistry;
+            let calls = 0;
+            vi.spyOn(registry, "list").mockImplementation(() => (++calls === 1 ? [] : [entry]));
+            vi.spyOn(registry, "resolveDataDir").mockImplementation((id: string) =>
+                id === "other" ? "/shared/vaults/other" : "/shared/vaults/mine",
+            );
+
+            await (plugin as any).negotiateTakeOver(
+                (plugin as any).vaultRegistry,
+                undefined,
+                true,
+                "/shared/vaults/other",
+            );
+
+            const el = (plugin as any).statusBarEl!;
+            expect(el.textContent).toContain("vault-new");
+            expect(el.textContent).not.toContain("another vault");
         });
 
         it("take-over prompt shows STATUS_LOCKED_BY_OTHER while waiting, not 'error'", async () => {

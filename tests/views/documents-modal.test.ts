@@ -236,30 +236,31 @@ describe("DocumentsModal", () => {
         expect(Notice.instances.some((n) => n.message.includes("removed 1"))).toBe(true);
     });
 
-    it("notice prints the count, not the file name", async () => {
+    it("notice prints the server removed count, not the selected count", async () => {
         vi.useRealTimers();
         const plugin = makePlugin();
-        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md" })]));
-        // Server returns a string in removed (the file name), not a number
-        plugin.api.removeDocuments.mockResolvedValue({ removed: "a.md", not_found: [] });
+        plugin.api.listDocuments.mockResolvedValue(
+            makeDocsResponse([makeDoc({ filename: "a.md" }), makeDoc({ filename: "b.md" })]),
+        );
+        plugin.api.removeDocuments.mockResolvedValue({ removed: 1, not_found: [] });
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
         await tick();
 
         const el = modal.contentEl as unknown as MockElement;
-        const checkbox = el.findAll("lilbee-documents-checkbox")[0];
-        (checkbox as any).checked = true;
-        checkbox.trigger("change");
+        for (const checkbox of el.findAll("lilbee-documents-checkbox")) {
+            (checkbox as unknown as { checked: boolean }).checked = true;
+            checkbox.trigger("change");
+        }
 
         const removeBtn = el.find("lilbee-documents-remove")!;
         removeBtn.trigger("click");
         await tick();
         await tick();
 
-        // The notice must show the count (1), not the file name
         expect(Notice.instances.some((n) => n.message.includes("removed 1"))).toBe(true);
-        expect(Notice.instances.some((n) => n.message.includes("a.md"))).toBe(false);
+        expect(Notice.instances.some((n) => n.message.includes("removed 2"))).toBe(false);
     });
 
     it("confirms removal from the index and promises the files on disk survive", async () => {

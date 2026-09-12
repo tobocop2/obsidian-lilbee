@@ -845,6 +845,12 @@ describe("ServerManager", () => {
         it("a clean exit (SIGTERM) is a take-over, not a crash: no restart", async () => {
             const journal: string[] = [];
             const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
+            readFileSyncSpy.mockImplementation((p: unknown) => {
+                if (String(p).endsWith("server.scope.owner.json")) {
+                    return JSON.stringify({ data_dir: "/tmp/other", pid: 42 });
+                }
+                return fileRouter("absent")(p);
+            });
             child()._emit("exit", null, "SIGTERM");
             expect(mgr.state).toBe("error");
             expect(journal.join("\n")).toContain("another vault took over");
@@ -857,11 +863,26 @@ describe("ServerManager", () => {
         it("a clean exit (code 0) is a take-over, not a crash: no restart", async () => {
             const journal: string[] = [];
             const mgr = await startFresh({ onJournal: (m) => journal.push(m) });
+            readFileSyncSpy.mockImplementation((p: unknown) => {
+                if (String(p).endsWith("server.scope.owner.json")) {
+                    return JSON.stringify({ data_dir: "/tmp/other", pid: 42 });
+                }
+                return fileRouter("absent")(p);
+            });
             child()._emit("exit", 0, null);
             expect(mgr.state).toBe("error");
             expect(journal.join("\n")).toContain("another vault took over");
             await vi.advanceTimersByTimeAsync(3000);
             expect(spawnSpy).toHaveBeenCalledTimes(1); // no restart
+        });
+
+        it("a clean exit with no foreign owner keeps the crash path", async () => {
+            const mgr = await startFresh();
+            child()._emit("exit", 0, null);
+            expect(mgr.state).toBe("error");
+            expect(appendFileSyncSpy).toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(3000);
+            expect(spawnSpy).toHaveBeenCalledTimes(2); // restarted as a crash
         });
 
         it("a signal exit is described by its signal", async () => {
@@ -1319,6 +1340,72 @@ describe("ServerManager", () => {
             expect(mgr.isAdopted).toBe(false);
             expect(mgr.serverUrl).toBe("");
             expect(unlinkSyncSpy).toHaveBeenCalled();
+        });
+
+        it("asks an adopted server to exit over its API on unload", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            expect(mgr.isAdopted).toBe(true);
+            fetchSpy.mockClear();
+
+            mgr.killChildSync();
+
+            expect(fetchSpy.mock.calls.some((call) => String(call[0]).endsWith("/api/shutdown"))).toBe(true);
+            expect(mgr.isAdopted).toBe(false);
+        });
+
+        it("reports a taskkill failure on Windows without throwing", async () => {
+            const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+            const failures: Error[] = [];
+            try {
+                const mgr = await startFresh({ onShutdownFailure: (e) => failures.push(e) });
+                const c = child();
+                vi.spyOn(node, "execFile").mockRejectedValueOnce(new Error("Access is denied."));
+
+                mgr.killChildSync();
+                await vi.advanceTimersByTimeAsync(0);
+
+                expect(failures).toHaveLength(1);
+                expect(c.kill).toHaveBeenCalledWith("SIGKILL");
+                expect(mgr.state).toBe("stopped");
+            } finally {
+                platformSpy.mockRestore();
+            }
+        });
+
+        it("wraps a non-Error taskkill rejection on Windows", async () => {
+            const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+            const failures: Error[] = [];
+            try {
+                const mgr = await startFresh({ onShutdownFailure: (e) => failures.push(e) });
+                vi.spyOn(node, "execFile").mockRejectedValueOnce("denied");
+
+                mgr.killChildSync();
+                await vi.advanceTimersByTimeAsync(0);
+
+                expect(failures).toHaveLength(1);
+                expect(failures[0]).toEqual(new Error("denied"));
+            } finally {
+                platformSpy.mockRestore();
+            }
+        });
+
+        it("uses taskkill on Windows for a synchronous unload", async () => {
+            const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+            const execSpy = vi.spyOn(node, "execFile");
+            try {
+                const mgr = await startFresh();
+                const c = child();
+
+                mgr.killChildSync();
+
+                expect(execSpy).toHaveBeenCalledWith("taskkill", ["/pid", String(c.pid), "/f", "/t"]);
+                expect(c.kill).toHaveBeenCalledWith("SIGKILL");
+                expect(processKillSpy).not.toHaveBeenCalled();
+            } finally {
+                platformSpy.mockRestore();
+            }
         });
 
         it("returns without awaiting — the child exit is not required to proceed", async () => {

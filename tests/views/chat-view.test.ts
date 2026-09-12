@@ -676,6 +676,27 @@ describe("ChatView.sendMessage — token streaming", () => {
         const textEl = assistantBubble.find("lilbee-chat-content");
         expect(textEl!.textContent).toBe("Hello world");
     });
+
+    it("reports an interrupted stream when tokens arrive without a done event", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.TOKEN, data: "partial" }]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "truncated?";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        expect(assistantBubble.find("lilbee-chat-error-text")).not.toBeNull();
+        expect(Notice.instances.length).toBeGreaterThan(0);
+    });
 });
 
 describe("ChatView.sendMessage — reasoning tokens", () => {
@@ -6342,5 +6363,38 @@ describe("ChatView chat rail activates by concrete ref", () => {
         const view = makeView();
         const options = (view as any).chatPrimaryOptions();
         expect(options[0].checked).toBe(true);
+    });
+
+    it("checks the first quant when the server reports a bare repository", () => {
+        const view = makeView();
+        (view as any).chatActive = "Qwen/Qwen3-4B-GGUF";
+        const options = (view as any).chatPrimaryOptions();
+        expect(options[0].checked).toBe(true);
+        expect(options.filter((o: { checked: boolean }) => o.checked)).toHaveLength(1);
+    });
+
+    it("activates the concrete file ref after pulling an uninstalled quant", async () => {
+        const plugin = makePlugin();
+        plugin.api.pullModel = vi.fn().mockImplementation(async function* () {});
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
+        const view = new ChatView(makeLeaf(), plugin);
+        await (view as any).autoPullAndSet({
+            hf_repo: "Qwen/Qwen3-4B-GGUF",
+            gguf_filename: "Qwen3-4B-Q4_K_M.gguf",
+            display_name: "Qwen3 4B",
+        });
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+        expect(plugin.activeModel).toBe("Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf");
+    });
+
+    it("excludes an installed non-chat model missing from every catalog but active as embedding", () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view as any).chatInstalled = [{ name: "org/mystery-embed.gguf", source: "native" }];
+        (view as any).embeddingModels = [];
+        (view as any).optionalCatalog = { vision: [], rerank: [] };
+        (view as any).activeEmbeddingModel = "org/mystery-embed.gguf";
+        const options = (view as any).chatOtherOptions();
+        expect(options.map((o: { value: string }) => o.value)).not.toContain("org/mystery-embed.gguf");
     });
 });

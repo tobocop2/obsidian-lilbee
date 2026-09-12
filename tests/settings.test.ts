@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
-import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
+import type { CatalogEntry, CatalogResponse, ConfigResponse, InstalledModel, LilbeeSettings } from "../src/types";
 import {
     DEFAULT_SETTINGS,
     MEMORY_CONFIG_KEY,
@@ -7407,6 +7407,47 @@ describe("managed mode settings", () => {
             expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("");
             expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("");
             expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("");
+        });
+
+        it("marks producer-hidden rows so clearing the search keeps them hidden", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            const item = hideable.get("worker_pool_call_timeout_s");
+            expect(item).toBeDefined();
+            expect(item?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
+
+            (tab as unknown as { filterSettings(container: HTMLElement, query: string): void }).filterSettings(
+                tab.containerEl,
+                "",
+            );
+
+            expect(item?.style.display).toBe("none");
+        });
+
+        it("reapplies the active query when a hidden row becomes supported", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            const row = hideable.get("worker_pool_call_timeout_s")!;
+            const filter = tab.containerEl.find("lilbee-settings-filter")!;
+            filter.value = "does not match";
+            filter.trigger("input");
+            expect(row.style.display).toBe("none");
+
+            (tab as unknown as { applyHideableConfigFields(cfg: ConfigResponse): void }).applyHideableConfigFields({
+                worker_pool_call_timeout_s: 30,
+            });
+
+            expect(row.style.display).toBe("none");
         });
 
         it("PATCHes worker_pool_call_timeout_s with a parsed float", async () => {

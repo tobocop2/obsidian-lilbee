@@ -316,6 +316,7 @@ export const MESSAGES = {
     CONFIRM_TAKE_OVER: (vaultName: string): string =>
         `lilbee is currently serving "${vaultName}". Switch it to this vault? The other vault will lose its lilbee connection until you reopen it.`,
     STATUS_LOCKED_BY_OTHER: (vaultName: string): string => `lilbee: serving "${vaultName}"`,
+    LABEL_UNKNOWN_VAULT: "another vault",
     COMMAND_TAKE_OVER: "Take over the managed lilbee server",
     TOOLTIP_MODEL_INSTALLED_SHARED:
         "Installed in the shared lilbee models directory — every vault on this computer can use it without re-downloading.",

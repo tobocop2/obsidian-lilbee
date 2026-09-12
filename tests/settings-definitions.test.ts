@@ -442,17 +442,29 @@ describe("visibility predicates", () => {
         return items.find((item) => item.heading === heading);
     }
 
-    it("keeps a server-config row searchable before the config loads, then hides it if unsupported", () => {
+    it("hides a server-config row until the config reports support", () => {
         const tab = makeTab();
         const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_FLASH_ATTENTION);
 
-        // The config has not loaded when a search runs, and search skips a hidden row.
-        expect(row?.visible?.()).toBe(true);
+        expect(row?.visible?.()).toBe(false);
 
         (tab as any).serverConfig = { something_else: true };
         expect(row?.visible?.()).toBe(false);
 
         (tab as any).serverConfig = { flash_attention: true };
+        expect(row?.visible?.()).toBe(true);
+    });
+
+    it("hides worker-pool rows until the server reports each key", () => {
+        const tab = makeTab();
+        const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT);
+
+        expect(row?.visible?.()).toBe(false);
+
+        (tab as any).serverConfig = { worker_pool_eager_start: true };
+        expect(row?.visible?.()).toBe(false);
+
+        (tab as any).serverConfig = { worker_pool_call_timeout_s: 30 };
         expect(row?.visible?.()).toBe(true);
     });
 
