@@ -4,6 +4,7 @@ import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, noticeForResultError, revealInFileExplorer } from "../utils";
+import { remedyForWarning } from "../utils/warning-remedies";
 
 export class StatusModal extends Modal {
     private plugin: LilbeePlugin;
@@ -54,7 +55,15 @@ export class StatusModal extends Modal {
         for (const w of warnings) {
             const row = section.createDiv({ cls: "lilbee-status-warning" });
             row.createDiv({ cls: "lilbee-status-warning-message", text: w.message });
-            if (w.remedy) {
+            const remedy = remedyForWarning(w.code, this.plugin);
+            if (remedy) {
+                row.createDiv({ cls: "lilbee-status-warning-remedy", text: remedy.text });
+                const btn = row.createEl("button", {
+                    text: MESSAGES.BUTTON_REBUILD_INDEX,
+                    cls: "lilbee-status-warning-action",
+                });
+                btn.addEventListener("click", remedy.action);
+            } else if (w.remedy) {
                 row.createDiv({ cls: "lilbee-status-warning-remedy", text: w.remedy });
             }
         }

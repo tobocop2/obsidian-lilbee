@@ -669,6 +669,14 @@
     padding: 0 var(--size-4-2, 8px);
 }
 
+/* Locked by another vault is informational, not an error: muted like stopped. */
+.status-bar-item.lilbee-status-muted {
+    color: var(--text-muted);
+    background-color: transparent;
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+}
+
 .status-bar-item.lilbee-status-adding {
     color: var(--text-on-accent);
     background-color: var(--interactive-accent);
@@ -5312,6 +5320,11 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-chat-warning-remedy,
 .lilbee-status-warning-remedy {
     color: var(--text-muted);
+}
+.lilbee-chat-warning-action,
+.lilbee-status-warning-action {
+    align-self: flex-start;
+    margin-top: 4px;
 }
 .lilbee-status-warning {
     padding: 6px 0;

@@ -795,7 +795,11 @@ export class SetupWizard extends Modal {
                 });
                 return;
             }
-            this.featuredModels = await this.replaceUnrunnablePicks(pickNativeChatModels(result.value.models));
+            this.featuredModels = await this.replaceUnrunnablePicks(
+                pickNativeChatModels(
+                    result.value.models.filter((m) => !HOSTED_SOURCES.has(m.source) || isUsableHostedRow(m)),
+                ),
+            );
         } catch (e) {
             this.featuredModels = [];
             this.selectedModel = null;
@@ -1064,8 +1068,11 @@ export class SetupWizard extends Modal {
             }
             // Trust the server's featured list — don't filter by source.
             // Mis-configured builds can stamp every featured embedding as
-            // source="litellm", which would leave the picker empty.
-            this.embeddingModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
+            // source="litellm", which would leave the picker empty. Only
+            // hosted rows missing their key are excluded: they are not usable.
+            this.embeddingModels = result.value.models
+                .filter((m) => !HOSTED_SOURCES.has(m.source) || isUsableHostedRow(m))
+                .slice(0, MAX_FEATURED_PICKS);
         } catch (e) {
             this.embeddingModels = [];
             this.selectedEmbedding = null;
