@@ -771,7 +771,7 @@ export class ChatView extends ItemView {
         const hosted = entries.filter(isUsableHostedRow);
         const options = localInstalled.map((e) => ({ value: e.hf_repo, label: e.display_name }));
         for (const e of hosted) {
-            options.push({ value: e.hf_repo, label: `${e.display_name} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}` });
+            options.push({ value: e.hf_repo, label: `${e.display_name} [${MESSAGES.LABEL_VISION_HOSTED_GROUP}]` });
         }
         return options;
     }
@@ -1527,7 +1527,7 @@ export class ChatView extends ItemView {
         const folder = "lilbee";
         const path = `${folder}/${filename}`;
 
-        const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW} — ${now.toLocaleDateString()}`, ""];
+        const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${now.toLocaleDateString()}`, ""];
         for (const msg of this.history) {
             const label = msg.role === "user" ? "User" : "Assistant";
             lines.push(`**${label}**: ${msg.content}`, "");

@@ -686,6 +686,7 @@ export class LilbeeClient {
         installed?: boolean;
         limit?: number;
         offset?: number;
+        signal?: AbortSignal;
     }): Promise<Result<CatalogResponse, Error>> {
         const qs = new URLSearchParams();
         if (params?.task) qs.set("task", params.task);
@@ -697,7 +698,9 @@ export class LilbeeClient {
         if (params?.limit !== undefined) qs.set("limit", String(params.limit));
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
-        return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
+        return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`, undefined, {
+            signal: params?.signal,
+        });
     }
 
     async installedModels(params?: { task?: ModelTask }): Promise<InstalledResponse> {

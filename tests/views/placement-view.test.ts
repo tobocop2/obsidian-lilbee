@@ -196,7 +196,7 @@ describe("PlacementView multi-GPU (auto)", () => {
 
     it("renders an empty utilization bar and free-memory text before any stats arrive", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
-        expect(utilVal(contentEl, 0).textContent).toBe("—");
+        expect(utilVal(contentEl, 0).textContent).toBe("N/A");
         expect(vramVal(contentEl, 0).textContent).toBe("18.0 GB / 24.0 GB free");
     });
 
@@ -924,7 +924,7 @@ describe("PlacementView live usage bars", () => {
             { index: 0, utilization_pct: null, free_bytes: 1 * GB, total_bytes: 24 * GB },
         ]);
         expect(utilFill(contentEl, 0).style.width).toBe("0%");
-        expect(utilVal(contentEl, 0).textContent).toBe("—");
+        expect(utilVal(contentEl, 0).textContent).toBe("N/A");
         expect(vramVal(contentEl, 0).textContent).toBe("1.0 GB / 24.0 GB free");
     });
 
@@ -954,7 +954,7 @@ describe("PlacementView live usage bars", () => {
         (view as unknown as StatsApplier).applyStats([
             { index: 99, utilization_pct: 50, free_bytes: 0, total_bytes: 24 * GB },
         ]);
-        expect(utilVal(contentEl, 0).textContent).toBe("—");
+        expect(utilVal(contentEl, 0).textContent).toBe("N/A");
     });
 
     it("subscribes to the stats stream on open and applies streamed events", async () => {
@@ -980,7 +980,7 @@ describe("PlacementView live usage bars", () => {
         await view.onOpen();
         await flush();
         const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
-        expect(utilVal(contentEl, 0).textContent).toBe("—");
+        expect(utilVal(contentEl, 0).textContent).toBe("N/A");
         await view.onClose();
     });
 

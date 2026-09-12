@@ -1,9 +1,25 @@
 import { describe, it, expect } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
 import { MODEL_TASK, NVIDIA_PROBE_STATUS, SERVER_VARIANT } from "../../src/types";
 import type { AmdProbe, GpuDetection, NvidiaProbe } from "../../src/types";
 
+function withoutComments(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
 describe("MESSAGES", () => {
+    it("keeps em dashes out of production copy while allowing comments to use them", () => {
+        const offenders = readdirSync("src", { recursive: true })
+            .filter((path) => path.endsWith(".ts"))
+            .map((path) => join("src", path))
+            .filter((path) => withoutComments(readFileSync(path, "utf8")).includes("—"))
+            .sort();
+
+        expect(offenders).toEqual([]);
+    });
+
     describe("BUTTON_ constants", () => {
         it("has all button labels", () => {
             expect(MESSAGES.BUTTON_SKIP_SETUP).toBe("Skip setup");
@@ -131,7 +147,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
             expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
             expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
-                "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
+                "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically: leave this blank.",
             );
             expect(MESSAGES.LABEL_WIKI_SECTION).toBe("Wiki (beta)");
             expect(MESSAGES.DESC_WIKI_ENABLE_TOGGLE).toBe(
@@ -251,12 +267,12 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_CRAWL_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done — 10 pages");
+            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done: 10 pages");
         });
 
         it("NOTICE_ALREADY_INGESTING produces correct output", () => {
             expect(MESSAGES.NOTICE_ALREADY_INGESTING("doc.pdf")).toBe(
-                "lilbee: server is already ingesting doc.pdf — waiting for it to finish",
+                "lilbee: server is already ingesting doc.pdf, waiting for it to finish",
             );
         });
 
@@ -282,7 +298,7 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_CRAWL_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done — 10 pages");
+            expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done: 10 pages");
         });
 
         it("NOTICE_SYNC_SUMMARY produces correct output", () => {
@@ -309,8 +325,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_WIKI_LINT_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(3)).toBe("lilbee: lint complete — 3 issues found");
-            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(0)).toBe("lilbee: lint complete — 0 issues found");
+            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(3)).toBe("lilbee: lint complete: 3 issues found");
+            expect(MESSAGES.NOTICE_WIKI_LINT_DONE(0)).toBe("lilbee: lint complete: 0 issues found");
         });
 
         it("NOTICE_WIKI_UPDATE_DONE produces correct output", () => {
@@ -346,8 +362,8 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_WIKI_SYNC produces correct output", () => {
-            expect(MESSAGES.NOTICE_WIKI_SYNC(3, 1)).toBe("lilbee: wiki sync — 3 written, 1 removed");
-            expect(MESSAGES.NOTICE_WIKI_SYNC(0, 0)).toBe("lilbee: wiki sync — 0 written, 0 removed");
+            expect(MESSAGES.NOTICE_WIKI_SYNC(3, 1)).toBe("lilbee: wiki sync: 3 written, 1 removed");
+            expect(MESSAGES.NOTICE_WIKI_SYNC(0, 0)).toBe("lilbee: wiki sync: 0 written, 0 removed");
         });
     });
 
