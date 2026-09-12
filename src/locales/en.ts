@@ -980,7 +980,7 @@ export const MESSAGES = {
     LABEL_DRAFT_KIND_BAD_TITLE: "BAD TITLE",
     LABEL_DRAFT_PUBLISHED: "pub",
     LABEL_DRAFT_NEW: "new",
-    LABEL_DRAFT_FAITH_NA: "faith",
+    LABEL_DRAFT_FAITH_NA: "faith unavailable",
     LABEL_DRAFT_FAITH: (score: number) => `faith ${score.toFixed(2)}`,
     LABEL_DRAFT_DRIFT: (pct: number) => `${pct}% drift`,
     LABEL_NO_DRAFTS: "No pending wiki drafts.",

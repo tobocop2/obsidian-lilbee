@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
-import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
+import type { CatalogEntry, CatalogResponse, ConfigResponse, InstalledModel, LilbeeSettings } from "../src/types";
 import {
     DEFAULT_SETTINGS,
     MEMORY_CONFIG_KEY,
@@ -4604,25 +4604,40 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             tab.display();
 
-            const container = new MockElement("div") as any;
-            const section = container.createEl("details", { cls: "lilbee-settings-section" });
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            const item2 = hideable.get("worker_pool_call_timeout_s");
+            expect(item2).toBeDefined();
+            expect(item2?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
 
-            const item1 = section.createDiv({ cls: "setting-item" });
-            const name1 = item1.createDiv({ cls: "setting-item-name" });
-            name1.textContent = "Server URL";
+            // Clearing the search must not reveal the producer-hidden row.
+            (tab as unknown as { filterSettings(container: HTMLElement, query: string): void }).filterSettings(
+                tab.containerEl,
+                "",
+            );
 
-            const item2 = section.createDiv({ cls: "setting-item" });
-            const name2 = item2.createDiv({ cls: "setting-item-name" });
-            name2.textContent = "Worker pool";
-            // Mark as hidden by capability (server does not report this key)
-            item2.setAttribute("data-lilbee-hidden-by-capability", "true");
-            item2.style.display = "none";
+            expect(item2?.style.display).toBe("none");
+        });
 
-            // Clear the search: item1 should show, item2 must stay hidden
-            (tab as any).filterSettings(container, "");
+        it("reapplies the active query when a hidden row becomes supported", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
 
-            expect(item1.style.display).toBe("");
-            expect(item2.style.display).toBe("none");
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            const row = hideable.get("worker_pool_call_timeout_s")!;
+            const filter = tab.containerEl.find("lilbee-settings-filter")!;
+            filter.value = "does not match";
+            filter.trigger("input");
+            expect(row.style.display).toBe("none");
+
+            (tab as unknown as { applyHideableConfigFields(cfg: ConfigResponse): void }).applyHideableConfigFields({
+                worker_pool_call_timeout_s: 30,
+            });
+
+            expect(row.style.display).toBe("none");
         });
 
         it("di8: filterSettings hides non-matching top-level setting items", () => {

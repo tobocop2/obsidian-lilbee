@@ -7,6 +7,7 @@ import { CATALOG_TAB, SSE_EVENT, TASK_TYPE } from "../../src/types";
 import type { CatalogEntry, CatalogResponse, CatalogTab } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
 import { ok, err } from "../../src/result";
+import type { Result } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
 
 let mockConfirmResult = true;
@@ -104,6 +105,14 @@ function findButtons(el: MockElement): MockElement[] {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+function deferred<T>() {
+    let settle!: (value: T) => void;
+    const promise = new Promise<T>((resolve) => {
+        settle = resolve;
+    });
+    return { promise, settle };
+}
 
 async function openModal(
     plugin: ReturnType<typeof makePlugin>,
@@ -846,14 +855,6 @@ describe("CatalogModal", () => {
             (modal as unknown as { resetAndFetch(): void }).resetAndFetch();
         }
 
-        function deferred<T>() {
-            let settle!: (value: T) => void;
-            const promise = new Promise<T>((resolve) => {
-                settle = resolve;
-            });
-            return { promise, settle };
-        }
-
         function calls(plugin: ReturnType<typeof makePlugin>): Record<string, unknown>[] {
             return plugin.api.catalog.mock.calls.map((c: unknown[]) => c[0] as Record<string, unknown>);
         }
@@ -1542,6 +1543,29 @@ describe("CatalogModal", () => {
             modal.close();
             // Reaching here without throwing is the assertion.
             expect(true).toBe(true);
+        });
+
+        it("aborts an in-flight catalog request on close without showing an error", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const pending = deferred<Result<CatalogResponse, Error>>();
+            plugin.api.catalog.mockClear();
+            plugin.api.catalog.mockReturnValueOnce(pending.promise);
+
+            const sortSelect = contentEl(modal).find("lilbee-catalog-filter-sort")! as unknown as {
+                value: string;
+                trigger(event: string): void;
+            };
+            sortSelect.value = "downloads";
+            sortSelect.trigger("change");
+            const request = plugin.api.catalog.mock.calls[0]?.[0] as { signal?: AbortSignal };
+            expect(request.signal).toBeDefined();
+
+            modal.close();
+            expect(request.signal?.aborted).toBe(true);
+            pending.settle(err(new Error("closed")));
+            await tick();
+            expect(Notice.instances).toHaveLength(0);
         });
     });
 
@@ -2516,34 +2540,43 @@ describe("CatalogModal", () => {
 });
 
 describe("CatalogModal fetch generation", () => {
-    it("discards a stale response when the filter changes mid-flight", async () => {
+    it("discards a stale error and fetches the replacement after a real filter change", async () => {
         const plugin = makePlugin();
-        // Defer the first catalog call so we can change the filter before it resolves.
-        let resolveFirst: (r: any) => void = () => {};
-        const firstPromise = new Promise<any>((r) => {
-            resolveFirst = r;
-        });
-        plugin.api.catalog.mockReturnValueOnce(firstPromise);
-        // The recursive fetch after supersedence also returns empty.
+        const first = deferred<Result<CatalogResponse, Error>>();
+        // The replacement request returns an empty current page.
         plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
 
         const modal = await openModal(plugin);
-        // Start fetching the first page (in flight).
-        (modal as any).resetAndFetch();
-        expect((modal as any).isFetching).toBe(true);
+        plugin.api.catalog.mockClear();
+        plugin.api.catalog.mockReturnValueOnce(first.promise);
 
-        // Change the filter mid-flight: increments fetchGeneration.
-        (modal as any).fetchGeneration++;
+        const sortSelect = contentEl(modal).find("lilbee-catalog-filter-sort")! as unknown as {
+            value: string;
+            trigger(event: string): void;
+        };
+        sortSelect.value = "downloads";
+        sortSelect.trigger("change");
+        const request = plugin.api.catalog.mock.calls[0]?.[0] as { signal?: AbortSignal };
+        expect(request.signal).toBeDefined();
 
-        // Resolve the stale request.
-        resolveFirst(ok(makeCatalogResponse([makeEntry({ hf_repo: "stale/repo", display_name: "Stale" })])));
+        const sizeSelect = contentEl(modal).find("lilbee-catalog-filter-size")! as unknown as {
+            value: string;
+            trigger(event: string): void;
+        };
+        sizeSelect.value = "small";
+        sizeSelect.trigger("change");
+
+        first.settle(err(new Error("stale")));
         await tick();
         await tick();
         await tick();
 
-        // The stale response is discarded; entries stay empty.
-        expect((modal as any).entries.length).toBe(0);
-        expect((modal as any).isFetching).toBe(false);
+        expect(request.signal?.aborted).toBe(true);
+        expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
+        expect(plugin.api.catalog).toHaveBeenLastCalledWith(
+            expect.objectContaining({ size: "small", sort: "downloads" }),
+        );
+        expect(Notice.instances).toHaveLength(0);
         modal.close();
     });
 });

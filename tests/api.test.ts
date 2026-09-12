@@ -728,6 +728,15 @@ describe("pullModel()", () => {
             expect(url.searchParams.get("limit")).toBe("10");
             expect(url.searchParams.get("offset")).toBe("20");
         });
+
+        it("passes a caller signal through to the catalog request", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 20, offset: 0, models: [], has_more: false }));
+            const controller = new AbortController();
+
+            await client.catalog({ signal: controller.signal });
+
+            expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal).toBe(controller.signal);
+        });
     });
 
     describe("installedModels()", () => {

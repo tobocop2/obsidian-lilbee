@@ -1,9 +1,25 @@
 import { describe, it, expect } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
 import { MODEL_TASK, NVIDIA_PROBE_STATUS, SERVER_VARIANT } from "../../src/types";
 import type { AmdProbe, GpuDetection, NvidiaProbe } from "../../src/types";
 
+function withoutComments(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
 describe("MESSAGES", () => {
+    it("keeps em dashes out of production copy while allowing comments to use them", () => {
+        const offenders = readdirSync("src", { recursive: true })
+            .filter((path) => path.endsWith(".ts"))
+            .map((path) => join("src", path))
+            .filter((path) => withoutComments(readFileSync(path, "utf8")).includes("—"))
+            .sort();
+
+        expect(offenders).toEqual([]);
+    });
+
     describe("BUTTON_ constants", () => {
         it("has all button labels", () => {
             expect(MESSAGES.BUTTON_SKIP_SETUP).toBe("Skip setup");

@@ -133,7 +133,7 @@ describe("DraftModal", () => {
         expect(texts.some((t) => t === "PARSE")).toBe(true);
         expect(texts.some((t) => t === "34% drift")).toBe(true);
         expect(texts.some((t) => t === "faith 0.42")).toBe(true);
-        expect(texts.some((t) => t === "faith")).toBe(true);
+        expect(texts.some((t) => t === "faith unavailable")).toBe(true);
         expect(texts.some((t) => t === "pub")).toBe(true);
         expect(texts.some((t) => t === "new")).toBe(true);
     });
