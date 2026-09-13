@@ -121,17 +121,6 @@ export function tabIdToTask(tab: CatalogTab): ModelTask | null {
 /** Role order for the For You rail, matching the server's own role ordering. */
 const FOR_YOU_ROLE_ORDER: ModelTask[] = [MODEL_TASK.CHAT, MODEL_TASK.EMBEDDING, MODEL_TASK.VISION, MODEL_TASK.RERANK];
 
-/**
- * Comfortable fit first, then alphabetical.
- *
- * Only ever called on rows `forYouRail` has already kept, so the fit is either
- * `fits` or `tight` -- there is no rank here for a size that will not run or is
- * unknown, because such a row never reaches the sort.
- */
-function forYouSortKey(entry: CatalogEntry): [number, string] {
-    return [entry.fit === HARDWARE_FIT.FITS ? 0 : 1, entry.display_name.toLowerCase()];
-}
-
 /** A catalog row a user can run: featured, supported, not known unrunnable, and key-ready when hosted. */
 export function isRunnablePick(entry: CatalogEntry): boolean {
     if (!entry.featured || entry.compat !== MODEL_COMPAT.SUPPORTED || entry.fit === HARDWARE_FIT.WONT_RUN) {
@@ -144,9 +133,9 @@ export function isRunnablePick(entry: CatalogEntry): boolean {
  * One runnable pick per role, in role order.
  *
  * Featured is not a curated list — the server resolves it from HuggingFace
- * trending at runtime, so a pick is only as safe as its hardware fit. Rows with
- * no fit chip are kept (a failed probe must not empty the rail); only wont_run
- * and unsupported are excluded.
+ * trending at runtime, so a pick is only as safe as its hardware fit and its
+ * provider key. Rows with no fit chip are kept (a failed probe must not empty
+ * the rail) but rank behind known fits.
  */
 export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
     const runnable = entries.filter(isRunnablePick);
@@ -162,6 +151,12 @@ export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
         if (best) picks.push(best);
     }
     return picks;
+}
+
+/** Fit rank: known fits first, then unknown (null), then tight. Lower sorts first. */
+function forYouSortKey(entry: CatalogEntry): [number, string] {
+    const rank = entry.fit === HARDWARE_FIT.FITS ? 0 : entry.fit === null || entry.fit === undefined ? 1 : 2;
+    return [rank, entry.display_name.toLowerCase()];
 }
 
 export function yourCollectionRail(entries: CatalogEntry[]): CatalogEntry[] {

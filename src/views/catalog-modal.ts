@@ -104,6 +104,9 @@ export class CatalogModal extends Modal {
     private fetchedQuery = "";
     private hasMore = false;
     private isFetching = false;
+    private fetchGeneration = 0;
+    private catalogController: AbortController | null = null;
+    private modalClosed = true;
     private entries: CatalogEntry[] = [];
     private resultsEl: HTMLElement | null = null;
     private viewMode: CatalogViewMode = CATALOG_VIEW_MODE.GRID;
@@ -151,6 +154,7 @@ export class CatalogModal extends Modal {
     }
 
     onOpen(): void {
+        this.modalClosed = false;
         const { contentEl } = this;
         contentEl.empty();
         contentEl.addClass("lilbee-catalog-modal");
@@ -326,7 +330,9 @@ export class CatalogModal extends Modal {
     }
 
     onClose(): void {
+        this.modalClosed = true;
         this.cancelDebouncedSearch();
+        this.catalogController?.abort();
         this.resultsEl?.removeEventListener("scroll", this.onScroll);
         this.bodyEl?.removeEventListener("focusin", this.onCardFocus);
         this.bodyEl?.removeEventListener("pointerover", this.onCardFocus);
@@ -419,6 +425,8 @@ export class CatalogModal extends Modal {
     }
 
     private resetAndFetch(): void {
+        this.fetchGeneration++;
+        this.catalogController?.abort();
         this.offset = 0;
         this.clearResults();
         void this.fetchPage();
@@ -458,22 +466,31 @@ export class CatalogModal extends Modal {
             this.clearResults();
         }
         this.isFetching = true;
+        // Capture the request generation so a stale response (a filter changed
+        // while this page was in flight) can be discarded instead of rendering
+        // under the new filter.
+        const generation = this.fetchGeneration;
+        const controller = new AbortController();
+        this.catalogController = controller;
 
         let superseded = false;
         try {
-            const result = await this.plugin.api.catalog(this.catalogParams(query));
-            if (result.isErr()) {
-                new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
-            } else if (query !== this.filterSearch) {
-                // The term moved on while this page was in flight.
+            const result = await this.plugin.api.catalog({
+                ...this.catalogParams(query),
+                signal: controller.signal,
+            });
+            if (controller.signal.aborted || generation !== this.fetchGeneration) {
                 superseded = true;
+            } else if (result.isErr()) {
+                new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
             } else {
                 this.applyPage(result.value);
             }
         } finally {
             this.isFetching = false;
+            this.catalogController = null;
         }
-        if (superseded) await this.fetchPage();
+        if (superseded && !this.modalClosed) await this.fetchPage();
     }
 
     private renderResults(): void {

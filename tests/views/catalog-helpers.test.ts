@@ -319,11 +319,21 @@ describe("catalog-helpers", () => {
             expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
-        it("forYouRail excludes a row with no fit chip, since an unknown size cannot be promised", () => {
+        it("forYouRail keeps a null-fit row when no known-fit row exists", () => {
+            const rows = [
+                pick({ hf_repo: "f/nosize", task: "chat", fit: null }),
+                pick({ hf_repo: "f/ok", task: "embedding" }),
+            ];
+            // The null-fit chat row is kept (failed probe must not empty the rail).
+            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/nosize", "f/ok"]);
+        });
+
+        it("forYouRail ranks a known fit ahead of a null fit", () => {
             const rows = [
                 pick({ hf_repo: "f/nosize", task: "chat", fit: null }),
                 pick({ hf_repo: "f/ok", task: "chat" }),
             ];
+            // Both qualify, but the known-fit row ranks first.
             expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
