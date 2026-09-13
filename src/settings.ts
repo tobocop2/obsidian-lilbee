@@ -559,6 +559,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Detected agent CLIs; null until the first probe lands or after it fails. */
     private agentDetections: AgentClientDetection[] | null = null;
     private agentBodyEl: HTMLElement | null = null;
+    private settingsFilterQuery = "";
     /** Last server config; the definitions read it to decide which rows the connected server supports. */
     private serverConfig: ConfigResponse | null = null;
     /** Capabilities the connected server reports; null until the first probe lands. */
@@ -697,6 +698,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     render(): void {
         const { containerEl } = this;
         containerEl.empty();
+        this.settingsFilterQuery = "";
         this.serverConfigInputs.clear();
         this.serverConfigToggles.clear();
         this.serverConfigTextAreas.clear();
@@ -709,6 +711,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             attr: { type: "text" },
         });
         filterInput.addEventListener("input", () => {
+            this.settingsFilterQuery = filterInput.value;
             this.filterSettings(containerEl, filterInput.value);
         });
         this.renderBugFeedback(containerEl);
@@ -819,7 +822,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (!crawling && this.crawlingContainerEl) this.crawlingContainerEl.hide();
         if (!wiki && this.wikiContainerEl) this.wikiContainerEl.hide();
         // The offer belongs inside a visible Crawling section, never on its own.
-        if (crawling && !crawlingBrowser && this.crawlerBrowserSetupEl) this.crawlerBrowserSetupEl.show();
+        if (crawling && !crawlingBrowser && this.crawlerBrowserSetupEl) {
+            this.crawlerBrowserSetupEl.removeAttribute("data-lilbee-hidden-by-capability");
+            this.crawlerBrowserSetupEl.show();
+        }
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -831,7 +837,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
 
         for (const item of Array.from(containerEl.querySelectorAll(".setting-item"))) {
-            (item as HTMLElement).style.display = matches(item) ? "" : "none";
+            // Rows hidden by capability (server does not report the key) must stay
+            // hidden even when the search box is cleared: clearing the box makes
+            // matches() true for every row, which would otherwise reveal them.
+            if (item.getAttribute("data-lilbee-hidden-by-capability") !== null) {
+                (item as HTMLElement).hide();
+                continue;
+            }
+            if (matches(item)) (item as HTMLElement).show();
+            else (item as HTMLElement).hide();
         }
 
         const wrappers = containerEl.querySelectorAll(
@@ -842,7 +856,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         for (const wrapper of Array.from(wrappers)) {
             const items = Array.from(wrapper.querySelectorAll(".setting-item"));
             const anyVisible = items.some((i) => (i as HTMLElement).style.display !== "none");
-            (wrapper as HTMLElement).style.display = anyVisible || !term ? "" : "none";
+            if (anyVisible || !term) (wrapper as HTMLElement).show();
+            else (wrapper as HTMLElement).hide();
             if (term && anyVisible && wrapper.tagName === "DETAILS") {
                 wrapper.setAttribute("open", "");
             }
@@ -1942,20 +1957,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Show or hide a row the plugin owns. On 1.13 the row's visible predicate owns it and this is a no-op. */
     private setRowVisible(el: HTMLElement | null, visible: boolean): void {
         if (!el || this.usesDefinitions()) return;
-        if (visible) el.show();
-        else el.hide();
+        if (visible) {
+            el.show();
+            el.removeAttribute("data-lilbee-hidden-by-capability");
+        } else {
+            el.hide();
+            el.setAttribute("data-lilbee-hidden-by-capability", "true");
+        }
     }
 
     /** Pre-1.13 hides the row until the server reports the key; 1.13 uses the row's visible predicate. */
     private hideUntilServerReports(el: HTMLElement, key: string): void {
         if (this.usesDefinitions()) return;
         el.hide();
+        el.setAttribute("data-lilbee-hidden-by-capability", "true");
         this.serverConfigHideableEls.set(key, el);
     }
 
-    /** Fails open: settings search skips a hidden row, and the config that would unhide it loads late. */
+    /** True only when the loaded server config reports the key. */
     private serverReports(key: string): boolean {
-        return this.serverConfig === null || this.serverConfig[key] !== undefined;
+        return this.serverConfig !== null && this.serverConfig[key] !== undefined;
     }
 
     /** True until a capability probe says the connected server lacks the feature. */
@@ -1970,8 +1991,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         for (const [key, settingEl] of this.serverConfigHideableEls) {
             if (cfg[key] !== undefined) {
                 settingEl.show();
+                settingEl.removeAttribute("data-lilbee-hidden-by-capability");
+            } else {
+                settingEl.hide();
+                settingEl.setAttribute("data-lilbee-hidden-by-capability", "true");
             }
         }
+        if (this.usesDefinitions()) return;
+        this.filterSettings(this.containerEl, this.settingsFilterQuery);
     }
 
     private applyChatModeFromConfig(cfg: ConfigResponse): void {
@@ -2679,7 +2706,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const localInstalled = catalogEntries.filter((e) => !HOSTED_SOURCES.has(e.source) && isInstalled(e));
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
         for (const [ref, label] of hostedOptions(catalogEntries)) {
-            opts.push([ref, `${label} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
+            opts.push([ref, `${label} [${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}]`]);
         }
         return opts;
     }
@@ -2830,7 +2857,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         );
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
         for (const [ref, label] of hostedOptions(catalogEntries)) {
-            opts.push([ref, `${label} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
+            opts.push([ref, `${label} [${MESSAGES.LABEL_VISION_HOSTED_GROUP}]`]);
         }
         return opts;
     }
@@ -3084,6 +3111,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.refreshVisibility();
             return;
         }
+        this.crawlerBrowserSetupEl?.setAttribute("data-lilbee-hidden-by-capability", "true");
         this.crawlerBrowserSetupEl?.hide();
     }
 

@@ -322,7 +322,7 @@ function statsLine(task: TaskEntry, state: TaskStatus): string {
         parts.push(formatRate(task.rateBps));
     }
     if (parts.length === 0 && task.detail) return task.detail;
-    return parts.join(" — ");
+    return parts.join(" · ");
 }
 
 function isWithinFlashWindow(task: TaskEntry): boolean {

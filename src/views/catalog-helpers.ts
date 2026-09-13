@@ -122,29 +122,18 @@ export function tabIdToTask(tab: CatalogTab): ModelTask | null {
 const FOR_YOU_ROLE_ORDER: ModelTask[] = [MODEL_TASK.CHAT, MODEL_TASK.EMBEDDING, MODEL_TASK.VISION, MODEL_TASK.RERANK];
 
 /**
- * Comfortable fit first, then alphabetical.
- *
- * Only ever called on rows `forYouRail` has already kept, so the fit is either
- * `fits` or `tight` -- there is no rank here for a size that will not run or is
- * unknown, because such a row never reaches the sort.
- */
-function forYouSortKey(entry: CatalogEntry): [number, string] {
-    return [entry.fit === HARDWARE_FIT.FITS ? 0 : 1, entry.display_name.toLowerCase()];
-}
-
-/**
  * One runnable pick per role, in role order.
  *
  * Featured is not a curated list — the server resolves it from HuggingFace
  * trending at runtime, so a pick is only as safe as its hardware fit. A row
- * qualifies only when the engine supports its architecture and the machine can
- * hold it, which makes every card a one-click install rather than a coin flip.
- * Rows with no fit chip are excluded outright: an unknown size cannot be
- * promised.
+ * qualifies when the engine supports its architecture and it is not known to be
+ * unrunnable. Rows with no fit chip are kept (a failed memory probe must not
+ * empty the rail) but ranked behind rows whose fit is known, so a measurable
+ * "fits" still wins over an unknown.
  */
 export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
     const runnable = entries.filter(
-        (e) => e.featured && e.compat === MODEL_COMPAT.SUPPORTED && e.fit != null && e.fit !== HARDWARE_FIT.WONT_RUN,
+        (e) => e.featured && e.compat === MODEL_COMPAT.SUPPORTED && e.fit !== HARDWARE_FIT.WONT_RUN,
     );
     const picks: CatalogEntry[] = [];
     for (const task of FOR_YOU_ROLE_ORDER) {
@@ -158,6 +147,12 @@ export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
         if (best) picks.push(best);
     }
     return picks;
+}
+
+/** Fit rank: known fits first, then unknown (null), then tight. Lower sorts first. */
+function forYouSortKey(entry: CatalogEntry): [number, string] {
+    const rank = entry.fit === HARDWARE_FIT.FITS ? 0 : entry.fit === null || entry.fit === undefined ? 1 : 2;
+    return [rank, entry.display_name.toLowerCase()];
 }
 
 export function yourCollectionRail(entries: CatalogEntry[]): CatalogEntry[] {

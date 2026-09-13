@@ -1278,7 +1278,7 @@ export default class LilbeePlugin extends Plugin {
         const output = this.serverManager?.lastOutput;
         if (output) console.error(`[lilbee] server output:\n${output}`);
         const outputTail = output ? `\n${output.split("\n").slice(-5).join("\n")}` : "";
-        const notice = new Notice(`lilbee: ${label} — ${detail}${outputTail}`, NOTICE_ERROR_DURATION_MS);
+        const notice = new Notice(`lilbee: ${label}: ${detail}${outputTail}`, NOTICE_ERROR_DURATION_MS);
         if (this.serverManager !== null) this.attachExportLink(notice);
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass(null);
