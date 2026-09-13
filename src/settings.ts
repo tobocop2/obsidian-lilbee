@@ -559,6 +559,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Detected agent CLIs; null until the first probe lands or after it fails. */
     private agentDetections: AgentClientDetection[] | null = null;
     private agentBodyEl: HTMLElement | null = null;
+    /** Render pass per live node, so a late async callback never paints into a newer pass. */
+    private renderClaims = new WeakMap<object, number>();
     private settingsFilterQuery = "";
     /** Last server config; the definitions read it to decide which rows the connected server supports. */
     private serverConfig: ConfigResponse | null = null;
@@ -633,6 +635,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Hide a whole run of rows behind one condition, e.g. the wiki rows behind the wiki toggle. */
     private gated(rows: RowSpec[], visible: () => boolean): RowSpec[] {
         return rows.map((row) => ({ ...row, visible }));
+    }
+
+    /** Claim the node for this render pass; a later pass on the same node supersedes it. */
+    private claimRender(node: object): number {
+        const next = (this.renderClaims.get(node) ?? 0) + 1;
+        this.renderClaims.set(node, next);
+        return next;
+    }
+
+    /** True when no newer pass has claimed the node since the claim. */
+    private isLiveRender(node: object, claim: number): boolean {
+        return this.renderClaims.get(node) === claim;
     }
 
     /** A row with no server-config key of its own: plugin settings, a button, or section DOM. */
@@ -941,7 +955,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private mountAgentBody(container: HTMLElement): void {
-        this.agentBodyEl = container.createDiv({ cls: "lilbee-agent-body" });
+        // Render re-runs into the same group container; reuse the body instead of stacking one per refresh.
+        this.agentBodyEl =
+            container.querySelector<HTMLDivElement>(".lilbee-agent-body") ??
+            container.createDiv({ cls: "lilbee-agent-body" });
         void this.loadAgentDetections();
     }
 
@@ -1046,7 +1063,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async renderAgentContext(setting: Setting, body: HTMLElement): Promise<void> {
+        const render = this.claimRender(body);
         const health = await this.plugin.api.health();
+        // A newer pass owns this body now; painting here stacks duplicates.
+        if (!this.isLiveRender(body, render)) return;
         const ctx = health.isOk() ? health.value.chat_ctx : null;
         if (typeof ctx !== "number") return;
         const pill = createSpan({
@@ -1161,7 +1181,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private applyServerStatusRow(setting: Setting): void {
         setting.setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_STATUS_CURRENT);
-        const statusEl = setting.settingEl.createDiv({ cls: "lilbee-server-status" });
+        // Render re-runs on the same Setting; reuse the node and clear it instead of stacking another dot.
+        const statusEl =
+            setting.settingEl.querySelector<HTMLDivElement>(".lilbee-server-status") ??
+            setting.settingEl.createDiv({ cls: "lilbee-server-status" });
+        statusEl.empty();
         const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
         const stateText = statusEl.createSpan();
         const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
@@ -1254,6 +1278,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
      */
     private applyVersionRow(setting: Setting, container: HTMLElement): void {
         const installed = this.plugin.getSharedLilbeeVersion();
+        const render = this.claimRender(setting.settingEl);
         setting.setName(MESSAGES.LABEL_SERVER_VERSION).setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
@@ -1321,6 +1346,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
+            // A newer pass owns this row now; painting here stacks duplicates.
+            if (!this.isLiveRender(setting.settingEl, render)) return;
             this.revealServerUpdate();
             if (loaded.releases === null) {
                 setting.setDesc(
@@ -1430,6 +1457,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderUninstallCallout(container: HTMLElement): void {
+        // Static content; a re-render must not stack another callout.
+        if (container.querySelector(".lilbee-uninstall-callout")) return;
         const callout = container.createDiv({ cls: "lilbee-uninstall-callout" });
         const mark = callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });
         mark.setAttribute("aria-hidden", "true");
@@ -1498,6 +1527,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private applyInstallServerRow(setting: Setting, container: HTMLElement): void {
         setting.setName(MESSAGES.LABEL_INSTALL_SERVER).setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        const render = this.claimRender(setting.settingEl);
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
@@ -1537,6 +1567,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
+            // A newer pass owns this row now; painting here stacks duplicates.
+            if (!this.isLiveRender(setting.settingEl, render)) return;
             if (loaded.releases === null) {
                 setting.setDesc(MESSAGES.ERROR_RELEASE_LIST(loaded.error));
                 setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.refresh()));
@@ -1583,7 +1615,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** Indeterminate progress panel for the managed-server update; hidden until an update runs. */
     private renderUpdateProgress(containerEl: HTMLElement): UpdateProgressEls {
-        const panel = containerEl.createDiv({ cls: "lilbee-update-progress" });
+        const panel =
+            containerEl.querySelector<HTMLDivElement>(".lilbee-update-progress") ??
+            containerEl.createDiv({ cls: "lilbee-update-progress" });
+        // A re-render rebuilds the same panel; clear the previous bar first.
+        panel.empty();
         panel.hide();
         const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
         const fill = bar.createDiv({
@@ -1681,7 +1717,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.storageTotalBytes = report.totalBytes;
         setting.setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
 
-        const list = container.createDiv({ cls: "lilbee-storage-report" });
+        const list =
+            container.querySelector<HTMLDivElement>(".lilbee-storage-report") ??
+            container.createDiv({ cls: "lilbee-storage-report" });
+        // A re-render repopulates the same node; clear the previous rows first.
+        list.empty();
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_BIN, report.binBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_MODELS, report.modelsBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_VAULT, report.vaultBytes, report.vaultDataDir);
@@ -1727,7 +1767,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        const serverStatusEl = setting.settingEl.createSpan({ cls: "lilbee-health-status" });
+        // Render re-runs on the same Setting; reuse the span instead of stacking a dot per refresh.
+        const serverStatusEl =
+            setting.settingEl.querySelector<HTMLSpanElement>(".lilbee-health-status") ??
+            setting.settingEl.createSpan({ cls: "lilbee-health-status" });
 
         setting.addButton((btn) =>
             btn.setButtonText(MESSAGES.BUTTON_TEST).onClick(async () => {
@@ -1800,7 +1843,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** The chat, embedding, vision and reranker pickers all live in one container the Refresh button reloads. */
     private mountModelPickers(container: HTMLElement): void {
-        this.modelsContainerEl = container.createDiv(CLS_MODELS_CONTAINER);
+        // Render re-runs into the same group container; reuse it instead of stacking one per refresh.
+        this.modelsContainerEl =
+            container.querySelector<HTMLDivElement>(`.${CLS_MODELS_CONTAINER}`) ??
+            container.createDiv(CLS_MODELS_CONTAINER);
         void this.loadModels(this.modelsContainerEl);
     }
 

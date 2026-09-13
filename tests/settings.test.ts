@@ -2337,6 +2337,22 @@ describe("LilbeeSettingTab", () => {
                 expect.objectContaining({ signal: expect.any(AbortSignal) }),
             );
         });
+
+        it("reuses the health span when the row re-renders on the same Setting", async () => {
+            // A refresh re-invokes render on the same Setting; a second span per pass stacks a dot per failure.
+            globalThis.fetch = vi.fn().mockRejectedValue(new Error("unavailable"));
+            const plugin = makePlugin({ serverMode: "external" });
+            const tab = makeTab(plugin);
+            const setting = new Setting(new MockElement("div") as unknown as HTMLElement);
+
+            (tab as any).applyServerUrlRow(setting);
+            (tab as any).applyServerUrlRow(setting);
+            await new Promise((r) => setTimeout(r, 0));
+
+            const spans = (setting.settingEl as unknown as MockElement).findAll("lilbee-health-status");
+            expect(spans).toHaveLength(1);
+            expect(spans[0].findAll("lilbee-health-dot")).toHaveLength(1);
+        });
     });
 
     describe("separator key handling", () => {
@@ -2624,6 +2640,57 @@ describe("managed mode settings", () => {
 
         // dropdownOptions[0] is the server-mode dropdown; [1] is the version picker.
         expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
+    });
+
+    it("drops a release list that lands after a newer version-row render", async () => {
+        let rejectFirst!: (err: unknown) => void;
+        const first = new Promise<never>((_, reject) => (rejectFirst = reject));
+        mockListReleases.mockReturnValueOnce(first);
+        mockListReleases.mockResolvedValue([]);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+        const setting = new Setting(container as unknown as HTMLElement);
+        const addSpy = vi.spyOn(Setting.prototype, "addButton");
+
+        try {
+            (tab as any).applyVersionRow(setting, container as unknown as HTMLElement);
+            (tab as any).applyVersionRow(setting, container as unknown as HTMLElement);
+            await settleReleases();
+            rejectFirst(new Error("offline"));
+            await settleReleases();
+
+            // Two applies, two action buttons; the stale failure must not add a retry.
+            expect(addSpy).toHaveBeenCalledTimes(2);
+        } finally {
+            addSpy.mockRestore();
+        }
+    });
+
+    it("drops a release list that lands after a newer install-row render", async () => {
+        let rejectFirst!: (err: unknown) => void;
+        const first = new Promise<never>((_, reject) => (rejectFirst = reject));
+        mockListReleases.mockReturnValueOnce(first);
+        mockListReleases.mockResolvedValue([]);
+        const plugin = makePlugin({ serverMode: "managed" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+        const setting = new Setting(container as unknown as HTMLElement);
+        const addSpy = vi.spyOn(Setting.prototype, "addButton");
+
+        try {
+            (tab as any).applyInstallServerRow(setting, container as unknown as HTMLElement);
+            (tab as any).applyInstallServerRow(setting, container as unknown as HTMLElement);
+            await settleReleases();
+            rejectFirst(new Error("offline"));
+            await settleReleases();
+
+            expect(addSpy).toHaveBeenCalledTimes(2);
+        } finally {
+            addSpy.mockRestore();
+        }
     });
 
     it("the update section reads releases through the adapter, never GitHub directly", async () => {
@@ -2988,6 +3055,60 @@ describe("managed mode settings", () => {
         expect(stateSpan!.textContent).toBe("ready");
         const dot = statusEl!.find("lilbee-server-dot");
         expect(dot!.classList.contains("is-ready")).toBe(true);
+    });
+
+    it("reuses the status node when the server row re-renders on the same Setting", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        const tab = makeTab(plugin);
+        const setting = new Setting(new MockElement("div") as unknown as HTMLElement);
+
+        (tab as any).applyServerStatusRow(setting);
+        (tab as any).applyServerStatusRow(setting);
+
+        const nodes = (setting.settingEl as unknown as MockElement).findAll("lilbee-server-status");
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].findAll("lilbee-server-dot")).toHaveLength(1);
+    });
+
+    it("reuses the agent body across renders", async () => {
+        const plugin = makePlugin();
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+
+        (tab as any).mountAgentBody(container as unknown as HTMLElement);
+        (tab as any).mountAgentBody(container as unknown as HTMLElement);
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(container.findAll("lilbee-agent-body")).toHaveLength(1);
+    });
+
+    it("reuses the models container across renders", async () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+
+        (tab as any).mountModelPickers(container as unknown as HTMLElement);
+        (tab as any).mountModelPickers(container as unknown as HTMLElement);
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(container.findAll("lilbee-models-container")).toHaveLength(1);
+    });
+
+    it("rebuilds the same update progress panel across renders", () => {
+        const plugin = makePlugin();
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+
+        (tab as any).renderUpdateProgress(container as unknown as HTMLElement);
+        (tab as any).renderUpdateProgress(container as unknown as HTMLElement);
+
+        const panels = container.findAll("lilbee-update-progress");
+        expect(panels).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-progress-bar-container")).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-update-progress-phase")).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-update-progress-size")).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-update-progress-cancel")).toHaveLength(1);
     });
 
     it("Reset to managed button resets serverMode and serverUrl", async () => {

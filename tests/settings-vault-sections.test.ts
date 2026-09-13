@@ -257,3 +257,30 @@ describe("Sections skipped without a vault registry", () => {
         expect(() => tab.display()).not.toThrow();
     });
 });
+
+describe("Re-render reuse", () => {
+    it("repopulates the same storage report instead of stacking one per render", () => {
+        const plugin = makePlugin({}, makeRegistry());
+        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
+        const container = new MockElement("div");
+        const setting = new Setting(container as unknown as HTMLElement);
+
+        (tab as any).applyStorageReportRow(setting, container as unknown as HTMLElement);
+        (tab as any).applyStorageReportRow(setting, container as unknown as HTMLElement);
+
+        const reports = container.findAll("lilbee-storage-report");
+        expect(reports).toHaveLength(1);
+        expect(reports[0].findAll("lilbee-storage-row-label")).toHaveLength(4);
+    });
+
+    it("keeps a single uninstall callout across renders", () => {
+        const plugin = makePlugin({}, makeRegistry());
+        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
+        const container = new MockElement("div");
+
+        (tab as any).renderUninstallCallout(container as unknown as HTMLElement);
+        (tab as any).renderUninstallCallout(container as unknown as HTMLElement);
+
+        expect(container.findAll("lilbee-uninstall-callout")).toHaveLength(1);
+    });
+});

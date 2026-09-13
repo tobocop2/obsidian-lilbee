@@ -385,19 +385,12 @@ export default class LilbeePlugin extends Plugin {
         this.registerErrorCapture();
         await this.loadSettings();
 
-        // Sweep up status-bar items + ribbon icons that prior dead lilbee
-        // instances left behind. Each crashed/incompletely-unloaded reload
-        // accumulates more, so the corner ends up with multiple "lilbee:
-        // ready" / "lilbee: error" pills side by side until Obsidian
-        // restarts. Take a clean slate before adding our own. Guarded for
-        // node-environment tests where document is undefined.
-        if (typeof activeDocument !== "undefined") {
-            activeDocument.querySelectorAll(".status-bar-item.plugin-lilbee").forEach((el) => el.remove());
-            activeDocument.querySelectorAll(".lilbee-ribbon-icon").forEach((el) => el.remove());
-        }
+        // Dead instances skip unload and leave their pills behind; a reload
+        // then stacks another set beside them. Sweep our markers first.
+        this.sweepStaleChrome();
 
         this.statusBarEl = this.addStatusBarItem();
-        this.statusBarEl.addClass("lilbee-clickable");
+        this.statusBarEl.addClass("lilbee-status-pill", "lilbee-clickable");
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
         this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
 
@@ -498,6 +491,21 @@ export default class LilbeePlugin extends Plugin {
         this.app.workspace.onLayoutReady(() => {
             this.dedupeLilbeeLeaves();
         });
+    }
+
+    /** Remove lilbee pills + ribbon icons a dead instance left behind, across every reachable document. */
+    private sweepStaleChrome(): void {
+        const docs = new Set<Document>();
+        if (typeof activeDocument !== "undefined") docs.add(activeDocument);
+        if (typeof document !== "undefined") docs.add(document);
+        for (const doc of docs) {
+            // The first selector catches pills from before the marker class;
+            // the second catches everything carrying one.
+            doc.querySelectorAll(".status-bar-item.plugin-lilbee").forEach((el) => el.remove());
+            doc.querySelectorAll(".lilbee-status-pill, .lilbee-sync-pill, .lilbee-ribbon-icon").forEach((el) =>
+                el.remove(),
+            );
+        }
     }
 
     /** Collapse multiple lilbee-chat / -tasks / -wiki leaves to one of each. */
@@ -1763,6 +1771,15 @@ export default class LilbeePlugin extends Plugin {
 
     onunload(): void {
         this.unloaded = true;
+        // Detach our chrome first: nothing below may throw past this point
+        // and leave pills behind for the next instance to sit next to.
+        this.statusBarEl?.remove();
+        this.statusBarEl = null;
+        this.syncPillEl?.remove();
+        this.syncPillEl = null;
+        this.chatRibbonIconEl?.remove();
+        this.chatRibbonIconEl = null;
+        this.clearUpdateIndicator();
         // A download must not outlive the instance: a re-enabled plugin would race it for the same bin dir.
         this.cancelServerDownload();
         this.finishDownload();
@@ -1770,14 +1787,6 @@ export default class LilbeePlugin extends Plugin {
             window.clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
         }
-        // Tear down the status-bar items we own. addStatusBarItem returns
-        // DOM nodes that survive plugin unload if the plugin doesn't detach
-        // them explicitly, so a disable/enable cycle leaves stale duplicates
-        // in the bar that the new plugin instance then sits next to.
-        this.statusBarEl?.remove();
-        this.statusBarEl = null;
-        this.syncPillEl?.remove();
-        this.syncPillEl = null;
         this.taskQueue.dispose();
         if (this.serverManager) {
             this.journal.lifecycle("plugin unloading; killing the managed server before unload");
