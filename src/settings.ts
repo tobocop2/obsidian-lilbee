@@ -559,6 +559,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Detected agent CLIs; null until the first probe lands or after it fails. */
     private agentDetections: AgentClientDetection[] | null = null;
     private agentBodyEl: HTMLElement | null = null;
+    /** Render pass per live node, so a late async callback never paints into a newer pass. */
+    private renderClaims = new WeakMap<object, number>();
     private settingsFilterQuery = "";
     /** Last server config; the definitions read it to decide which rows the connected server supports. */
     private serverConfig: ConfigResponse | null = null;
@@ -633,6 +635,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Hide a whole run of rows behind one condition, e.g. the wiki rows behind the wiki toggle. */
     private gated(rows: RowSpec[], visible: () => boolean): RowSpec[] {
         return rows.map((row) => ({ ...row, visible }));
+    }
+
+    /** Claim the node for this render pass; a later pass on the same node supersedes it. */
+    private claimRender(node: object): number {
+        const next = (this.renderClaims.get(node) ?? 0) + 1;
+        this.renderClaims.set(node, next);
+        return next;
+    }
+
+    /** True when no newer pass has claimed the node since the claim. */
+    private isLiveRender(node: object, claim: number): boolean {
+        return this.renderClaims.get(node) === claim;
     }
 
     /** A row with no server-config key of its own: plugin settings, a button, or section DOM. */
@@ -1049,7 +1063,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async renderAgentContext(setting: Setting, body: HTMLElement): Promise<void> {
+        const render = this.claimRender(body);
         const health = await this.plugin.api.health();
+        // A newer pass owns this body now; painting here stacks duplicates.
+        if (!this.isLiveRender(body, render)) return;
         const ctx = health.isOk() ? health.value.chat_ctx : null;
         if (typeof ctx !== "number") return;
         const pill = createSpan({
@@ -1261,6 +1278,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
      */
     private applyVersionRow(setting: Setting, container: HTMLElement): void {
         const installed = this.plugin.getSharedLilbeeVersion();
+        const render = this.claimRender(setting.settingEl);
         setting.setName(MESSAGES.LABEL_SERVER_VERSION).setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
@@ -1328,6 +1346,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
+            // A newer pass owns this row now; painting here stacks duplicates.
+            if (!this.isLiveRender(setting.settingEl, render)) return;
             this.revealServerUpdate();
             if (loaded.releases === null) {
                 setting.setDesc(
@@ -1507,6 +1527,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private applyInstallServerRow(setting: Setting, container: HTMLElement): void {
         setting.setName(MESSAGES.LABEL_INSTALL_SERVER).setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        const render = this.claimRender(setting.settingEl);
         // aria-label only: Obsidian renders its styled tooltip from it, and a
         // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
@@ -1546,6 +1567,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
+            // A newer pass owns this row now; painting here stacks duplicates.
+            if (!this.isLiveRender(setting.settingEl, render)) return;
             if (loaded.releases === null) {
                 setting.setDesc(MESSAGES.ERROR_RELEASE_LIST(loaded.error));
                 setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.refresh()));

@@ -258,6 +258,29 @@ describe("agent model row", () => {
 
         expect(mockModelPickerOpen).toHaveBeenCalled();
     });
+
+    it("drops a context pill from a superseded body render", async () => {
+        const plugin = makePlugin({ agent: "opencode" });
+        let resolveFirst!: (v: unknown) => void;
+        const first = new Promise((r) => (resolveFirst = r));
+        plugin.api.health = vi
+            .fn()
+            .mockReturnValueOnce(first)
+            .mockResolvedValue(ok({ status: "ok", version: "1", chat_ctx: 128000 }));
+        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
+        const body = new MockElement("div");
+        const setting = new Setting(body as unknown as HTMLElement);
+
+        const stale = (tab as any).renderAgentContext(setting, body as unknown as HTMLElement);
+        const live = (tab as any).renderAgentContext(setting, body as unknown as HTMLElement);
+        await live;
+        resolveFirst(ok({ status: "ok", version: "1", chat_ctx: 64000 }));
+        await stale;
+
+        const pills = body.findAll("lilbee-pill-context");
+        expect(pills).toHaveLength(1);
+        expect(pills[0].textContent).toBe(MESSAGES.AGENT_CONTEXT_BADGE(128000));
+    });
 });
 
 describe("Claudian row", () => {

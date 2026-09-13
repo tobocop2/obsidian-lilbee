@@ -2642,6 +2642,57 @@ describe("managed mode settings", () => {
         expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
     });
 
+    it("drops a release list that lands after a newer version-row render", async () => {
+        let rejectFirst!: (err: unknown) => void;
+        const first = new Promise<never>((_, reject) => (rejectFirst = reject));
+        mockListReleases.mockReturnValueOnce(first);
+        mockListReleases.mockResolvedValue([]);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+        const setting = new Setting(container as unknown as HTMLElement);
+        const addSpy = vi.spyOn(Setting.prototype, "addButton");
+
+        try {
+            (tab as any).applyVersionRow(setting, container as unknown as HTMLElement);
+            (tab as any).applyVersionRow(setting, container as unknown as HTMLElement);
+            await settleReleases();
+            rejectFirst(new Error("offline"));
+            await settleReleases();
+
+            // Two applies, two action buttons; the stale failure must not add a retry.
+            expect(addSpy).toHaveBeenCalledTimes(2);
+        } finally {
+            addSpy.mockRestore();
+        }
+    });
+
+    it("drops a release list that lands after a newer install-row render", async () => {
+        let rejectFirst!: (err: unknown) => void;
+        const first = new Promise<never>((_, reject) => (rejectFirst = reject));
+        mockListReleases.mockReturnValueOnce(first);
+        mockListReleases.mockResolvedValue([]);
+        const plugin = makePlugin({ serverMode: "managed" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+        const setting = new Setting(container as unknown as HTMLElement);
+        const addSpy = vi.spyOn(Setting.prototype, "addButton");
+
+        try {
+            (tab as any).applyInstallServerRow(setting, container as unknown as HTMLElement);
+            (tab as any).applyInstallServerRow(setting, container as unknown as HTMLElement);
+            await settleReleases();
+            rejectFirst(new Error("offline"));
+            await settleReleases();
+
+            expect(addSpy).toHaveBeenCalledTimes(2);
+        } finally {
+            addSpy.mockRestore();
+        }
+    });
+
     it("the update section reads releases through the adapter, never GitHub directly", async () => {
         const fetchSpy = vi.fn();
         vi.stubGlobal("fetch", fetchSpy);
