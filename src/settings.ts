@@ -941,7 +941,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private mountAgentBody(container: HTMLElement): void {
-        this.agentBodyEl = container.createDiv({ cls: "lilbee-agent-body" });
+        // Render re-runs into the same group container; reuse the body instead of stacking one per refresh.
+        this.agentBodyEl =
+            container.querySelector<HTMLDivElement>(".lilbee-agent-body") ??
+            container.createDiv({ cls: "lilbee-agent-body" });
         void this.loadAgentDetections();
     }
 
@@ -1434,6 +1437,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderUninstallCallout(container: HTMLElement): void {
+        // Static content; a re-render must not stack another callout.
+        if (container.querySelector(".lilbee-uninstall-callout")) return;
         const callout = container.createDiv({ cls: "lilbee-uninstall-callout" });
         const mark = callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });
         mark.setAttribute("aria-hidden", "true");
@@ -1587,7 +1592,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** Indeterminate progress panel for the managed-server update; hidden until an update runs. */
     private renderUpdateProgress(containerEl: HTMLElement): UpdateProgressEls {
-        const panel = containerEl.createDiv({ cls: "lilbee-update-progress" });
+        const panel =
+            containerEl.querySelector<HTMLDivElement>(".lilbee-update-progress") ??
+            containerEl.createDiv({ cls: "lilbee-update-progress" });
+        // A re-render rebuilds the same panel; clear the previous bar first.
+        panel.empty();
         panel.hide();
         const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
         const fill = bar.createDiv({
@@ -1685,7 +1694,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.storageTotalBytes = report.totalBytes;
         setting.setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
 
-        const list = container.createDiv({ cls: "lilbee-storage-report" });
+        const list =
+            container.querySelector<HTMLDivElement>(".lilbee-storage-report") ??
+            container.createDiv({ cls: "lilbee-storage-report" });
+        // A re-render repopulates the same node; clear the previous rows first.
+        list.empty();
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_BIN, report.binBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_MODELS, report.modelsBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_VAULT, report.vaultBytes, report.vaultDataDir);
@@ -1807,7 +1820,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** The chat, embedding, vision and reranker pickers all live in one container the Refresh button reloads. */
     private mountModelPickers(container: HTMLElement): void {
-        this.modelsContainerEl = container.createDiv(CLS_MODELS_CONTAINER);
+        // Render re-runs into the same group container; reuse it instead of stacking one per refresh.
+        this.modelsContainerEl =
+            container.querySelector<HTMLDivElement>(`.${CLS_MODELS_CONTAINER}`) ??
+            container.createDiv(CLS_MODELS_CONTAINER);
         void this.loadModels(this.modelsContainerEl);
     }
 

@@ -3019,6 +3019,47 @@ describe("managed mode settings", () => {
         expect(nodes[0].findAll("lilbee-server-dot")).toHaveLength(1);
     });
 
+    it("reuses the agent body across renders", async () => {
+        const plugin = makePlugin();
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+
+        (tab as any).mountAgentBody(container as unknown as HTMLElement);
+        (tab as any).mountAgentBody(container as unknown as HTMLElement);
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(container.findAll("lilbee-agent-body")).toHaveLength(1);
+    });
+
+    it("reuses the models container across renders", async () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+
+        (tab as any).mountModelPickers(container as unknown as HTMLElement);
+        (tab as any).mountModelPickers(container as unknown as HTMLElement);
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(container.findAll("lilbee-models-container")).toHaveLength(1);
+    });
+
+    it("rebuilds the same update progress panel across renders", () => {
+        const plugin = makePlugin();
+        const tab = makeTab(plugin);
+        const container = new MockElement("div");
+
+        (tab as any).renderUpdateProgress(container as unknown as HTMLElement);
+        (tab as any).renderUpdateProgress(container as unknown as HTMLElement);
+
+        const panels = container.findAll("lilbee-update-progress");
+        expect(panels).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-progress-bar-container")).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-update-progress-phase")).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-update-progress-size")).toHaveLength(1);
+        expect(panels[0].findAll("lilbee-update-progress-cancel")).toHaveLength(1);
+    });
+
     it("Reset to managed button resets serverMode and serverUrl", async () => {
         const plugin = makePlugin({ serverMode: "external", serverUrl: "http://remote:9999" });
         mockChatPicker(plugin);
