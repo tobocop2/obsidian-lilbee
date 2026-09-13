@@ -1161,7 +1161,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private applyServerStatusRow(setting: Setting): void {
         setting.setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_STATUS_CURRENT);
-        const statusEl = setting.settingEl.createDiv({ cls: "lilbee-server-status" });
+        // Render re-runs on the same Setting; reuse the node and clear it instead of stacking another dot.
+        const statusEl =
+            setting.settingEl.querySelector<HTMLDivElement>(".lilbee-server-status") ??
+            setting.settingEl.createDiv({ cls: "lilbee-server-status" });
+        statusEl.empty();
         const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
         const stateText = statusEl.createSpan();
         const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
@@ -1727,7 +1731,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        const serverStatusEl = setting.settingEl.createSpan({ cls: "lilbee-health-status" });
+        // Render re-runs on the same Setting; reuse the span instead of stacking a dot per refresh.
+        const serverStatusEl =
+            setting.settingEl.querySelector<HTMLSpanElement>(".lilbee-health-status") ??
+            setting.settingEl.createSpan({ cls: "lilbee-health-status" });
 
         setting.addButton((btn) =>
             btn.setButtonText(MESSAGES.BUTTON_TEST).onClick(async () => {

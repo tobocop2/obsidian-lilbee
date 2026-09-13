@@ -2337,6 +2337,22 @@ describe("LilbeeSettingTab", () => {
                 expect.objectContaining({ signal: expect.any(AbortSignal) }),
             );
         });
+
+        it("reuses the health span when the row re-renders on the same Setting", async () => {
+            // A refresh re-invokes render on the same Setting; a second span per pass stacks a dot per failure.
+            globalThis.fetch = vi.fn().mockRejectedValue(new Error("unavailable"));
+            const plugin = makePlugin({ serverMode: "external" });
+            const tab = makeTab(plugin);
+            const setting = new Setting(new MockElement("div") as unknown as HTMLElement);
+
+            (tab as any).applyServerUrlRow(setting);
+            (tab as any).applyServerUrlRow(setting);
+            await new Promise((r) => setTimeout(r, 0));
+
+            const spans = (setting.settingEl as unknown as MockElement).findAll("lilbee-health-status");
+            expect(spans).toHaveLength(1);
+            expect(spans[0].findAll("lilbee-health-dot")).toHaveLength(1);
+        });
     });
 
     describe("separator key handling", () => {
@@ -2988,6 +3004,19 @@ describe("managed mode settings", () => {
         expect(stateSpan!.textContent).toBe("ready");
         const dot = statusEl!.find("lilbee-server-dot");
         expect(dot!.classList.contains("is-ready")).toBe(true);
+    });
+
+    it("reuses the status node when the server row re-renders on the same Setting", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        const tab = makeTab(plugin);
+        const setting = new Setting(new MockElement("div") as unknown as HTMLElement);
+
+        (tab as any).applyServerStatusRow(setting);
+        (tab as any).applyServerStatusRow(setting);
+
+        const nodes = (setting.settingEl as unknown as MockElement).findAll("lilbee-server-status");
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].findAll("lilbee-server-dot")).toHaveLength(1);
     });
 
     it("Reset to managed button resets serverMode and serverUrl", async () => {
