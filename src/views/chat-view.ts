@@ -39,12 +39,13 @@ import type {
 import { RateLimitedError, isHttpStatus } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
-import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
+import { displayLabelForRef, extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { addCloseButton } from "../components/close-button";
+import { remedyForWarning } from "../utils/warning-remedies";
 import { MESSAGES } from "../locales/en";
 import {
     RETRY_INTERVAL_MS,
@@ -580,14 +581,15 @@ export class ChatView extends ItemView {
     /** Featured rows that have an installed quant, then hosted rows not already listed. */
     private chatPrimaryOptions(): RailOption[] {
         const installedRepos = new Set(this.chatInstalled.map((m) => extractHfRepo(m.name)));
-        const activeRepo = extractHfRepo(this.chatActive);
+        const activeRef = this.chatActive;
         const primary: RailOption[] = [];
         for (const entry of this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo))) {
             const sourceTag = HOSTED_SOURCES.has(entry.source) ? ` [${entry.provider ?? entry.source}]` : "";
+            const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
             primary.push({
-                value: entry.hf_repo,
+                value: ref,
                 label: `${entry.display_name}${sourceTag}`,
-                checked: entry.hf_repo === activeRepo,
+                checked: false,
             });
         }
         // Hosted rows (frontier/ollama) are selectable even when absent from the
@@ -596,16 +598,30 @@ export class ChatView extends ItemView {
         // be both hosted and registered as installed).
         for (const [ref, label] of hostedOptions(this.chatCatalogEntries)) {
             if (installedRepos.has(ref)) continue;
-            primary.push({ value: ref, label, checked: ref === activeRepo });
+            primary.push({ value: ref, label, checked: false });
+        }
+        // Exactly one checkmark: the concrete ref first, else the first quant of
+        // the reported repo (the server sometimes reports a bare repository).
+        const exact = primary.findIndex((o) => o.value === activeRef);
+        if (exact >= 0) {
+            primary[exact].checked = true;
+        } else {
+            const repoMatch = primary.findIndex((o) => extractHfRepo(o.value) === extractHfRepo(activeRef));
+            if (repoMatch >= 0) primary[repoMatch].checked = true;
         }
         return primary;
     }
 
-    /** Installed builds that aren't in the featured catalog (manually pulled, ollama/, openai/, …). */
+    /** Installed builds that aren't in the featured catalog (manually pulled, ollama/, openai/, …).
+     *  The server's installedModels endpoint returns models for every task, so filter out
+     *  repos that serve another role — an installed embedding/vision/reranker model must
+     *  not leak into the chat menu. */
     private chatOtherOptions(): RailOption[] {
         const sourceMap = new Map(this.chatInstalled.map((m) => [m.name, m.source]));
         const featuredRepos = new Set(this.chatCatalogEntries.map((e) => e.hf_repo));
+        const nonChatRepos = this.nonChatRepos();
         return this.chatInstalled
+            .filter((m) => !nonChatRepos.has(extractHfRepo(m.name)))
             .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((m) => {
@@ -619,6 +635,21 @@ export class ChatView extends ItemView {
             });
     }
 
+    /** Repos that serve embedding, vision, or reranker roles — never chat. */
+    private nonChatRepos(): Set<string> {
+        const repos = new Set<string>();
+        for (const m of this.embeddingModels) repos.add(m.hf_repo);
+        for (const task of [MODEL_TASK.VISION, MODEL_TASK.RERANK] as const) {
+            for (const m of this.optionalCatalog[task]) repos.add(m.hf_repo);
+        }
+        // A manually installed non-chat build can be absent from every catalog
+        // response; the server's active role refs still name it.
+        for (const ref of [this.activeEmbeddingModel, this.optionalActive.vision, this.optionalActive.rerank]) {
+            if (ref) repos.add(extractHfRepo(ref));
+        }
+        return repos;
+    }
+
     private openChatMenu(event: MouseEvent): void {
         this.openRailMenu(event, this.chatTriggerTextEl, this.chatOptionGroups(), (value) =>
             this.handleChatSelection(value),
@@ -626,8 +657,8 @@ export class ChatView extends ItemView {
     }
 
     private handleChatSelection(value: string): void {
-        const uninstalled = this.chatCatalogEntries.find((e) => e.hf_repo === value && !e.installed);
-        if (uninstalled) {
+        const uninstalled = this.chatCatalogEntries.find((e) => nativeModelRef(e.hf_repo, e.gguf_filename) === value);
+        if (uninstalled && !uninstalled.installed) {
             const modal = new ConfirmPullModal(this.plugin.app, {
                 displayName: uninstalled.display_name,
                 sizeGb: uninstalled.size_gb,
@@ -650,8 +681,6 @@ export class ChatView extends ItemView {
         void this.plugin.api.setChatModel(value).then((result) => {
             if (result.isOk()) {
                 // Keep the menu's checkmark in sync without waiting for a refetch.
-                // Store what the server resolved, not what was sent: a bare repo
-                // comes back as the concrete quant it picked.
                 this.chatActive = result.value.model;
                 this.plugin.activeModel = result.value.model;
                 void this.plugin.fetchActiveModel();
@@ -885,13 +914,14 @@ export class ChatView extends ItemView {
 
         this.plugin.taskQueue.complete(taskId);
 
-        const result = await this.plugin.api.setChatModel(entry.hf_repo);
+        const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
+        const result = await this.plugin.api.setChatModel(ref);
         if (result.isErr()) {
             new Notice(
                 noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.display_name)),
             );
         } else {
-            this.plugin.activeModel = entry.hf_repo;
+            this.plugin.activeModel = ref;
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
             this.plugin.refreshSettingsTab();
         }
@@ -1183,6 +1213,9 @@ export class ChatView extends ItemView {
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
+            if (!state.streamEnded && !this.streamController?.signal.aborted) {
+                this.renderInlineError(assistantBubble, streamInterruptedMessage(this.plugin.settings.serverMode));
+            }
         } catch (err) {
             // Trust the signal over the error shape: an aborted fetch reaches
             // here as AbortError from some paths and TypeError("Failed to
@@ -1280,7 +1313,12 @@ export class ChatView extends ItemView {
                 break;
             }
             case SSE_EVENT.SOURCES:
-                state.sources.push(...(event.data as Source[]));
+                // A malformed frame can carry an object ({sources: []}) instead
+                // of an array; spreading that throws a TypeError that replaces
+                // the answer. Ignore frames that are not arrays.
+                if (Array.isArray(event.data)) {
+                    state.sources.push(...(event.data as Source[]));
+                }
                 break;
             case SSE_EVENT.DONE: {
                 revealContent();
@@ -1492,7 +1530,17 @@ export class ChatView extends ItemView {
         for (const w of this.plugin.healthWarnings) {
             const row = el.createDiv({ cls: "lilbee-chat-warning" });
             row.createSpan({ cls: "lilbee-chat-warning-message", text: w.message });
-            if (w.remedy) row.createSpan({ cls: "lilbee-chat-warning-remedy", text: w.remedy });
+            const remedy = remedyForWarning(w.code, this.plugin);
+            if (remedy) {
+                row.createSpan({ cls: "lilbee-chat-warning-remedy", text: remedy.text });
+                const btn = row.createEl("button", {
+                    text: MESSAGES.BUTTON_REBUILD_INDEX,
+                    cls: "lilbee-chat-warning-action",
+                });
+                btn.addEventListener("click", remedy.action);
+            } else if (w.remedy) {
+                row.createSpan({ cls: "lilbee-chat-warning-remedy", text: w.remedy });
+            }
         }
     }
 

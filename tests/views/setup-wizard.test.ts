@@ -3156,6 +3156,29 @@ describe("SetupWizard", () => {
             expect((wizard as any).embeddingModels.length).toBe(1);
         });
 
+        it("loadEmbeddingModels excludes a hosted row missing its key", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const entries = [
+                makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF", task: "embedding" }),
+                makeEntry({
+                    hf_repo: "openai/text-embedding-3-small",
+                    task: "embedding",
+                    source: "frontier",
+                    provider: "openai",
+                    key_status: "missing_key",
+                }),
+            ];
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((wizard as any).embeddingModels.map((m: CatalogEntry) => m.hf_repo)).toEqual([
+                "nomic-ai/nomic-embed-text-v1.5-GGUF",
+            ]);
+        });
+
         it("loadEmbeddingModels retries after an isErr result", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("gateway timeout")));
@@ -4122,6 +4145,22 @@ describe("SetupWizard", () => {
 
             // The user cannot use it without a key they have not set, so it is not offered in its place.
             expect(renderedRepos(el)).toEqual(["f/0", "org/Other-0-GGUF"]);
+        });
+
+        it("excludes a featured frontier row missing its key from the initial picks", async () => {
+            const featured = featuredRow(1).concat(
+                makeEntry({
+                    hf_repo: "openai/gpt-5",
+                    display_name: "GPT-5",
+                    source: "frontier",
+                    provider: "openai",
+                    key_status: "missing_key",
+                }),
+            );
+
+            const { el } = await openPicksStep(splitCatalog(featured, []));
+
+            expect(renderedRepos(el)).toEqual(["f/0"]);
         });
 
         it("substitutes a hosted model the user can already use", async () => {

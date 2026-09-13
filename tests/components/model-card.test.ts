@@ -312,6 +312,27 @@ describe("renderModelCard", () => {
             expect(card.find("lilbee-catalog-remove")).not.toBeNull();
         });
 
+        it("shows Use without Remove for an installed hosted entry", () => {
+            const c = container();
+            const entry = makeEntry({ installed: true, source: "frontier" });
+            const onUse = vi.fn();
+            const card = renderModelCard(c, entry, { showActions: true, onUse }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-use")!;
+            expect(btn).not.toBeNull();
+            expect(card.find("lilbee-catalog-remove")).toBeNull();
+            btn.trigger("click");
+            expect(onUse).toHaveBeenCalledWith(entry, btn);
+        });
+
+        it("does not throw when hosted Use button clicked without onUse", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ installed: true, source: "frontier" }), {
+                showActions: true,
+            }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-use")!;
+            expect(() => btn.trigger("click")).not.toThrow();
+        });
+
         it("shows a disabled Active button when isActive is true", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry({ installed: true }), {

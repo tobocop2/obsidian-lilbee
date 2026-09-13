@@ -395,6 +395,21 @@ export class ServerManager {
                 this.setState(SERVER_STATE.ERROR);
                 return;
             }
+            // A clean exit (code 0 or SIGTERM) while we still wanted the server
+            // running means another vault asked it to stop via a take-over. Not
+            // a crash: do not restart. The scope sidecar now names the winner,
+            // and main.ts surfaces that as STATUS_LOCKED_BY_OTHER. Without a
+            // foreign owner on record this is an ordinary clean shutdown, so it
+            // keeps the crash path instead of claiming a take-over.
+            const exitedCleanly = code === 0 || signal === "SIGTERM";
+            const owner = exitedCleanly ? readScopeOwner(this.opts.sharedRoot) : null;
+            if (owner && owner.dataDir !== this.opts.dataDir) {
+                this.journal(
+                    `server pid ${child.pid} exited (${describeExit(code, signal)}): another vault took over the shared root`,
+                );
+                this.setState(SERVER_STATE.ERROR);
+                return;
+            }
             this.pushOutputLine(`server exited (${describeExit(code, signal)})`);
             this.journal(`server pid ${child.pid} exited (${describeExit(code, signal)})`);
             this.snapshotCrashOutput();
@@ -724,6 +739,42 @@ export class ServerManager {
             await this.childExit;
         }
         this.journal(`server pid ${child.pid} exit observed after ${Date.now() - stopStartedAt}ms`);
+    }
+
+    /**
+     * Synchronously signal the spawned child's process group to die and remove
+     * its port file. For use in synchronous teardown (onunload) only: it does
+     * not await the process exit. The OS reaps the child; the next plugin
+     * instance finds no stale port and no lock holder, so it spawns fresh.
+     */
+    killChildSync(): void {
+        this.desired = DESIRED.STOPPED;
+        if (this.restartTimer !== null) {
+            window.clearTimeout(this.restartTimer);
+            this.restartTimer = null;
+        }
+        const wasAdopted = this.adopted;
+        this.stopAdoptedWatch();
+        const child = this.child;
+        this.child = null;
+        this.childExit = null;
+        this.adopted = false;
+        this._actualPort = null;
+        this.cleanupPortFile();
+        this.setState(SERVER_STATE.STOPPED);
+        if (child) {
+            if (process.platform === PLATFORM.WIN32) {
+                this.journal(`sent taskkill /f /t to pid ${child.pid}`);
+                void node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]).catch((err: unknown) => {
+                    this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
+                });
+                child.kill("SIGKILL");
+            } else {
+                this.signalGroup(child, "SIGKILL");
+            }
+        } else if (wasAdopted) {
+            void requestServerShutdown(this.opts.dataDir);
+        }
     }
 
     /** Ask an adopted server to exit; report when it will not go. */

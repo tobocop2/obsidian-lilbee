@@ -121,20 +121,24 @@ export function tabIdToTask(tab: CatalogTab): ModelTask | null {
 /** Role order for the For You rail, matching the server's own role ordering. */
 const FOR_YOU_ROLE_ORDER: ModelTask[] = [MODEL_TASK.CHAT, MODEL_TASK.EMBEDDING, MODEL_TASK.VISION, MODEL_TASK.RERANK];
 
+/** A catalog row a user can run: featured, supported, not known unrunnable, and key-ready when hosted. */
+export function isRunnablePick(entry: CatalogEntry): boolean {
+    if (!entry.featured || entry.compat !== MODEL_COMPAT.SUPPORTED || entry.fit === HARDWARE_FIT.WONT_RUN) {
+        return false;
+    }
+    return !HOSTED_SOURCES.has(entry.source) || isUsableHostedRow(entry);
+}
+
 /**
  * One runnable pick per role, in role order.
  *
  * Featured is not a curated list — the server resolves it from HuggingFace
- * trending at runtime, so a pick is only as safe as its hardware fit. A row
- * qualifies when the engine supports its architecture and it is not known to be
- * unrunnable. Rows with no fit chip are kept (a failed memory probe must not
- * empty the rail) but ranked behind rows whose fit is known, so a measurable
- * "fits" still wins over an unknown.
+ * trending at runtime, so a pick is only as safe as its hardware fit and its
+ * provider key. Rows with no fit chip are kept (a failed probe must not empty
+ * the rail) but rank behind known fits.
  */
 export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
-    const runnable = entries.filter(
-        (e) => e.featured && e.compat === MODEL_COMPAT.SUPPORTED && e.fit !== HARDWARE_FIT.WONT_RUN,
-    );
+    const runnable = entries.filter(isRunnablePick);
     const picks: CatalogEntry[] = [];
     for (const task of FOR_YOU_ROLE_ORDER) {
         const best = runnable

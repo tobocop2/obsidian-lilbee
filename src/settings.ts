@@ -837,9 +837,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
 
         for (const item of Array.from(containerEl.querySelectorAll(".setting-item"))) {
-            // Rows hidden by capability (server does not report the key) must stay
-            // hidden even when the search box is cleared: clearing the box makes
-            // matches() true for every row, which would otherwise reveal them.
+            // Capability-hidden rows stay hidden when the search clears, since an empty query matches every row.
             if (item.getAttribute("data-lilbee-hidden-by-capability") !== null) {
                 (item as HTMLElement).hide();
                 continue;
@@ -2185,29 +2183,46 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private rowsWorkerPool(): RowSpec[] {
+        // Each row waits for the server to report its own key: the server rejects
+        // PATCH for unknown keys, so a row the server does not know would only
+        // error. The visible predicate hides it until the key arrives.
         return [
-            this.numberRow(
-                {
-                    key: "worker_pool_call_timeout_s",
-                    name: MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
-                    desc: MESSAGES.DESC_WORKER_POOL_CALL_TIMEOUT,
-                },
-                { integer: false, min: 0 },
+            this.visibleRow(
+                this.numberRow(
+                    {
+                        key: "worker_pool_call_timeout_s",
+                        name: MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
+                        desc: MESSAGES.DESC_WORKER_POOL_CALL_TIMEOUT,
+                    },
+                    { integer: false, min: 0 },
+                ),
+                "worker_pool_call_timeout_s",
             ),
-            this.toggleRow({
-                key: "worker_pool_eager_start",
-                name: MESSAGES.LABEL_WORKER_POOL_EAGER_START,
-                desc: MESSAGES.DESC_WORKER_POOL_EAGER_START,
-            }),
-            this.numberRow(
-                {
-                    key: "worker_pool_max_idle_s",
-                    name: MESSAGES.LABEL_WORKER_POOL_MAX_IDLE,
-                    desc: MESSAGES.DESC_WORKER_POOL_MAX_IDLE,
-                },
-                { integer: false, min: 0 },
+            this.visibleRow(
+                this.toggleRow({
+                    key: "worker_pool_eager_start",
+                    name: MESSAGES.LABEL_WORKER_POOL_EAGER_START,
+                    desc: MESSAGES.DESC_WORKER_POOL_EAGER_START,
+                }),
+                "worker_pool_eager_start",
+            ),
+            this.visibleRow(
+                this.numberRow(
+                    {
+                        key: "worker_pool_max_idle_s",
+                        name: MESSAGES.LABEL_WORKER_POOL_MAX_IDLE,
+                        desc: MESSAGES.DESC_WORKER_POOL_MAX_IDLE,
+                    },
+                    { integer: false, min: 0 },
+                ),
+                "worker_pool_max_idle_s",
             ),
         ];
+    }
+
+    /** A row whose visibility tracks whether the server reports *key*. */
+    private visibleRow(row: RowSpec, key: string): RowSpec {
+        return { ...row, visible: () => this.serverReports(key) };
     }
 
     private renderWorkerPoolSettings(containerEl: HTMLElement): void {

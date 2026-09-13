@@ -455,6 +455,19 @@ describe("visibility predicates", () => {
         expect(row?.visible?.()).toBe(true);
     });
 
+    it("hides worker-pool rows until the server reports each key", () => {
+        const tab = makeTab();
+        const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT);
+
+        expect(row?.visible?.()).toBe(false);
+
+        (tab as any).serverConfig = { worker_pool_eager_start: true };
+        expect(row?.visible?.()).toBe(false);
+
+        (tab as any).serverConfig = { worker_pool_call_timeout_s: 30 };
+        expect(row?.visible?.()).toBe(true);
+    });
+
     it("shows a row the server has no key for when the row does not need one", () => {
         const tab = makeTab();
         const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_OCR_LANGUAGE);

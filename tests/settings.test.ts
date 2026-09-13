@@ -7451,6 +7451,47 @@ describe("managed mode settings", () => {
             expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("");
         });
 
+        it("marks producer-hidden rows so clearing the search keeps them hidden", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            const item = hideable.get("worker_pool_call_timeout_s");
+            expect(item).toBeDefined();
+            expect(item?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
+
+            (tab as unknown as { filterSettings(container: HTMLElement, query: string): void }).filterSettings(
+                tab.containerEl,
+                "",
+            );
+
+            expect(item?.style.display).toBe("none");
+        });
+
+        it("reapplies the active query when a hidden row becomes supported", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            const row = hideable.get("worker_pool_call_timeout_s")!;
+            const filter = tab.containerEl.find("lilbee-settings-filter")!;
+            filter.value = "does not match";
+            filter.trigger("input");
+            expect(row.style.display).toBe("none");
+
+            (tab as unknown as { applyHideableConfigFields(cfg: ConfigResponse): void }).applyHideableConfigFields({
+                worker_pool_call_timeout_s: 30,
+            });
+
+            expect(row.style.display).toBe("none");
+        });
+
         it("PATCHes worker_pool_call_timeout_s with a parsed float", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);

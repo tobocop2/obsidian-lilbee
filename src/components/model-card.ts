@@ -115,6 +115,12 @@ function appendSpecPart(parent: HTMLElement, text: string): void {
     parent.createSpan({ text });
 }
 
+/** Installed rows missing their provider key are not usable, so they never read as installed. */
+function isEffectivelyInstalled(entry: CatalogEntry): boolean {
+    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
+    return entry.installed && !hostedMissingKey;
+}
+
 function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
     const tone = statusTone(entry, options);
@@ -123,8 +129,7 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
         text: tone.label,
         cls: `lilbee-model-card-status-label ${tone.labelCls}`,
     });
-    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
-    if (entry.installed && !hostedMissingKey) {
+    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
         label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
     }
     if (entry.fit && FIT_LABEL[entry.fit]) {
@@ -142,8 +147,9 @@ function statusTone(
     if (options.isActive) {
         return { dotCls: "is-active", labelCls: "is-active", label: MESSAGES.LABEL_ACTIVE };
     }
-    const hostedMissingKey = HOSTED_SOURCES.has(entry.source) && entry.key_status === KEY_STATUS.MISSING_KEY;
-    if (entry.installed && !hostedMissingKey) {
+    // Hosted models are usable without being downloaded, so they must not
+    // read "Installed (shared)" or offer Delete: they live on the provider.
+    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
         return { dotCls: "is-installed", labelCls: "is-installed", label: MESSAGES.LABEL_INSTALLED };
     }
     if (entry.downloads > 0) {
@@ -172,7 +178,9 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
         return;
     }
 
-    if (entry.installed) {
+    // Hosted models are usable without being downloaded, so they get a Use
+    // button but never a Remove: they live on the provider, not on disk.
+    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
         const useBtn = actions.createEl("button", {
             text: MESSAGES.BUTTON_USE,
             cls: "lilbee-btn lilbee-btn-primary lilbee-catalog-use",
@@ -188,6 +196,15 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
         if (options.onRemove) {
             const handler = options.onRemove;
             removeBtn.addEventListener("click", () => handler(entry, removeBtn));
+        }
+    } else if (isEffectivelyInstalled(entry)) {
+        const useBtn = actions.createEl("button", {
+            text: MESSAGES.BUTTON_USE,
+            cls: "lilbee-btn lilbee-btn-primary lilbee-catalog-use",
+        });
+        if (options.onUse) {
+            const handler = options.onUse;
+            useBtn.addEventListener("click", () => handler(entry, useBtn));
         }
     } else if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
         // Unsupported models can't run on this server — render the pull action
