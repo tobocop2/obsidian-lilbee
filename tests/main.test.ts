@@ -400,11 +400,14 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("removes stale .status-bar-item.plugin-lilbee + .lilbee-ribbon-icon from prior dead instances during onload", async () => {
+        it("removes stale pills + ribbon icons from prior dead instances during onload", async () => {
             const removeMock = vi.fn();
             const docMock = {
                 querySelectorAll: vi.fn().mockImplementation((sel: string) => {
-                    if (sel === ".status-bar-item.plugin-lilbee" || sel === ".lilbee-ribbon-icon") {
+                    if (
+                        sel === ".status-bar-item.plugin-lilbee" ||
+                        sel === ".lilbee-status-pill, .lilbee-sync-pill, .lilbee-ribbon-icon"
+                    ) {
                         return [{ remove: removeMock }, { remove: removeMock }];
                     }
                     return [];
@@ -416,11 +419,73 @@ describe("LilbeePlugin", () => {
                 const plugin = await createPlugin();
                 await plugin.onload();
                 expect(docMock.querySelectorAll).toHaveBeenCalledWith(".status-bar-item.plugin-lilbee");
-                expect(docMock.querySelectorAll).toHaveBeenCalledWith(".lilbee-ribbon-icon");
+                expect(docMock.querySelectorAll).toHaveBeenCalledWith(
+                    ".lilbee-status-pill, .lilbee-sync-pill, .lilbee-ribbon-icon",
+                );
                 // Two matches per selector, two selectors -> four removes.
                 expect(removeMock).toHaveBeenCalledTimes(4);
             } finally {
                 (globalThis as { activeDocument?: unknown }).activeDocument = stash;
+            }
+        });
+
+        it("tags the status pill with its marker class so a later sweep finds it", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            expect(plugin.statusBarEl?.classList.contains("lilbee-status-pill")).toBe(true);
+        });
+
+        it("sweeps the fallback document when there is no active document", async () => {
+            const removeMock = vi.fn();
+            const docMock = {
+                querySelectorAll: vi.fn().mockReturnValue([{ remove: removeMock }]),
+            };
+            const activeStash = (globalThis as { activeDocument?: unknown }).activeDocument;
+            const docStash = (globalThis as { document?: unknown }).document;
+            delete (globalThis as { activeDocument?: unknown }).activeDocument;
+            (globalThis as { document?: unknown }).document = docMock;
+            try {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                expect(docMock.querySelectorAll).toHaveBeenCalledWith(".status-bar-item.plugin-lilbee");
+                expect(removeMock).toHaveBeenCalledTimes(2);
+            } finally {
+                if (activeStash !== undefined) {
+                    (globalThis as { activeDocument?: unknown }).activeDocument = activeStash;
+                }
+                if (docStash !== undefined) {
+                    (globalThis as { document?: unknown }).document = docStash;
+                } else {
+                    delete (globalThis as { document?: unknown }).document;
+                }
+            }
+        });
+
+        it("sweeps a shared document only once when it is both documents", async () => {
+            const removeMock = vi.fn();
+            const docMock = {
+                querySelectorAll: vi.fn().mockReturnValue([{ remove: removeMock }]),
+            };
+            const activeStash = (globalThis as { activeDocument?: unknown }).activeDocument;
+            const docStash = (globalThis as { document?: unknown }).document;
+            (globalThis as { activeDocument?: unknown }).activeDocument = docMock;
+            (globalThis as { document?: unknown }).document = docMock;
+            try {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                expect(docMock.querySelectorAll).toHaveBeenCalledTimes(2);
+                expect(removeMock).toHaveBeenCalledTimes(2);
+            } finally {
+                if (activeStash !== undefined) {
+                    (globalThis as { activeDocument?: unknown }).activeDocument = activeStash;
+                } else {
+                    delete (globalThis as { activeDocument?: unknown }).activeDocument;
+                }
+                if (docStash !== undefined) {
+                    (globalThis as { document?: unknown }).document = docStash;
+                } else {
+                    delete (globalThis as { document?: unknown }).document;
+                }
             }
         });
 
@@ -1071,6 +1136,31 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             expect(() => plugin.onunload()).not.toThrow();
+        });
+
+        it("detaches status pills and both ribbon icons on unload", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const statusRemove = vi.spyOn(plugin.statusBarEl as unknown as MockElement, "remove");
+            const syncRemove = vi.spyOn(plugin.syncPillEl as unknown as MockElement, "remove");
+            const chatRemove = vi.spyOn(
+                (plugin as unknown as { chatRibbonIconEl: MockElement }).chatRibbonIconEl,
+                "remove",
+            );
+            const updateIcon = new MockElement("div");
+            const updateRemove = vi.spyOn(updateIcon, "remove");
+            (plugin as unknown as { updateRibbonIconEl: MockElement }).updateRibbonIconEl = updateIcon;
+
+            plugin.onunload();
+
+            expect(statusRemove).toHaveBeenCalled();
+            expect(syncRemove).toHaveBeenCalled();
+            expect(chatRemove).toHaveBeenCalled();
+            expect(updateRemove).toHaveBeenCalled();
+            expect(plugin.statusBarEl).toBeNull();
+            expect(plugin.syncPillEl).toBeNull();
+            expect((plugin as unknown as { chatRibbonIconEl: null }).chatRibbonIconEl).toBeNull();
+            expect((plugin as unknown as { updateRibbonIconEl: null }).updateRibbonIconEl).toBeNull();
         });
     });
 
