@@ -82,10 +82,19 @@ describe("renderModelCard", () => {
             expect(label?.getAttribute("title")).toBe(MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
         });
 
-        it("omits the shared-installed tooltip when the model is not installed", () => {
+        it("renders no state label when the model is neither active nor installed", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry({ installed: false }), {}) as unknown as MockElement;
+            expect(card.find("lilbee-model-card-status-label")).toBeNull();
+        });
+
+        it("omits the shared-installed tooltip for an active model that is not on disk", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ installed: true, source: "ollama" }), {
+                isActive: true,
+            }) as unknown as MockElement;
             const label = card.find("lilbee-model-card-status-label");
+            expect(label?.textContent).toBe(MESSAGES.LABEL_ACTIVE);
             expect(label?.getAttribute("title")).toBeNull();
         });
 
@@ -96,9 +105,8 @@ describe("renderModelCard", () => {
                 makeEntry({ installed: true, source: "frontier", key_status: "missing_key", downloads: 100 }),
                 {},
             ) as unknown as MockElement;
-            const label = card.find("lilbee-model-card-status-label");
-            expect(label?.textContent).not.toBe(MESSAGES.LABEL_INSTALLED);
-            expect(label?.getAttribute("title")).toBeNull();
+            expect(card.find("lilbee-model-card-status-label")).toBeNull();
+            expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("100 downloads");
         });
 
         it("renders an active dot+label when isActive is true", () => {
@@ -114,21 +122,65 @@ describe("renderModelCard", () => {
         it("renders a download count when not installed and downloads > 0", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry({ downloads: 42 }), {}) as unknown as MockElement;
-            const label = card.find("lilbee-model-card-status-label")!;
-            expect(label.textContent).toBe("42 downloads");
-            expect(label.classList.contains("is-muted")).toBe(true);
+            expect(card.find("lilbee-model-card-status-label")).toBeNull();
+            const downloads = card.find("lilbee-model-card-downloads")!;
+            expect(downloads.textContent).toBe("42 downloads");
+            expect(card.find("lilbee-model-card-status-dot")?.classList.contains("is-muted")).toBe(true);
         });
 
         it("formats download counts in thousands", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry({ downloads: 1500 }), {}) as unknown as MockElement;
-            expect(card.find("lilbee-model-card-status-label")?.textContent).toBe("1.5K downloads");
+            expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("1.5K downloads");
         });
 
         it("formats download counts in millions", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry({ downloads: 2_500_000 }), {}) as unknown as MockElement;
-            expect(card.find("lilbee-model-card-status-label")?.textContent).toBe("2.5M downloads");
+            expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("2.5M downloads");
+        });
+
+        it("keeps the download count on an installed model", () => {
+            const c = container();
+            const card = renderModelCard(
+                c,
+                makeEntry({ installed: true, downloads: 42_000 }),
+                {},
+            ) as unknown as MockElement;
+            const label = card.find("lilbee-model-card-status-label");
+            expect(label?.textContent).toBe(MESSAGES.LABEL_INSTALLED);
+            expect(label?.classList.contains("is-installed")).toBe(true);
+            expect(card.find("lilbee-model-card-status-dot")?.classList.contains("is-installed")).toBe(true);
+            expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("42.0K downloads");
+        });
+
+        it("omits the download count on an installed model with no downloads", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ installed: true, downloads: 0 }), {}) as unknown as MockElement;
+            expect(card.find("lilbee-model-card-status-label")?.textContent).toBe(MESSAGES.LABEL_INSTALLED);
+            expect(card.find("lilbee-model-card-downloads")).toBeNull();
+        });
+
+        it("keeps the download count on the active model", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ installed: true, downloads: 900 }), {
+                isActive: true,
+            }) as unknown as MockElement;
+            const label = card.find("lilbee-model-card-status-label");
+            expect(label?.textContent).toBe(MESSAGES.LABEL_ACTIVE);
+            expect(label?.classList.contains("is-active")).toBe(true);
+            expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("900 downloads");
+        });
+
+        it("keeps the download count on a hosted model that never reads as installed", () => {
+            const c = container();
+            const card = renderModelCard(
+                c,
+                makeEntry({ installed: true, source: "ollama", provider: "Ollama", downloads: 7500 }),
+                {},
+            ) as unknown as MockElement;
+            expect(card.find("lilbee-model-card-status-label")).toBeNull();
+            expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("7.5K downloads");
         });
 
         it("renders a fit text on the right when fit is set", () => {

@@ -3508,20 +3508,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 text.inputEl.addEventListener("input", () => {
                     edited = true;
                 });
+                let sends = 0;
                 const saveToken = async (): Promise<void> => {
                     if (!edited) return;
                     edited = false;
                     const trimmed = text.inputEl.value.trim();
+                    const send = ++sends;
+                    // False once an edit lands during the request: that edit owns the field, so this attempt writes nothing back.
+                    const stillCurrent = (): boolean => text.inputEl.value.trim() === trimmed;
+                    // False once a later save starts: that attempt owns the field, so this one leaves it alone.
+                    const isLatestSend = (): boolean => send === sends;
                     try {
                         await this.plugin.api.updateConfig({ hf_token: trimmed });
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
-                        // Still unsaved; the next blur retries.
-                        edited = true;
+                        const inForce = this.plugin.getSharedHfToken();
+                        // With no token in force the box holds the only copy of what the user typed, so the refusal leaves it there.
+                        if (inForce !== "" && isLatestSend() && stillCurrent()) text.setValue(inForce);
                         return;
                     }
-                    // An edit made during the request owns the stored copy.
-                    if (text.inputEl.value.trim() !== trimmed) return;
+                    if (!stillCurrent()) return;
                     this.plugin.setSharedHfToken(trimmed);
                     new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
                 };

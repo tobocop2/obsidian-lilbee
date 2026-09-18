@@ -123,14 +123,22 @@ function isEffectivelyInstalled(entry: CatalogEntry): boolean {
 
 function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
-    const tone = statusTone(entry, options);
-    status.createSpan({ cls: `lilbee-model-card-status-dot ${tone.dotCls}` });
-    const label = status.createSpan({
-        text: tone.label,
-        cls: `lilbee-model-card-status-label ${tone.labelCls}`,
-    });
-    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
-        label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
+    const { tone, label } = statusTone(entry, options);
+    status.createSpan({ cls: `lilbee-model-card-status-dot ${tone}` });
+    if (label) {
+        const labelEl = status.createSpan({
+            text: label,
+            cls: `lilbee-model-card-status-label ${tone}`,
+        });
+        if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
+            labelEl.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
+        }
+    }
+    if (entry.downloads > 0) {
+        status.createSpan({
+            text: MESSAGES.LABEL_DOWNLOADS_COUNT(formatAbbreviatedCount(entry.downloads)),
+            cls: "lilbee-model-card-downloads",
+        });
     }
     if (entry.fit && FIT_LABEL[entry.fit]) {
         status.createSpan({
@@ -140,26 +148,16 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
     }
 }
 
-function statusTone(
-    entry: CatalogEntry,
-    options: ModelCardOptions,
-): { dotCls: string; labelCls: string; label: string } {
+function statusTone(entry: CatalogEntry, options: ModelCardOptions): { tone: string; label: string } {
     if (options.isActive) {
-        return { dotCls: "is-active", labelCls: "is-active", label: MESSAGES.LABEL_ACTIVE };
+        return { tone: "is-active", label: MESSAGES.LABEL_ACTIVE };
     }
     // Hosted models are usable without being downloaded, so they must not
     // read "Installed (shared)" or offer Delete: they live on the provider.
     if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
-        return { dotCls: "is-installed", labelCls: "is-installed", label: MESSAGES.LABEL_INSTALLED };
+        return { tone: "is-installed", label: MESSAGES.LABEL_INSTALLED };
     }
-    if (entry.downloads > 0) {
-        return {
-            dotCls: "is-muted",
-            labelCls: "is-muted",
-            label: MESSAGES.LABEL_DOWNLOADS_COUNT(formatAbbreviatedCount(entry.downloads)),
-        };
-    }
-    return { dotCls: "is-muted", labelCls: "is-muted", label: "" };
+    return { tone: "is-muted", label: "" };
 }
 
 function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
