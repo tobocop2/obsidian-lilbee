@@ -3512,16 +3512,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     if (!edited) return;
                     edited = false;
                     const trimmed = text.inputEl.value.trim();
+                    // False once an edit lands during the request: that edit owns the field, so this attempt writes nothing back.
+                    const stillCurrent = (): boolean => text.inputEl.value.trim() === trimmed;
                     try {
                         await this.plugin.api.updateConfig({ hf_token: trimmed });
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
-                        // Still unsaved; the next blur retries.
-                        edited = true;
+                        if (stillCurrent()) edited = true;
                         return;
                     }
-                    // An edit made during the request owns the stored copy.
-                    if (text.inputEl.value.trim() !== trimmed) return;
+                    if (!stillCurrent()) return;
                     this.plugin.setSharedHfToken(trimmed);
                     new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
                 };
