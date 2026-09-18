@@ -1209,6 +1209,11 @@ export class ChatView extends ItemView {
                 this.plugin.settings.searchChunkType,
                 { summary: this.summary, sessionId: this.sessionId },
             )) {
+                // The server trails memory_extracted after done; any other frame once the stream ended is malformed.
+                if (state.streamEnded && event.event !== SSE_EVENT.MEMORY_EXTRACTED) {
+                    console.warn(`[lilbee] ignoring a ${event.event} frame that arrived after the chat stream ended`);
+                    break;
+                }
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
             if (!state.streamEnded && !this.streamController?.signal.aborted) {
