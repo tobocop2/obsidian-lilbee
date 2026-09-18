@@ -43,10 +43,15 @@ jobs:
             exit 0
           fi
           prev=$(git tag -l '[0-9]*' --sort=-v:refname | grep -A1 -x "$tag" | tail -n +2 | head -1 || true)
-          lilbee_tag=$(gh api repos/tobocop2/lilbee/releases --jq '.[0].tag_name')
+          min_version=$(node scripts/print-min-server-version.mjs) \
+            || { echo "release-store: could not read the plugin's minimum lilbee server version" >&2; exit 1; }
+          [ -n "$min_version" ] || { echo "release-store: minimum lilbee server version was empty" >&2; exit 1; }
+          # lilbee's own release tags are v-prefixed; the plugin's constant is not (it is
+          # compared against a running server's self-reported version, which has no "v").
+          min_tag="v${min_version}"
           {
             printf 'Requires lilbee server [%s](https://github.com/tobocop2/lilbee/releases/tag/%s) or newer. In managed mode the plugin downloads and runs the server for you.\n\n' \
-              "$lilbee_tag" "$lilbee_tag"
+              "$min_version" "$min_tag"
             bash scripts/release_notes.sh "$GITHUB_REPOSITORY" "$tag" "$prev"
           } > release-notes.md
       - uses: softprops/action-gh-release@v3

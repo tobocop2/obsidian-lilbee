@@ -99,12 +99,12 @@ import {
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { applyConfig } from "./utils/reindex";
+import { isVersionOlder } from "./min-server-version";
 import {
     errorMessage,
     extractServerErrorDetail,
     extractSseErrorMessage,
     formatDiskSize,
-    isVersionOlder,
     HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
