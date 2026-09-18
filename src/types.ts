@@ -877,8 +877,12 @@ export interface DiagnosticsContext {
     serverVariant: ServerVariant | "";
     /** The GPU probe that chose the installed build, or null when none was recorded. */
     gpuDetection: GpuDetection | null;
+    /** The backend the server's fleet is running on, or null when no server has reported one. */
+    engineBackend: string | null;
     serverState: ServerState;
     serverUrl: string;
+    /** The binary the managed server launches, or null in external mode. */
+    serverBinaryPath: string | null;
     lastOutput: string;
 }
 
@@ -1331,6 +1335,9 @@ export const PLACEMENT_MODE = {
     AUTO: "auto",
     MANUAL: "manual",
 } as const satisfies Record<string, PlacementMode>;
+
+/** The backend name for a fleet the server reports no usable device for. */
+export const ENGINE_BACKEND_CPU = "cpu";
 
 /** One detected GPU. Mirrors the server's GpuInfoResponse. */
 export interface GpuInfo {

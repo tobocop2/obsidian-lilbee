@@ -311,6 +311,9 @@ vi.mock("../src/server-manager", () => ({
             get dataDir() {
                 return opts.dataDir;
             },
+            get binaryPath() {
+                return opts.binaryPath;
+            },
             get state() {
                 return "ready";
             },
@@ -5111,6 +5114,66 @@ describe("LilbeePlugin", () => {
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
         });
 
+        /** A placement response whose device list names `backend`, or no devices at all. */
+        const placementOn = (backend: string | null) =>
+            ok({
+                gpus:
+                    backend === null
+                        ? []
+                        : [
+                              {
+                                  index: 0,
+                                  backend,
+                                  label: `${backend}0`,
+                                  name: "RTX 4080",
+                                  total_bytes: 1,
+                                  free_bytes: 1,
+                              },
+                          ],
+                roles: [],
+                unplaceable: [],
+                manual: false,
+                spec_json: null,
+                rejected_spec_json: null,
+            });
+
+        it("reports the NEW backend after the server restarts on a different build", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok" }));
+            plugin.api.placement = vi.fn().mockResolvedValue(placementOn("CUDA"));
+            await (plugin as any).probeServerHealth();
+            await flush();
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("CUDA");
+
+            // One failed probe: below the streak threshold, so nothing marks the server unreachable.
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
+            await (plugin as any).probeServerHealth();
+
+            // It comes back on a build that serves no GPU.
+            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok" }));
+            plugin.api.placement = vi.fn().mockResolvedValue(placementOn(null));
+            await (plugin as any).probeServerHealth();
+            await flush();
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("cpu");
+        });
+
+        it("reports the NEW backend after a restart through the plugin's own restart button", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok" }));
+            plugin.api.placement = vi.fn().mockResolvedValue(placementOn("CUDA"));
+            await (plugin as any).probeServerHealth();
+            await flush();
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("CUDA");
+
+            // A restart driven by the plugin never fails a probe: it suppresses probing instead.
+            plugin.api.placement = vi.fn().mockResolvedValue(placementOn(null));
+            await (plugin as any).probeServerHealth();
+            await flush();
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("cpu");
+        });
+
         it("tolerates a single failed probe without flipping to error", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -6383,7 +6446,9 @@ describe("LilbeePlugin", () => {
                 )![0];
                 expect(cmd.checkCallback).toBeUndefined();
                 (plugin as any).vaultRegistry = null;
+                plugin.api.placement = vi.fn().mockResolvedValue(err(new Error("down")));
                 cmd.callback();
+                await flush();
                 expect(exportDiagnostics).toHaveBeenCalledWith(
                     expect.objectContaining({
                         dataDir: null,
@@ -6393,6 +6458,8 @@ describe("LilbeePlugin", () => {
                         lastOutput: "",
                         pluginVersion: "0.1.0",
                         serverVersion: "",
+                        engineBackend: null,
+                        serverBinaryPath: null,
                     }),
                 );
             });
@@ -6402,13 +6469,52 @@ describe("LilbeePlugin", () => {
                 await plugin.onload();
                 await flush();
                 vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
-                const ctx = plugin.diagnosticsContext();
+                plugin.api.placement = vi.fn().mockResolvedValue(err(new Error("down")));
+                const ctx = await plugin.diagnosticsContext();
                 expect(ctx.dataDir).toBe(mockServerOpts.dataDir);
                 expect(ctx.sharedRoot).toBe((plugin as any).vaultRegistry.sharedRoot);
                 expect(ctx.serverState).toBe("ready");
                 expect(ctx.serverUrl).toBe("http://127.0.0.1:54321");
                 expect(ctx.serverVersion).toBe("v0.4.0");
                 expect(ctx.journalEntries).toBe(plugin.journal.entries);
+                expect(ctx.serverBinaryPath).toBe(mockServerOpts.binaryPath);
+            });
+
+            it("diagnosticsContext asks the server which backend its fleet runs on", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                plugin.api.placement = vi.fn().mockResolvedValue(
+                    ok({
+                        gpus: [
+                            {
+                                index: 0,
+                                backend: "Vulkan",
+                                label: "Vulkan0",
+                                name: "RTX 4080",
+                                total_bytes: 1,
+                                free_bytes: 1,
+                            },
+                        ],
+                        roles: [],
+                        unplaceable: [],
+                        manual: false,
+                        spec_json: null,
+                        rejected_spec_json: null,
+                    }),
+                );
+                expect((await plugin.diagnosticsContext()).engineBackend).toBe("Vulkan");
+            });
+
+            it("journals the reason and reports no backend when the read throws", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                plugin.api.placement = vi.fn().mockRejectedValue(new Error("no token provider"));
+                expect((await plugin.diagnosticsContext()).engineBackend).toBeNull();
+                const entry = plugin.journal.entries.find((e) => e.label === "engine-backend");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("no token provider");
             });
 
             it("showError records label, message, and stack to the journal", async () => {
@@ -6440,7 +6546,9 @@ describe("LilbeePlugin", () => {
                 const link = exportLink(notice);
                 expect(link).toBeDefined();
                 expect(link!.textContent).toBe(MESSAGES.BUTTON_EXPORT_DIAGNOSTICS);
+                plugin.api.placement = vi.fn().mockResolvedValue(err(new Error("down")));
                 link!.trigger("click");
+                await flush();
                 expect(exportDiagnostics).toHaveBeenCalled();
             });
 
@@ -6525,7 +6633,9 @@ describe("LilbeePlugin", () => {
                     const link = exportLink(notice);
                     expect(link).toBeDefined();
                     expect(link!.textContent).toBe(MESSAGES.BUTTON_EXPORT_DIAGNOSTICS);
+                    plugin.api.placement = vi.fn().mockResolvedValue(err(new Error("down")));
                     link!.trigger("click");
+                    await flush();
                     expect(exportDiagnostics).toHaveBeenCalled();
                 } finally {
                     consoleSpy.mockRestore();

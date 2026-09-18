@@ -37,8 +37,10 @@ function makeContext(overrides: Partial<DiagnosticsContext> = {}): DiagnosticsCo
         serverVersion: "v0.4.0",
         serverVariant: SERVER_VARIANT.CU124,
         gpuDetection: DETECTION,
+        engineBackend: "CUDA",
         serverState: SERVER_STATE.ERROR,
         serverUrl: "http://127.0.0.1:1234",
+        serverBinaryPath: "/shared/bin/v0.4.0/lilbee-macos-arm64",
         lastOutput: "Traceback: boom",
         ...overrides,
     };
@@ -180,6 +182,24 @@ describe("collectDiagnostics", () => {
         const bundle = collectDiagnostics(makeContext());
         expect(bundle.summaryMarkdown).toContain("- Server build: CUDA 12.4");
         expect(bundle.summaryMarkdown).toContain("- GPU detection: The NVIDIA driver reports CUDA 12.4.");
+    });
+
+    it("names the engine backend and the binary the server launches", () => {
+        const bundle = collectDiagnostics(makeContext());
+        expect(bundle.summaryMarkdown).toContain("- Engine backend: CUDA");
+        expect(bundle.summaryMarkdown).toContain("- Server binary: /shared/bin/v0.4.0/lilbee-macos-arm64");
+    });
+
+    it("says the engine backend is unknown when no server has reported one", () => {
+        const bundle = collectDiagnostics(makeContext({ engineBackend: null }));
+        expect(bundle.summaryMarkdown).toContain("- Engine backend: (unknown)");
+        expect(bundle.summaryMarkdown).not.toContain("- Engine backend: undefined");
+    });
+
+    it("says there is no server binary when none is resolved", () => {
+        const bundle = collectDiagnostics(makeContext({ serverBinaryPath: null }));
+        expect(bundle.summaryMarkdown).toContain("- Server binary: (none)");
+        expect(bundle.summaryMarkdown).not.toContain("- Server binary: undefined");
     });
 
     it("says so when no build and no detection were ever recorded", () => {

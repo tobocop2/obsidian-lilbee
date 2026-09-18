@@ -169,7 +169,7 @@ function makePlugin(
     const initWikiSync = vi.fn();
     const reconcileWiki = vi.fn().mockResolvedValue(undefined);
     const configureManagedStorage = vi.fn().mockResolvedValue(undefined);
-    const diagnosticsContext = vi.fn().mockReturnValue({ pluginVersion: "0.0.0-test" });
+    const diagnosticsContext = vi.fn().mockResolvedValue({ pluginVersion: "0.0.0-test" });
     const journal = new ErrorJournal();
     return {
         journal,
@@ -8296,11 +8296,11 @@ describe("LilbeeSettingTab.renderMemorySection", () => {
 });
 
 describe("Export diagnostics button", () => {
-    it("calls exportDiagnostics with the plugin's diagnostics context", () => {
+    it("calls exportDiagnostics with the plugin's diagnostics context", async () => {
         const plugin = makePlugin();
         mockChatPicker(plugin);
         const ctx = { pluginVersion: "0.0.0-test" };
-        (plugin.diagnosticsContext as unknown as ReturnType<typeof vi.fn>).mockReturnValue(ctx);
+        (plugin.diagnosticsContext as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(ctx);
         const tab = makeTab(plugin);
 
         const origAddButton = Setting.prototype.addButton;
@@ -8330,6 +8330,7 @@ describe("Export diagnostics button", () => {
         const diagnostics = namedButtons.find((b) => b.name === MESSAGES.LABEL_EXPORT_DIAGNOSTICS);
         expect(diagnostics).toBeDefined();
         diagnostics!.onClick();
+        await Promise.resolve();
 
         expect(plugin.diagnosticsContext).toHaveBeenCalledTimes(1);
         expect(exportDiagnostics).toHaveBeenCalledWith(ctx);
