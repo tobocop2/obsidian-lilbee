@@ -4673,6 +4673,36 @@ describe("managed mode settings", () => {
             expect(plugin.getSharedHfToken()).toBe("hf_abcdef");
         });
 
+        it("does not resend when a refused save was already replaced by a newer one", async () => {
+            const plugin = makePlugin();
+            const settle: Array<{ accept: () => void; refuse: () => void }> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () =>
+                    new Promise<void>((resolve, reject) => {
+                        settle.push({ accept: resolve, refuse: () => reject(new Error("fail")) });
+                    }),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            field.edit("hf_old");
+            void field.handler();
+            field.edit("hf_new");
+            void field.handler();
+            expect(settle).toHaveLength(2);
+
+            settle[1]!.accept();
+            await new Promise((r) => setTimeout(r, 0));
+            settle[0]!.refuse();
+            await new Promise((r) => setTimeout(r, 0));
+
+            await blurField(field);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(2);
+            expect(plugin.getSharedHfToken()).toBe("hf_new");
+        });
+
         it("never puts the token value in a notice", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
