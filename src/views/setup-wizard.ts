@@ -1073,10 +1073,14 @@ export class SetupWizard extends Modal {
             void this.pullEmbeddingModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
-        void this.loadEmbeddingModels(modelsContainer, statusEl);
+        void this.loadEmbeddingModels(modelsContainer, statusEl, downloadBtn);
     }
 
-    private async loadEmbeddingModels(container: HTMLElement, statusEl: HTMLElement): Promise<void> {
+    private async loadEmbeddingModels(
+        container: HTMLElement,
+        statusEl: HTMLElement,
+        downloadBtn: HTMLButtonElement,
+    ): Promise<void> {
         try {
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.EMBEDDING,
@@ -1088,7 +1092,7 @@ export class SetupWizard extends Modal {
                 this.embeddingModels = [];
                 this.selectedEmbedding = null;
                 this.renderCatalogFailure(container, statusEl, result.error.message, () => {
-                    void this.loadEmbeddingModels(container, statusEl);
+                    void this.loadEmbeddingModels(container, statusEl, downloadBtn);
                 });
                 return;
             }
@@ -1103,14 +1107,14 @@ export class SetupWizard extends Modal {
             this.embeddingModels = [];
             this.selectedEmbedding = null;
             this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
-                void this.loadEmbeddingModels(container, statusEl);
+                void this.loadEmbeddingModels(container, statusEl, downloadBtn);
             });
             return;
         }
         if (this.embeddingModels.length === 0) {
             this.selectedEmbedding = null;
             this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
-                void this.loadEmbeddingModels(container, statusEl);
+                void this.loadEmbeddingModels(container, statusEl, downloadBtn);
             });
             return;
         }
@@ -1119,6 +1123,7 @@ export class SetupWizard extends Modal {
         const activeIdx = activeRef ? this.embeddingModels.findIndex((m) => m.hf_repo === activeRef) : -1;
         const defaultIdx = activeIdx >= 0 ? activeIdx : 0;
         this.selectedEmbedding = this.embeddingModels[defaultIdx];
+        this.setPrimaryActionLabel(downloadBtn, this.selectedEmbedding);
 
         this.renderSectionHeading(container, MESSAGES.WIZARD_EMBEDDING_RECOMMENDED);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
@@ -1127,13 +1132,14 @@ export class SetupWizard extends Modal {
             const entry = this.embeddingModels[i];
             renderModelCard(grid, entry, {
                 isSelected: i === defaultIdx,
-                onClick: () => this.selectEmbedding(grid, entry),
+                onClick: () => this.selectEmbedding(grid, entry, downloadBtn),
             });
         }
     }
 
-    private selectEmbedding(grid: HTMLElement, model: EmbeddingModel): void {
+    private selectEmbedding(grid: HTMLElement, model: EmbeddingModel, downloadBtn: HTMLButtonElement): void {
         this.selectedEmbedding = model;
+        this.setPrimaryActionLabel(downloadBtn, model);
         for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
             if (el.dataset.repo === model.hf_repo) {

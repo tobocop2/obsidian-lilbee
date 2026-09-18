@@ -5,7 +5,7 @@ import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/v
 import { getSystemMemoryGB } from "../../src/utils";
 import * as utils from "../../src/utils";
 import { LilbeeClient, SessionTokenError } from "../../src/api";
-import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
+import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL, MODEL_TASK } from "../../src/types";
 import { ok, err } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
 import type { CatalogEntry, CatalogResponse } from "../../src/types";
@@ -1663,7 +1663,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).selectedEmbedding?.hf_repo).toBe("bge/bge-small");
         });
     });
@@ -3080,7 +3081,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
                 .trigger("click");
             await tick();
 
@@ -3119,7 +3120,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
                 .trigger("click");
             await tick();
 
@@ -3151,7 +3152,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
                 .trigger("click");
             await tick();
 
@@ -3184,7 +3185,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
                 .trigger("click");
             await tick();
             await tick();
@@ -3495,7 +3496,8 @@ describe("SetupWizard", () => {
             other.dataset.repo = "bge/bge-small";
             other.classList.add("is-selected");
             const model = makeEntry({ hf_repo: "nomic/nomic-embed-text", task: "embedding" });
-            (wizard as any).selectEmbedding(grid, model);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            (wizard as any).selectEmbedding(grid, model, downloadBtn);
             expect((wizard as any).selectedEmbedding).toBe(model);
             expect(child.classList.contains("is-selected")).toBe(true);
             expect(other.classList.contains("is-selected")).toBe(false);
@@ -3508,7 +3510,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((statusEl as unknown as MockElement).textContent).toContain("offered no models");
 
             const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
@@ -3538,7 +3541,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).embeddingModels.map((m: CatalogEntry) => m.hf_repo)).toEqual([
                 "nomic-ai/nomic-embed-text-v1.5-GGUF",
             ]);
@@ -3551,7 +3555,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((statusEl as unknown as MockElement).textContent).toContain("gateway timeout");
 
             const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
@@ -3571,7 +3576,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).embeddingModels).toEqual([]);
             // The server's own reason reaches the step, not a generic string.
             expect((statusEl as unknown as MockElement).textContent).toContain("fail");
@@ -3593,7 +3599,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).embeddingModels).toEqual([]);
         });
 
@@ -3618,7 +3625,8 @@ describe("SetupWizard", () => {
                     return origRenderModelCard(container, entry, opts);
                 },
             );
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
 
             // Exercise the onClick
             expect(onClicks.length).toBe(2);
@@ -3637,7 +3645,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).selectedEmbedding?.name).toBe("nomic-embed-text");
             expect((wizard as any).embeddingModels.length).toBe(2);
         });
@@ -3661,8 +3670,130 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).selectedEmbedding?.hf_repo).toBe("nomic/nomic-embed-text-v1.5");
+        });
+    });
+
+    describe("Embed step primary action", () => {
+        /** Renders the embedding step over the given rows and returns its primary button. */
+        async function embedStepPrimary(entries: CatalogEntry[]): Promise<MockElement> {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+            const el = wizard.contentEl as unknown as MockElement;
+            return el.find("mod-cta")!;
+        }
+
+        it("offers to use an embedding model that is already installed", async () => {
+            const primary = await embedStepPrimary([
+                makeEntry({
+                    hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                    display_name: "All MiniLM L6 v2",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ]);
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_USE_CONTINUE);
+        });
+
+        it("offers to download an embedding model that is not installed", async () => {
+            const primary = await embedStepPrimary([
+                makeEntry({
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "Nomic Embed v1.5",
+                    task: "embedding",
+                    installed: false,
+                }),
+            ]);
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+        });
+
+        it("renames the action when the user picks an installed row over the default", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({
+                            hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                            display_name: "Nomic Embed v1.5",
+                            task: "embedding",
+                            installed: false,
+                        }),
+                        makeEntry({
+                            hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                            display_name: "All MiniLM L6 v2",
+                            task: "embedding",
+                            installed: true,
+                        }),
+                    ]),
+                ),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const primary = el.find("mod-cta")!;
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+
+            const installedCard = el
+                .findAll("lilbee-model-card")
+                .find((c) => c.dataset.repo === "second-state/All-MiniLM-L6-v2-Embedding-GGUF")!;
+            installedCard.trigger("click", {});
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_USE_CONTINUE);
+        });
+
+        it("does not rename the Model step action when an embedding response lands after Back", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            let releaseEmbeddings!: () => void;
+            const embeddingsInFlight = new Promise<void>((resolve) => {
+                releaseEmbeddings = resolve;
+            });
+            plugin.api.catalog = vi.fn(async (params: { task: string }) => {
+                if (params.task !== MODEL_TASK.EMBEDDING) {
+                    return ok(makeCatalogResponse([makeEntry({ installed: false })]));
+                }
+                await embeddingsInFlight;
+                return ok(
+                    makeCatalogResponse([
+                        makeEntry({
+                            hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                            display_name: "All MiniLM L6 v2",
+                            task: "embedding",
+                            installed: true,
+                        }),
+                    ]),
+                );
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            // Leave the Embed step while its catalog request is still open. The
+            // Model step now owns the on-screen primary action.
+            wizard.back();
+            await tick();
+            const el = wizard.contentEl as unknown as MockElement;
+            const primary = el.find("mod-cta")!;
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+
+            releaseEmbeddings();
+            await tick();
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
         });
     });
 
