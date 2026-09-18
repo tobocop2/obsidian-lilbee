@@ -86,6 +86,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
         resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
+        isDownloadingServer: vi.fn(() => false),
+        cancelServerDownload: vi.fn(),
         setupWizardOpen: false,
         ...overrides,
     };
@@ -120,6 +122,28 @@ function findButtons(el: MockElement): MockElement[] {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/** A managed start that reports the given phases and then never settles. */
+function pendingStartEmitting(...phases: string[]) {
+    return vi.fn(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+        for (const phase of phases) onProgress?.({ phase, message: "" });
+        await new Promise(() => {});
+    });
+}
+
+/** Opens the wizard, moves it to the server step, and presses Next in managed mode. */
+async function startManagedFromServerStep(plugin: Record<string, unknown>): Promise<SetupWizard> {
+    const wizard = new SetupWizard(plugin.app as any, plugin as any);
+    wizard.open();
+    wizard.next();
+    const el = wizard.contentEl as unknown as MockElement;
+    findButtons(el)
+        .find((b) => b.textContent === "Next")!
+        .trigger("click");
+    await tick();
+    await tick();
+    return wizard;
+}
 
 describe("SetupWizard", () => {
     beforeEach(() => {
@@ -2397,6 +2421,184 @@ describe("SetupWizard", () => {
 
             wizard.close();
             expect(capturedSignal?.aborted).toBe(true);
+        });
+
+        it("cancels the server download it started when the wizard closes mid-download", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            // The wizard's own download is reported and still running when the wizard closes.
+            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not claim there is no server after cancelling the download it started", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            // The plugin reports the cancelled download itself, so the wizard stays silent here.
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+            expect(messages).toEqual([]);
+        });
+
+        it("stays silent when the cancel clears the download state as it runs", async () => {
+            let downloading = true;
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => downloading),
+                // A cancel that clears the state in the same tick must not unmask the notice.
+                cancelServerDownload: vi.fn(() => {
+                    downloading = false;
+                }),
+            });
+            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).toHaveBeenCalledTimes(1);
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
+
+        it("never claims there is no server while a managed download is in flight", async () => {
+            const closePaths: Array<[string, (plugin: Record<string, unknown>) => Promise<void>]> = [
+                [
+                    "closed at welcome",
+                    async (plugin) => {
+                        const wizard = new SetupWizard(plugin.app as any, plugin as any);
+                        wizard.open();
+                        wizard.close();
+                    },
+                ],
+                [
+                    "closed while the consent modal waits",
+                    async (plugin) => {
+                        const wizard = await startManagedFromServerStep(plugin);
+                        wizard.close();
+                    },
+                ],
+                [
+                    "skipped at welcome",
+                    async (plugin) => {
+                        const wizard = new SetupWizard(plugin.app as any, plugin as any);
+                        wizard.open();
+                        wizard.skip();
+                    },
+                ],
+            ];
+
+            const offenders: string[] = [];
+            for (const [path, close] of closePaths) {
+                Notice.clear();
+                const plugin = makePlugin({
+                    serverManager: null,
+                    settings: { serverMode: "managed", setupCompleted: false },
+                    // The settings tab started this one, so the wizard never owns it.
+                    ensureManagedConsentThenStart: vi.fn(() => new Promise(() => {})),
+                    isDownloadingServer: vi.fn(() => true),
+                });
+
+                await close(plugin);
+
+                const messages = Notice.instances.map((n) => n.message);
+                if (messages.includes(MESSAGES.NOTICE_SETUP_INCOMPLETE)) offenders.push(path);
+            }
+            expect(offenders).toEqual([]);
+        });
+
+        it("still reports unfinished setup when no download is running", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => false),
+            });
+            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(messages).toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
+
+        it("leaves a settings-started download running when the wizard closes at the consent modal", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                // The consent modal is still waiting on the user, so no download of the wizard's own has begun.
+                ensureManagedConsentThenStart: vi.fn(() => new Promise(() => {})),
+                isDownloadingServer: vi.fn(() => true),
+            });
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(messages).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
+
+        it("leaves a later download running once its own download phase has ended", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            // The starting phase ends the wizard's download; whatever runs now belongs to someone else.
+            plugin.startManagedServer = pendingStartEmitting("downloading", "starting");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+        });
+
+        it("leaves a later download running once its managed start has returned", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            plugin.startManagedServer = vi.fn(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+                onProgress?.({ phase: "downloading", message: "" });
+            });
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+        });
+
+        it("leaves a download started outside the wizard running", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.close();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(messages).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
         });
     });
 

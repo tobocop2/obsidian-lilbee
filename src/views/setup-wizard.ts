@@ -262,6 +262,8 @@ export class SetupWizard extends Modal {
     private pulledModelName = "";
     private selectedEmbedding: EmbeddingModel | null = null;
     private embeddingModels: EmbeddingModel[] = [];
+    /** True only while the wizard's own managed start reports a download; a download started from Settings is not ours to stop. */
+    private ownsServerDownload = false;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -280,11 +282,20 @@ export class SetupWizard extends Modal {
     }
 
     onClose(): void {
-        this.pullController?.abort();
-        this.syncController?.abort();
+        // One reading for the stop and the notice, so the notice never depends on what the stop does to the state.
+        const serverDownloading = this.plugin.isDownloadingServer();
+        this.stopStartedWork(serverDownloading);
         this.plugin.setupWizardOpen = false;
         void this.plugin.resumeDeferredAgentPicker();
-        if (!this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        // A download in flight, whoever started it, means there is a server on the way.
+        if (!serverDownloading && !this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+    }
+
+    /** Stops everything the wizard started, the server download included when the wizard's own start began it. */
+    private stopStartedWork(serverDownloading: boolean): void {
+        this.pullController?.abort();
+        this.syncController?.abort();
+        if (serverDownloading && this.ownsServerDownload) this.plugin.cancelServerDownload();
     }
 
     /** Records setup as complete: the point from which the plugin starts itself on the next launch. */
@@ -525,6 +536,8 @@ export class SetupWizard extends Modal {
                 panelShown = true;
             }
             setPhase(event.phase, event.message, event.percent);
+            // Ownership tracks the reported phase: nothing is ours before the first download event or after the last.
+            this.ownsServerDownload = event.phase === MANAGED_PHASE.DOWNLOADING;
             if (event.phase === MANAGED_PHASE.ERROR) failed = true;
         };
 
@@ -561,6 +574,8 @@ export class SetupWizard extends Modal {
             panel.hide();
             statusEl.setText(MESSAGES.ERROR_START_SERVER);
             (nextBtn as HTMLButtonElement).disabled = false;
+        } finally {
+            this.ownsServerDownload = false;
         }
     }
 
