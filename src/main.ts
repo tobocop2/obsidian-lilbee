@@ -21,6 +21,7 @@ import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from ".
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
+import { hasNvidiaDevice, readEngineBackend, readFleetDevices } from "./engine-backend";
 import { ErrorJournal } from "./error-journal";
 import { ServerBinary, getLatestRelease, checkForUpdate, isDownloadCanceled, migrateFlatBinary } from "./server-binary";
 import type { DownloadProgress, EnsureResult, ReleaseInfo } from "./server-binary";
@@ -48,8 +49,10 @@ import {
     REQUEST_OUTCOME,
     SERVER_MODE,
     SERVER_STATE,
+    SERVER_VARIANT,
     SETUP_OUTCOME,
     SSE_EVENT,
+    cudaVersionUnknown,
     SYNC_TRIGGER,
     TASK_STATUS,
     TASK_TYPE,
@@ -59,6 +62,7 @@ import {
     type DiagnosticsContext,
     type DotState,
     type GpuDetection,
+    type GpuInfo,
     CHAT_STATUS,
     type ChatStatus,
     type HealthResponse,
@@ -94,12 +98,12 @@ import {
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { modelShowRows } from "./utils/model-show-rows";
+import { isVersionOlder } from "./min-server-version";
 import {
     errorMessage,
     extractServerErrorDetail,
     extractSseErrorMessage,
     formatDiskSize,
-    isVersionOlder,
     HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
@@ -465,7 +469,7 @@ export default class LilbeePlugin extends Plugin {
                     // If the user opts into external mode from the consent modal,
                     // drop them on the plugin's external-server settings.
                     if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) this.openPluginSettings();
-                    if (outcome.kind === SETUP_OUTCOME.STARTED) void this.autoUpdateServerBinary();
+                    if (outcome.kind === SETUP_OUTCOME.STARTED) void this.afterManagedStart();
                 });
             } else {
                 this.configureApi(this.settings.serverUrl);
@@ -952,11 +956,20 @@ export default class LilbeePlugin extends Plugin {
 
     /** Claudian caches its data file at load, so a change only lands after a reload. */
     private offerClaudianReload(): void {
-        const notice = new Notice(MESSAGES.NOTICE_CLAUDIAN_UPDATED, NOTICE_PERMANENT);
-        const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_RELOAD_CLAUDIAN });
+        this.offerAction(
+            MESSAGES.NOTICE_CLAUDIAN_UPDATED,
+            MESSAGES.BUTTON_RELOAD_CLAUDIAN,
+            () => void reloadClaudian(this.app),
+        );
+    }
+
+    /** A notice that stays up until the user takes its action or dismisses it. */
+    private offerAction(message: string, label: string, act: () => void): void {
+        const notice = new Notice(message, NOTICE_PERMANENT);
+        const link = notice.messageEl.createEl("a", { text: label });
         link.addEventListener("click", () => {
             notice.hide();
-            void reloadClaudian(this.app);
+            act();
         });
     }
 
@@ -1226,6 +1239,38 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Work that needs a running server, in order: the update check, then the build cross-check. */
+    private async afterManagedStart(): Promise<void> {
+        await this.autoUpdateServerBinary();
+        await this.offerCudaBuild();
+    }
+
+    /** The installed build against the devices the running server reports. A default
+     *  build chosen without the driver's CUDA version, on a host reporting an NVIDIA
+     *  card, gets the CUDA build offered once. */
+    private async offerCudaBuild(): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const config = registry.loadConfig();
+        if (config.cudaBuildOffered) return;
+        if (this.getSharedLilbeeVariant() !== SERVER_VARIANT.DEFAULT) return;
+        if (!cudaVersionUnknown(this.getSharedGpuDetection())) return;
+        let devices: readonly GpuInfo[] | null;
+        try {
+            devices = await readFleetDevices(this.api);
+        } catch (err) {
+            this.journal.record("cuda-cross-check", errorMessage(err, String(err)));
+            return;
+        }
+        if (devices === null || !hasNvidiaDevice(devices)) return;
+        registry.saveConfig({ ...config, cudaBuildOffered: true });
+        const build = MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.DEFAULT);
+        this.journal.lifecycle(`cuda cross-check: the server reports an NVIDIA device on the ${build} build`);
+        this.offerAction(MESSAGES.NOTICE_CUDA_BUILD_AVAILABLE(build), MESSAGES.BUTTON_OPEN_UPDATE_SETTINGS, () =>
+            this.openServerUpdateSettings(),
+        );
+    }
+
     /** External mode: on launch, tell the user when the running server is not the
      *  latest release. Best-effort — silent when offline or the server is unreachable. */
     private async warnExternalServerOutdated(): Promise<void> {
@@ -1301,11 +1346,12 @@ export default class LilbeePlugin extends Plugin {
 
     private attachExportLink(notice: Notice): void {
         const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
-        link.addEventListener("click", () => void exportDiagnostics(this.diagnosticsContext()));
+        link.addEventListener("click", () => void this.diagnosticsContext().then(exportDiagnostics));
     }
 
-    /** Snapshot of plugin + server state for the diagnostics collector. */
-    diagnosticsContext(): DiagnosticsContext {
+    /** Snapshot of plugin + server state for the diagnostics collector. The engine
+     *  backend is only the server's to answer, so the snapshot asks for it. */
+    async diagnosticsContext(): Promise<DiagnosticsContext> {
         return {
             dataDir: this.serverManager?.dataDir ?? null,
             sharedRoot: this.vaultRegistry?.sharedRoot ?? null,
@@ -1315,10 +1361,22 @@ export default class LilbeePlugin extends Plugin {
             serverVersion: this.getSharedLilbeeVersion(),
             serverVariant: this.getSharedLilbeeVariant(),
             gpuDetection: this.getSharedGpuDetection(),
+            engineBackend: await this.readEngineBackend(),
             serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
             serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
+            serverBinaryPath: this.serverManager?.binaryPath ?? null,
             lastOutput: this.serverManager?.lastOutput ?? "",
         };
+    }
+
+    /** The backend the server reports, or null with the reason journalled. */
+    private async readEngineBackend(): Promise<string | null> {
+        try {
+            return await readEngineBackend(this.api);
+        } catch (err) {
+            this.journal.record("engine-backend", errorMessage(err, String(err)));
+            return null;
+        }
     }
 
     private showError(label: string, err: unknown): void {
@@ -1731,7 +1789,7 @@ export default class LilbeePlugin extends Plugin {
         this.addCommand({
             id: "export-diagnostics",
             name: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS,
-            callback: () => void exportDiagnostics(this.diagnosticsContext()),
+            callback: () => void this.diagnosticsContext().then(exportDiagnostics),
         });
 
         this.addCommand({
@@ -1866,7 +1924,12 @@ export default class LilbeePlugin extends Plugin {
     setSharedLilbeeVariant(variant: ServerVariant, detection: GpuDetection | null): void {
         const reg = this.vaultRegistry;
         if (!reg) return;
-        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant, lilbeeDetection: detection });
+        reg.saveConfig({
+            ...reg.loadConfig(),
+            lilbeeVariant: variant,
+            lilbeeDetection: detection,
+            cudaBuildOffered: false,
+        });
     }
 
     isServerAutoUpdateEnabled(): boolean {
