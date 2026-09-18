@@ -452,6 +452,7 @@ export const MESSAGES = {
     COMMAND_MODEL_INFO_CHAT: "Show info for active chat model",
     COMMAND_MODEL_INFO_EMBED: "Show info for active embedding model",
     NOTICE_NO_ACTIVE_MODEL: (task: string): string => `No active ${task} model is set.`,
+    NOTICE_MODEL_INFO_UNAVAILABLE: (model: string): string => `The server has no details for ${model}.`,
     LABEL_TASK: "Task",
     LABEL_DOWNLOADS_COUNT: (count: string) => `${count} downloads`,
     LABEL_SIZE_SMALL: "Small",

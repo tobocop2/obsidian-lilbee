@@ -3,7 +3,8 @@ import { windowStub } from "../window-stub";
 import { App } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ModelInfoModal } from "../../src/views/model-info-modal";
-import type { CatalogEntry } from "../../src/types";
+import { MODEL_INFO_SOURCE, MODEL_TASK } from "../../src/types";
+import type { CatalogEntry, ModelInfoSource } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -25,6 +26,10 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     };
 }
 
+function catalogSource(entry: CatalogEntry): ModelInfoSource {
+    return { kind: MODEL_INFO_SOURCE.CATALOG, entry };
+}
+
 function content(modal: ModelInfoModal): MockElement {
     return (modal as unknown as { contentEl: MockElement }).contentEl;
 }
@@ -41,7 +46,7 @@ describe("ModelInfoModal", () => {
     });
 
     it("renders the title and shared model-detail block on open", () => {
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, makeEntry());
+        const modal = new ModelInfoModal(new App() as never, fakePlugin, catalogSource(makeEntry()));
         modal.open();
         const c = content(modal);
         expect(c.classList.contains("lilbee-model-info-modal")).toBe(true);
@@ -52,7 +57,7 @@ describe("ModelInfoModal", () => {
     });
 
     it("renders the More info section with task, params, RAM, downloads", () => {
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, makeEntry());
+        const modal = new ModelInfoModal(new App() as never, fakePlugin, catalogSource(makeEntry()));
         modal.open();
         const section = content(modal).find("lilbee-model-info-section");
         expect(section).not.toBeNull();
@@ -69,7 +74,7 @@ describe("ModelInfoModal", () => {
             context_window: 32768,
             quantization: "Q4_K_M",
         } as CatalogEntry & { context_window: number; quantization: string };
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, entry);
+        const modal = new ModelInfoModal(new App() as never, fakePlugin, catalogSource(entry));
         modal.open();
         const labels = content(modal)
             .findAll("lilbee-model-info-label")
@@ -80,7 +85,7 @@ describe("ModelInfoModal", () => {
 
     it("omits optional rows when their data is missing", () => {
         const entry = makeEntry({ param_count: "", min_ram_gb: 0, downloads: 0 });
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, entry);
+        const modal = new ModelInfoModal(new App() as never, fakePlugin, catalogSource(entry));
         modal.open();
         const labels = content(modal)
             .findAll("lilbee-model-info-label")
@@ -91,7 +96,11 @@ describe("ModelInfoModal", () => {
     });
 
     it("renders the Hugging Face link with the correct href", () => {
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, makeEntry({ hf_repo: "qwen/qwen3-8b" }));
+        const modal = new ModelInfoModal(
+            new App() as never,
+            fakePlugin,
+            catalogSource(makeEntry({ hf_repo: "qwen/qwen3-8b" })),
+        );
         modal.open();
         const link = content(modal).find("lilbee-hf-link");
         expect(link).not.toBeNull();
@@ -103,7 +112,11 @@ describe("ModelInfoModal", () => {
     it("invokes window.open in a new tab when the HF link is clicked", () => {
         const openSpy = vi.fn();
         vi.stubGlobal("window", windowStub({ open: openSpy }));
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, makeEntry({ hf_repo: "qwen/qwen3-8b" }));
+        const modal = new ModelInfoModal(
+            new App() as never,
+            fakePlugin,
+            catalogSource(makeEntry({ hf_repo: "qwen/qwen3-8b" })),
+        );
         modal.open();
         const link = content(modal).find("lilbee-hf-link")!;
         link.trigger("click", { preventDefault: vi.fn() });
@@ -111,8 +124,44 @@ describe("ModelInfoModal", () => {
     });
 
     it("skips the HF link when hf_repo is empty", () => {
-        const modal = new ModelInfoModal(new App() as never, fakePlugin, makeEntry({ hf_repo: "" }));
+        const modal = new ModelInfoModal(new App() as never, fakePlugin, catalogSource(makeEntry({ hf_repo: "" })));
         modal.open();
         expect(content(modal).find("lilbee-hf-link")).toBeNull();
+    });
+
+    describe("server source", () => {
+        function serverSource(details: Record<string, string>): ModelInfoSource {
+            return {
+                kind: MODEL_INFO_SOURCE.SERVER,
+                ref: "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf",
+                task: MODEL_TASK.CHAT,
+                details,
+            };
+        }
+
+        it("names the model by its ref and lists the task and the server's rows", () => {
+            const modal = new ModelInfoModal(
+                new App() as never,
+                fakePlugin,
+                serverSource({ architecture: "qwen3", context_length: "32768" }),
+            );
+            modal.open();
+            const c = content(modal);
+            expect(c.find("lilbee-detail-name")?.textContent).toBe("Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf");
+            const labels = c.findAll("lilbee-model-info-label").map((el) => el.textContent);
+            expect(labels).toEqual([
+                MESSAGES.MODEL_INFO_TASK,
+                MESSAGES.LABEL_STATUS_ARCHITECTURE,
+                MESSAGES.LABEL_STATUS_CONTEXT_LENGTH,
+            ]);
+            const values = c.findAll("lilbee-model-info-value").map((el) => el.textContent);
+            expect(values).toEqual(["chat", "qwen3", "32768"]);
+        });
+
+        it("omits the Hugging Face link, because the ref need not be a Hugging Face repo", () => {
+            const modal = new ModelInfoModal(new App() as never, fakePlugin, serverSource({ architecture: "qwen3" }));
+            modal.open();
+            expect(content(modal).find("lilbee-hf-link")).toBeNull();
+        });
     });
 });
