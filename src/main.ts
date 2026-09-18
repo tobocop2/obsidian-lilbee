@@ -472,7 +472,8 @@ export default class LilbeePlugin extends Plugin {
             }
         }
 
-        if (!this.settings.setupCompleted) {
+        // A run left part-way records a server but not a finished wizard, so the remaining steps still run.
+        if (!this.settings.wizardCompleted) {
             new SetupWizard(this.app, this).open();
         }
 
@@ -1800,6 +1801,8 @@ export default class LilbeePlugin extends Plugin {
         // Object.assign only merges one level, so a stored agentIntegration would
         // shadow the defaults of any key added to it later.
         this.settings.agentIntegration = { ...DEFAULT_AGENT_INTEGRATION, ...(raw?.agentIntegration ?? {}) };
+        // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
+        this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
         this.previousServerMode = this.settings.serverMode;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());

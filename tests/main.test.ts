@@ -1056,6 +1056,27 @@ describe("LilbeePlugin", () => {
             expect(SetupWizard).toHaveBeenCalled();
         });
 
+        it("re-opens the setup wizard when a server answered but the wizard never reached an end", async () => {
+            const { SetupWizard } = await import("../src/views/setup-wizard");
+            (SetupWizard as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin({
+                serverMode: "external",
+                setupCompleted: true,
+                wizardCompleted: false,
+            });
+            await plugin.onload();
+            expect(SetupWizard).toHaveBeenCalled();
+        });
+
+        it("treats a vault recorded before the wizard flag existed as one that finished setup", async () => {
+            const { SetupWizard } = await import("../src/views/setup-wizard");
+            (SetupWizard as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin({ serverMode: "external", setupCompleted: true });
+            await plugin.onload();
+            expect(plugin.settings.wizardCompleted).toBe(true);
+            expect(SetupWizard).not.toHaveBeenCalled();
+        });
+
         it("does not auto-open setup wizard when setupCompleted is true", async () => {
             const { SetupWizard } = await import("../src/views/setup-wizard");
             (SetupWizard as ReturnType<typeof vi.fn>).mockClear();

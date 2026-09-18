@@ -2580,3 +2580,22 @@ describe("CatalogModal fetch generation", () => {
         modal.close();
     });
 });
+
+describe("CatalogModal opened over another modal", () => {
+    it("openCatalog resolves when the catalog closes", async () => {
+        const plugin = makePlugin();
+        const modal = new CatalogModal(new App() as any, plugin as any, "", CATALOG_TAB.CHAT);
+        let closed = false;
+        const waiting = modal.openCatalog().then(() => {
+            closed = true;
+        });
+        await tick();
+        await tick();
+        expect(closed).toBe(false);
+
+        modal.close();
+        await waiting;
+
+        expect(closed).toBe(true);
+    });
+});

@@ -753,14 +753,7 @@ export class SetupWizard extends Modal {
         });
 
         const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
-        catalogBtn.addEventListener("click", () => {
-            // Close the wizard first so the catalog modal isn't stacked on top
-            // of two close-X buttons. Users can re-open the wizard from the
-            // settings tab if they want to come back; their model selection is
-            // saved on the catalog side via the regular Use button.
-            this.close();
-            new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).open();
-        });
+        catalogBtn.addEventListener("click", () => void this.browseCatalog());
 
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
         this.primaryBtn = downloadBtn;
@@ -781,6 +774,12 @@ export class SetupWizard extends Modal {
         });
 
         void this.loadFeaturedModels(modelsContainer, memGB, statusEl, downloadBtn);
+    }
+
+    /** The catalog opens over the wizard; the step is read again on close, so the remaining steps still run. */
+    private async browseCatalog(): Promise<void> {
+        await new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).openCatalog();
+        this.renderStep();
     }
 
     private async loadFeaturedModels(
@@ -1457,11 +1456,15 @@ export class SetupWizard extends Modal {
     }
 
     skip(): void {
+        // An explicit skip ends the wizard; it claims no server, so setupCompleted is left alone.
+        this.plugin.settings.wizardCompleted = true;
+        void this.plugin.saveSettings();
         this.close();
     }
 
     async complete(): Promise<void> {
         this.plugin.settings.setupCompleted = true;
+        this.plugin.settings.wizardCompleted = true;
         await this.plugin.saveSettings();
         this.close();
         // The done step's action is an explicit "Open chat", so land the user

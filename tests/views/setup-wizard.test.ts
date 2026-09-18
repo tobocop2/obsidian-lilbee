@@ -15,6 +15,7 @@ vi.mock("../../src/views/catalog-modal", () => ({
         return {
             open: vi.fn(),
             close: vi.fn(),
+            openCatalog: vi.fn().mockResolvedValue(undefined),
         };
     }),
 }));
@@ -1491,6 +1492,31 @@ describe("SetupWizard", () => {
             catalogBtn.trigger("click");
 
             expect(CatalogModal).toHaveBeenCalled();
+        });
+
+        it("Browse full catalog keeps the wizard open and re-reads the model step when the catalog closes", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const closeSpy = vi.spyOn(wizard, "close");
+            wizard.open();
+            wizard.next();
+            await tick();
+            const readsBeforeBrowsing = (plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length;
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Browse full catalog")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(closeSpy).not.toHaveBeenCalled();
+            expect((plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
+                readsBeforeBrowsing,
+            );
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
         });
 
         it("Back cancels ongoing pull", async () => {
@@ -3999,6 +4025,32 @@ describe("SetupWizard", () => {
 
             expect(plugin.settings.setupCompleted).toBe(false);
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(true);
+        });
+
+        it("skipping records the wizard as finished without claiming a server", () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.skip();
+
+            expect(plugin.settings.wizardCompleted).toBe(true);
+            expect(plugin.settings.setupCompleted).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("completing the wizard records it as finished and keeps the server recorded", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            await wizard.complete();
+
+            expect(plugin.settings.wizardCompleted).toBe(true);
+            expect(plugin.settings.setupCompleted).toBe(true);
         });
     });
 
