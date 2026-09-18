@@ -8470,6 +8470,249 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("post-start CUDA build cross-check", () => {
+        const DEFAULT_BUILD = MESSAGES.LABEL_SERVER_BUILD("default");
+
+        /** A device the server's GPU report names. */
+        const device = (name: string) => ({
+            index: 0,
+            backend: "Vulkan",
+            label: "Vulkan0",
+            name,
+            total_bytes: 1,
+            free_bytes: 1,
+        });
+
+        const reportOf = (names: string[]) =>
+            ok({
+                gpus: names.map(device),
+                roles: [],
+                unplaceable: [],
+                manual: false,
+                spec_json: null,
+                rejected_spec_json: null,
+            });
+
+        /** The shared config a cross-check reads: the update check is already stamped for this version. */
+        const seedConfig = (overrides: Record<string, unknown> = {}) => {
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+                lilbeeVariant: "default",
+                lastUpdateCheckPluginVersion: "0.1.0",
+                ...overrides,
+            });
+            return vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+        };
+
+        const startWith = async (placement: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}) => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const save = seedConfig(overrides);
+            plugin.api.placement = placement;
+            await plugin.onload();
+            await flush();
+            return { plugin, save, placement };
+        };
+
+        const offerNotice = () =>
+            Notice.instances.find((n) => n.message === MESSAGES.NOTICE_CUDA_BUILD_AVAILABLE(DEFAULT_BUILD));
+
+        it("offers the CUDA build when the default build runs on a host reporting an NVIDIA device", async () => {
+            const { save } = await startWith(vi.fn().mockResolvedValue(reportOf(["NVIDIA GeForce RTX 4080 SUPER"])));
+
+            expect(offerNotice()).toBeDefined();
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("stays silent when a CUDA build is already installed", async () => {
+            const { save, placement } = await startWith(
+                vi.fn().mockResolvedValue(reportOf(["NVIDIA GeForce RTX 4080 SUPER"])),
+                { lilbeeVariant: "cu124" },
+            );
+
+            expect(offerNotice()).toBeUndefined();
+            expect(placement).not.toHaveBeenCalled();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        /** A recorded probe, as the shared config stores it beside the installed build. */
+        const detection = (nvidia: Record<string, unknown>) => ({
+            nvidia,
+            amd: { status: "missing" },
+            detectedAt: "2026-01-01T00:00:00.000Z",
+        });
+
+        const nvidiaReport = () => vi.fn().mockResolvedValue(reportOf(["NVIDIA GeForce RTX 4080 SUPER"]));
+
+        it("stays silent when the probe read a CUDA version below the build floor", async () => {
+            const { save, placement } = await startWith(nvidiaReport(), {
+                lilbeeDetection: detection({ status: "detected", cudaCeiling: 1108 }),
+            });
+
+            expect(offerNotice()).toBeUndefined();
+            expect(placement).not.toHaveBeenCalled();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        // Windows ships no CUDA 12.1 build, so the launcher answers a 12.1 driver with the
+        // default build. The ceiling clears the floor and the default build is still correct.
+        it("stays silent when the probe read a CUDA version the host has no build for", async () => {
+            const { save, placement } = await startWith(nvidiaReport(), {
+                lilbeeDetection: detection({ status: "detected", cudaCeiling: 1201 }),
+            });
+
+            expect(offerNotice()).toBeUndefined();
+            expect(placement).not.toHaveBeenCalled();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("stays silent when lilbee ships one build for the platform", async () => {
+            const { placement } = await startWith(nvidiaReport(), {
+                lilbeeDetection: detection({ status: "skipped" }),
+            });
+
+            expect(offerNotice()).toBeUndefined();
+            expect(placement).not.toHaveBeenCalled();
+        });
+
+        it("offers when nvidia-smi did not run", async () => {
+            const { save } = await startWith(nvidiaReport(), {
+                lilbeeDetection: detection({ status: "missing", error: "nvidia-smi not found" }),
+            });
+
+            expect(offerNotice()).toBeDefined();
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("offers when a sandbox hides nvidia-smi", async () => {
+            const { save } = await startWith(nvidiaReport(), {
+                lilbeeDetection: detection({ status: "sandboxed" }),
+            });
+
+            expect(offerNotice()).toBeDefined();
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("offers when nvidia-smi named no CUDA version", async () => {
+            const { save } = await startWith(nvidiaReport(), {
+                lilbeeDetection: detection({ status: "unreadable" }),
+            });
+
+            expect(offerNotice()).toBeDefined();
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("offers when the install recorded no probe at all", async () => {
+            const { save } = await startWith(nvidiaReport(), { lilbeeDetection: null });
+
+            expect(offerNotice()).toBeDefined();
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("re-arms the offer when the same default build is reinstalled", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const save = seedConfig({ cudaBuildOffered: true });
+            await plugin.onload();
+            await flush();
+            save.mockClear();
+
+            plugin.setSharedLilbeeVariant("default", null);
+
+            expect(save).toHaveBeenCalledWith(
+                expect.objectContaining({ lilbeeVariant: "default", cudaBuildOffered: false }),
+            );
+        });
+
+        it("stays silent when the server reports no NVIDIA device", async () => {
+            const { save } = await startWith(vi.fn().mockResolvedValue(reportOf(["AMD Radeon RX 7900 XTX"])));
+
+            expect(offerNotice()).toBeUndefined();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("stays silent when the server reports no device at all", async () => {
+            const { save } = await startWith(vi.fn().mockResolvedValue(reportOf([])));
+
+            expect(offerNotice()).toBeUndefined();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("stays silent when the device probe is unavailable", async () => {
+            const { save } = await startWith(vi.fn().mockResolvedValue(err(new Error("connection refused"))));
+
+            expect(offerNotice()).toBeUndefined();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("journals the reason and stays silent when the device probe throws", async () => {
+            const { plugin, save } = await startWith(vi.fn().mockRejectedValue(new Error("aborted")));
+
+            expect(offerNotice()).toBeUndefined();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("aborted");
+        });
+
+        it("does not offer again once the offer is recorded", async () => {
+            const { placement, save } = await startWith(
+                vi.fn().mockResolvedValue(reportOf(["NVIDIA GeForce RTX 4080 SUPER"])),
+                { cudaBuildOffered: true },
+            );
+
+            expect(offerNotice()).toBeUndefined();
+            expect(placement).not.toHaveBeenCalled();
+            expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: true }));
+        });
+
+        it("does not cross-check in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            seedConfig();
+            const placement = vi.fn().mockResolvedValue(reportOf(["NVIDIA GeForce RTX 4080 SUPER"]));
+            plugin.api.placement = placement;
+            await plugin.onload();
+            await flush();
+
+            expect(offerNotice()).toBeUndefined();
+            expect(placement).not.toHaveBeenCalled();
+        });
+
+        it("the offer opens the server settings", async () => {
+            const { plugin } = await startWith(vi.fn().mockResolvedValue(reportOf(["NVIDIA GeForce RTX 4080 SUPER"])));
+            const open = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
+            const scroll = vi.fn();
+            (plugin as any).settingTab = { scrollToServerUpdate: scroll };
+
+            const notice = offerNotice()!;
+            const link = (notice.messageEl as unknown as MockElement).children.find((c) => c.tagName === "A");
+            expect(link!.textContent).toBe(MESSAGES.BUTTON_OPEN_UPDATE_SETTINGS);
+            link!.trigger("click");
+
+            expect(open).toHaveBeenCalledTimes(1);
+            expect(scroll).toHaveBeenCalledTimes(1);
+        });
+
+        it("bails when no vault registry exists", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const placement = vi.fn();
+            plugin.api.placement = placement;
+            (plugin as any).vaultRegistry = null;
+
+            await (plugin as any).offerCudaBuild();
+
+            expect(placement).not.toHaveBeenCalled();
+        });
+
+        it("clears the offer record when a newly installed build is recorded", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const save = seedConfig({ cudaBuildOffered: true });
+            await plugin.onload();
+            await flush();
+            save.mockClear();
+
+            plugin.setSharedLilbeeVariant("cu124", null);
+
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ cudaBuildOffered: false }));
+        });
+    });
+
     describe("server update reminder setting", () => {
         it("defaults to on, persists a change, and journals it once", async () => {
             const plugin = await createPlugin();

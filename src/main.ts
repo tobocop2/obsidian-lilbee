@@ -21,7 +21,7 @@ import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from ".
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
-import { readEngineBackend } from "./engine-backend";
+import { hasNvidiaDevice, readEngineBackend, readFleetDevices } from "./engine-backend";
 import { ErrorJournal } from "./error-journal";
 import { ServerBinary, getLatestRelease, checkForUpdate, isDownloadCanceled, migrateFlatBinary } from "./server-binary";
 import type { DownloadProgress, EnsureResult, ReleaseInfo } from "./server-binary";
@@ -49,8 +49,10 @@ import {
     REQUEST_OUTCOME,
     SERVER_MODE,
     SERVER_STATE,
+    SERVER_VARIANT,
     SETUP_OUTCOME,
     SSE_EVENT,
+    cudaVersionUnknown,
     SYNC_TRIGGER,
     TASK_STATUS,
     TASK_TYPE,
@@ -60,6 +62,7 @@ import {
     type DiagnosticsContext,
     type DotState,
     type GpuDetection,
+    type GpuInfo,
     CHAT_STATUS,
     type ChatStatus,
     type HealthResponse,
@@ -475,7 +478,7 @@ export default class LilbeePlugin extends Plugin {
                     // If the user opts into external mode from the consent modal,
                     // drop them on the plugin's external-server settings.
                     if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) this.openPluginSettings();
-                    if (outcome.kind === SETUP_OUTCOME.STARTED) void this.autoUpdateServerBinary();
+                    if (outcome.kind === SETUP_OUTCOME.STARTED) void this.afterManagedStart();
                 });
             } else {
                 this.configureApi(this.settings.serverUrl);
@@ -976,11 +979,20 @@ export default class LilbeePlugin extends Plugin {
 
     /** Claudian caches its data file at load, so a change only lands after a reload. */
     private offerClaudianReload(): void {
-        const notice = new Notice(MESSAGES.NOTICE_CLAUDIAN_UPDATED, NOTICE_PERMANENT);
-        const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_RELOAD_CLAUDIAN });
+        this.offerAction(
+            MESSAGES.NOTICE_CLAUDIAN_UPDATED,
+            MESSAGES.BUTTON_RELOAD_CLAUDIAN,
+            () => void reloadClaudian(this.app),
+        );
+    }
+
+    /** A notice that stays up until the user takes its action or dismisses it. */
+    private offerAction(message: string, label: string, act: () => void): void {
+        const notice = new Notice(message, NOTICE_PERMANENT);
+        const link = notice.messageEl.createEl("a", { text: label });
         link.addEventListener("click", () => {
             notice.hide();
-            void reloadClaudian(this.app);
+            act();
         });
     }
 
@@ -1248,6 +1260,38 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             notice.hide();
         }
+    }
+
+    /** Work that needs a running server, in order: the update check, then the build cross-check. */
+    private async afterManagedStart(): Promise<void> {
+        await this.autoUpdateServerBinary();
+        await this.offerCudaBuild();
+    }
+
+    /** The installed build against the devices the running server reports. A default
+     *  build chosen without the driver's CUDA version, on a host reporting an NVIDIA
+     *  card, gets the CUDA build offered once. */
+    private async offerCudaBuild(): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const config = registry.loadConfig();
+        if (config.cudaBuildOffered) return;
+        if (this.getSharedLilbeeVariant() !== SERVER_VARIANT.DEFAULT) return;
+        if (!cudaVersionUnknown(this.getSharedGpuDetection())) return;
+        let devices: readonly GpuInfo[] | null;
+        try {
+            devices = await readFleetDevices(this.api);
+        } catch (err) {
+            this.journal.record("cuda-cross-check", errorMessage(err, String(err)));
+            return;
+        }
+        if (devices === null || !hasNvidiaDevice(devices)) return;
+        registry.saveConfig({ ...config, cudaBuildOffered: true });
+        const build = MESSAGES.LABEL_SERVER_BUILD(SERVER_VARIANT.DEFAULT);
+        this.journal.lifecycle(`cuda cross-check: the server reports an NVIDIA device on the ${build} build`);
+        this.offerAction(MESSAGES.NOTICE_CUDA_BUILD_AVAILABLE(build), MESSAGES.BUTTON_OPEN_UPDATE_SETTINGS, () =>
+            this.openServerUpdateSettings(),
+        );
     }
 
     /** External mode: on launch, tell the user when the running server is not the
@@ -1903,7 +1947,12 @@ export default class LilbeePlugin extends Plugin {
     setSharedLilbeeVariant(variant: ServerVariant, detection: GpuDetection | null): void {
         const reg = this.vaultRegistry;
         if (!reg) return;
-        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant, lilbeeDetection: detection });
+        reg.saveConfig({
+            ...reg.loadConfig(),
+            lilbeeVariant: variant,
+            lilbeeDetection: detection,
+            cudaBuildOffered: false,
+        });
     }
 
     isServerAutoUpdateEnabled(): boolean {

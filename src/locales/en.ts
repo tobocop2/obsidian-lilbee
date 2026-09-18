@@ -787,6 +787,11 @@ export const MESSAGES = {
     BUTTON_OPEN_UPDATE_SETTINGS: "Open update settings",
     BUTTON_NOT_NOW: "Not now",
     BUTTON_STOP_REMINDING: "Stop reminding me",
+    /** The installed build does not match the devices the running server reports. */
+    NOTICE_CUDA_BUILD_AVAILABLE: (build: string): string =>
+        `lilbee runs the ${build} build, but the server reports an NVIDIA device. The plugin does not know this ` +
+        `driver's CUDA version, so it installed the build that runs anywhere. Make nvidia-smi reachable from ` +
+        `Obsidian, then reinstall the server to get the CUDA build.`,
     NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
         `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",

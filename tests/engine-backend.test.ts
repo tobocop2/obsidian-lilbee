@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { LilbeeClient } from "../src/api";
-import { readEngineBackend } from "../src/engine-backend";
+import { hasNvidiaDevice, readEngineBackend, readFleetDevices } from "../src/engine-backend";
 import { err, ok } from "../src/result";
 import { ENGINE_BACKEND_CPU } from "../src/types";
 import type { GpuInfo, PlacementResponse } from "../src/types";
@@ -79,4 +79,30 @@ describe("readEngineBackend", () => {
             vi.unstubAllGlobals();
         }
     }, 15_000);
+});
+
+describe("readFleetDevices", () => {
+    it("returns the devices the server reports", async () => {
+        const { api } = clientReturning(ok(placement([gpu(), gpu({ index: 1 })])));
+        await expect(readFleetDevices(api)).resolves.toHaveLength(2);
+    });
+
+    it("returns null when the server cannot report a placement", async () => {
+        const { api } = clientReturning(err(new Error("connection refused")));
+        await expect(readFleetDevices(api)).resolves.toBeNull();
+    });
+});
+
+describe("hasNvidiaDevice", () => {
+    it("names an NVIDIA device whatever case the server reports it in", () => {
+        expect(hasNvidiaDevice([gpu({ name: "nvidia geforce rtx 4080 super" })])).toBe(true);
+    });
+
+    it("is false when no device name mentions NVIDIA", () => {
+        expect(hasNvidiaDevice([gpu({ name: "AMD Radeon RX 7900 XTX" })])).toBe(false);
+    });
+
+    it("is false when the server reports no device", () => {
+        expect(hasNvidiaDevice([])).toBe(false);
+    });
 });
