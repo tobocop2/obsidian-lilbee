@@ -251,7 +251,8 @@ describe("MESSAGES", () => {
 
         it("NOTICE_DELETED produces correct output", () => {
             expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: removed 5 documents");
-            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 documents");
+            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 document");
+            expect(MESSAGES.NOTICE_DELETED(0)).toBe("lilbee: removed 0 documents");
         });
 
         it("NOTICE_SAVED produces correct output", () => {
@@ -286,7 +287,8 @@ describe("MESSAGES", () => {
 
         it("NOTICE_DELETED produces correct output", () => {
             expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: removed 5 documents");
-            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 documents");
+            expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: removed 1 document");
+            expect(MESSAGES.NOTICE_DELETED(0)).toBe("lilbee: removed 0 documents");
         });
 
         it("NOTICE_SAVED produces correct output", () => {
