@@ -20,6 +20,8 @@ import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
 import { ChatView } from "../src/views/chat-view";
+import { ServerBinary } from "../src/server-binary";
+import { ManagedConsentModal } from "../src/views/managed-consent-modal";
 import { exportDatasetToDisk, importDatasetFromDisk } from "../src/dataset-io";
 vi.mock("../src/dataset-io", () => ({
     exportDatasetToDisk: vi.fn().mockResolvedValue(undefined),
@@ -5928,6 +5930,22 @@ describe("LilbeePlugin", () => {
 
             expect(settingsSpy).toHaveBeenCalled();
             expect(plugin.settings.serverMode).toBe("external");
+        });
+
+        it("hands the modal the same directory the binary installs into", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockConsentResult = { kind: "cancel" };
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            vi.mocked(ServerBinary).mockClear();
+            vi.mocked(ManagedConsentModal).mockClear();
+
+            await plugin.ensureManagedConsentThenStart();
+
+            const installDirs = vi.mocked(ServerBinary).mock.calls.map((call) => call[0]);
+            const shown = vi.mocked(ManagedConsentModal).mock.calls[0][2];
+            expect(installDirs.length).toBeGreaterThan(0);
+            expect(installDirs).toContain(shown);
         });
 
         it("cancel outcome fires a Notice and leaves managed mode without starting", async () => {

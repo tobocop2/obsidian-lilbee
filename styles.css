@@ -4176,6 +4176,33 @@ button.lilbee-model-chip-select:focus-visible {
     color: var(--text-faint);
 }
 
+.lilbee-managed-consent-install {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    margin-top: 9px;
+}
+
+.lilbee-managed-consent-install-label {
+    font-size: 9.5px;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    font-family: var(--font-interface);
+}
+
+/* The path takes its own line and wraps: a consent dialog cannot truncate the destination. */
+.lilbee-managed-consent-install-path {
+    flex: 1 1 100%;
+    font-size: 11px;
+    font-family: var(--font-monospace);
+    color: var(--text-muted);
+    word-break: break-all;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
 .lilbee-managed-consent-card-ins {
     font-size: 11.5px;
     color: var(--text-muted);
