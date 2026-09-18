@@ -875,7 +875,7 @@ export const MESSAGES = {
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
-    NOTICE_DELETED: (count: number) => `lilbee: removed ${count} documents`,
+    NOTICE_DELETED: (count: number) => `lilbee: removed ${count} ${count === 1 ? "document" : "documents"}`,
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
