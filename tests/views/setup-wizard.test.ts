@@ -4599,6 +4599,99 @@ describe("SetupWizard", () => {
 
             expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
         });
+
+        function vendorQuant(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+            return makeEntry({
+                hf_repo: "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF",
+                display_name: "Flash Next ROCmFP4 FAST Imatrix",
+                gguf_filename: "Flash-Next-ROCmFP4-FAST-Imatrix-Q4_K_M.gguf",
+                ...overrides,
+            });
+        }
+
+        function onPlatform(name: NodeJS.Platform) {
+            return vi.spyOn(process, "platform", "get").mockReturnValue(name);
+        }
+
+        it("replaces a vendor quant macOS cannot run", async () => {
+            const platform = onPlatform("darwin");
+            try {
+                const featured = featuredRow(2).concat(
+                    vendorQuant(),
+                    vendorQuant({
+                        hf_repo: "bartowski/Flash-Next-CUDA12-GGUF",
+                        display_name: "Flash Next CUDA12",
+                        gguf_filename: "Flash-Next-CUDA12-Q4_K_M.gguf",
+                    }),
+                );
+                const wider = [...featured, catalogRow(0), catalogRow(1)];
+
+                const { el } = await openPicksStep(splitCatalog(featured, wider));
+
+                // A Mac has neither the AMD nor the NVIDIA runtime these quants are built for.
+                expect(renderedRepos(el)).toEqual(["f/0", "f/1", "org/Other-0-GGUF", "org/Other-1-GGUF"]);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("keeps a vendor quant on Linux, where a card can serve it", async () => {
+            const platform = onPlatform("linux");
+            try {
+                const featured = featuredRow(1).concat(vendorQuant());
+
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+
+                expect(renderedRepos(el)).toEqual(["f/0", "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF"]);
+                expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("keeps a hosted row on macOS whose name carries a vendor marker", async () => {
+            const platform = onPlatform("darwin");
+            try {
+                const featured = featuredRow(1).concat(
+                    makeEntry({
+                        hf_repo: "ollama/rocm6-tuned:7b",
+                        display_name: "ROCm6 tuned 7B",
+                        source: "ollama",
+                        provider: "ollama",
+                        key_status: null,
+                        installed: true,
+                    }),
+                );
+
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+
+                // A hosted row runs on the provider's hardware, so this host decides nothing about it.
+                expect(renderedRepos(el)).toEqual(["f/0", "ollama/rocm6-tuned:7b"]);
+                expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("keeps a row on macOS whose name holds a vendor marker only inside a word", async () => {
+            const platform = onPlatform("darwin");
+            try {
+                const featured = featuredRow(1).concat(
+                    vendorQuant({
+                        hf_repo: "org/Barracuda7B-GGUF",
+                        display_name: "Barracuda 7B",
+                        gguf_filename: "Barracuda7B-Q4_K_M.gguf",
+                    }),
+                );
+
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+
+                expect(renderedRepos(el)).toEqual(["f/0", "org/Barracuda7B-GGUF"]);
+                expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            } finally {
+                platform.mockRestore();
+            }
+        });
     });
 
     describe("recommendation skips hosted rows", () => {

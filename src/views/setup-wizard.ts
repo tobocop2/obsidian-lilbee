@@ -27,7 +27,7 @@ import {
     MODEL_TASK,
 } from "../types";
 import { CatalogModal } from "./catalog-modal";
-import { isUsableHostedRow } from "./catalog-helpers";
+import { isForeignVendorQuant, isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 import { reindexSyncOptions } from "../utils/reindex";
@@ -146,9 +146,11 @@ const MAX_FEATURED_PICKS = 8;
 /** Rows asked of the catalog per request: enough that the ones that run can replace the ones that do not. */
 const PICKS_CATALOG_LIMIT = 40;
 
-/** A row the server says will not run here: the fit it reported is wont_run, or it refuses the architecture. */
+/** A row that will not run here: the server reported wont_run, it refuses the architecture, or the quant is built for another vendor. */
 function isUnrunnable(model: FeaturedModel): boolean {
-    return model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED;
+    return (
+        model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED || isForeignVendorQuant(model)
+    );
 }
 
 /** A row the wizard can offer in place of another: it runs here, and a hosted row is ready without an API key of its own. */

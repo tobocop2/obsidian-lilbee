@@ -8,6 +8,7 @@ import {
     KEY_STATUS,
     MODEL_COMPAT,
     MODEL_TASK,
+    PLATFORM,
 } from "../types";
 import { MESSAGES } from "../locales/en";
 
@@ -121,9 +122,29 @@ export function tabIdToTask(tab: CatalogTab): ModelTask | null {
 /** Role order for the For You rail, matching the server's own role ordering. */
 const FOR_YOU_ROLE_ORDER: ModelTask[] = [MODEL_TASK.CHAT, MODEL_TASK.EMBEDDING, MODEL_TASK.VISION, MODEL_TASK.RERANK];
 
-/** A catalog row a user can run: featured, supported, not known unrunnable, and key-ready when hosted. */
+/**
+ * The GPU toolkit a quant is built for: the toolkit name glued to the version or the precision it
+ * was built against, as in ROCmFP4 or CUDA12. A toolkit name standing on its own as a word is a
+ * subject or a publisher, not a build, so Barracuda and Cuda-Kernel-Coder are both left alone.
+ */
+const VENDOR_QUANT = /(^|[^a-z0-9])(rocm|cuda)(\d|fp|bf|q)/i;
+
+/** A quant built for a GPU toolkit macOS does not have. The catalog reports no vendor, so the name is the only signal. */
+export function isForeignVendorQuant(entry: CatalogEntry): boolean {
+    if (process.platform !== PLATFORM.DARWIN || HOSTED_SOURCES.has(entry.source)) return false;
+    // The first repo segment names who published the file, not how it was built, so it is dropped.
+    const modelName = entry.hf_repo.slice(entry.hf_repo.indexOf("/") + 1);
+    return VENDOR_QUANT.test(`${modelName} ${entry.gguf_filename}`);
+}
+
+/** A catalog row a user can run: featured, supported, not known unrunnable, not built for another vendor's GPU, and key-ready when hosted. */
 export function isRunnablePick(entry: CatalogEntry): boolean {
-    if (!entry.featured || entry.compat !== MODEL_COMPAT.SUPPORTED || entry.fit === HARDWARE_FIT.WONT_RUN) {
+    if (
+        !entry.featured ||
+        entry.compat !== MODEL_COMPAT.SUPPORTED ||
+        entry.fit === HARDWARE_FIT.WONT_RUN ||
+        isForeignVendorQuant(entry)
+    ) {
         return false;
     }
     return !HOSTED_SOURCES.has(entry.source) || isUsableHostedRow(entry);
