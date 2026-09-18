@@ -1357,12 +1357,15 @@ export interface GpuInfo {
 
 /** A live per-GPU activity snapshot from the GET /api/gpus/stream SSE stream.
  * `utilization_pct` is compute load (0-100), or null for backends that can't
- * report it; `free_bytes` moves as models load and ingest runs. */
+ * report it; `free_bytes` moves as models load and ingest runs.
+ * `temperature_c` is null on backends that don't report it (e.g. NVIDIA's
+ * four-column query), not just on backends that lack it entirely. */
 export interface GpuStat {
     index: number;
     utilization_pct: number | null;
     free_bytes: number;
     total_bytes: number;
+    temperature_c: number | null;
 }
 
 /** Server-issued hint when GPU monitoring is degraded (e.g. Intel hosts without intel_gpu_top). */

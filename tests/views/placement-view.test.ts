@@ -142,6 +142,9 @@ function utilVal(contentEl: MockElement, i: number): MockElement {
 function vramVal(contentEl: MockElement, i: number): MockElement {
     return contentEl.findAll("lilbee-meter-vram")[i].find("lilbee-meter-val")!;
 }
+function tempVal(contentEl: MockElement, i: number): MockElement {
+    return contentEl.findAll("lilbee-meter-temp")[i].find("lilbee-meter-val")!;
+}
 function utilFill(contentEl: MockElement, i: number): MockElement {
     return contentEl.findAll("lilbee-meter-util")[i].find("lilbee-bar-fill")!;
 }
@@ -1104,6 +1107,35 @@ describe("PlacementView live usage bars", () => {
         expect((view as unknown as { statsController: AbortController | null }).statsController).not.toBeNull();
         await view.onClose();
         expect((view as unknown as { statsController: AbortController | null }).statsController).toBeNull();
+    });
+
+    it("renders a temperature placeholder before any stats arrive", async () => {
+        const { contentEl } = await openView(makePlugin(makeApi()));
+        expect(tempVal(contentEl, 0).textContent).toBe("N/A");
+    });
+
+    it("shows the temperature reading from a live snapshot", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        (view as unknown as StatsApplier).applyStats([
+            { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB, temperature_c: 62 },
+        ]);
+        expect(tempVal(contentEl, 0).textContent).toBe("62°C");
+    });
+
+    it("shows N/A, not zero, for a null temperature (legitimate on NVIDIA hosts)", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        (view as unknown as StatsApplier).applyStats([
+            { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB, temperature_c: null },
+        ]);
+        expect(tempVal(contentEl, 0).textContent).toBe("N/A");
+        expect(tempVal(contentEl, 0).textContent).not.toBe("0°C");
+    });
+
+    it("shows N/A when the temperature field is absent from the payload entirely", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        const staleStat = { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB };
+        (view as unknown as StatsApplier).applyStats([staleStat as unknown as GpuStat]);
+        expect(tempVal(contentEl, 0).textContent).toBe("N/A");
     });
 });
 
