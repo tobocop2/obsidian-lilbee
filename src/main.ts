@@ -2913,6 +2913,8 @@ export default class LilbeePlugin extends Plugin {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         if (existing.length > 0) {
             void this.app.workspace.revealLeaf(existing[0]);
+            // A rail opened before a model was activated still shows the old one.
+            this.refreshOpenChatRails();
             return;
         }
         if (this.openingChatLeaf) return;

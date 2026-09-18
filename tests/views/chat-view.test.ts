@@ -4021,7 +4021,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         expect(openRailMenu(container, "lilbee-embed-model-select")).toBeNull();
-        expect(triggerText(container, "lilbee-embed-model-select")).toBe("");
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe(MESSAGES.LABEL_NO_MODEL_SELECTED);
     });
 
     it("shows confirmation modal when embedding model is changed", async () => {
@@ -6491,5 +6491,86 @@ describe("ChatView chat rail activates by concrete ref", () => {
         (view as any).activeEmbeddingModel = "org/mystery-embed.gguf";
         const options = (view as any).chatOtherOptions();
         expect(options.map((o: { value: string }) => o.value)).not.toContain("org/mystery-embed.gguf");
+    });
+});
+
+describe("ChatView rail chip when no option matches the active model", () => {
+    beforeEach(() => {
+        Notice.clear();
+        vi.clearAllMocks();
+    });
+
+    it("names the server's active chat model instead of the first menu option", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "XHToken/Spark-X2.5-1.7B-GGUF/Spark-X2.5-1.7B-Q4_K_M.gguf",
+            embedding_model: "nomic-embed-text",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        expect(menuTitles(menu)).toEqual(["llama3", "phi3"]);
+        expect(menu.menuItems.some((i) => i.checked)).toBe(false);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("Spark X2.5 1.7B");
+
+        await view.onClose();
+    });
+
+    it("shows the no-model placeholder when the server reports no chat model", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({ embedding_model: "nomic-embed-text" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(menuTitles(openRailMenu(container, "lilbee-chat-model-select"))).toEqual(["llama3", "phi3"]);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe(MESSAGES.LABEL_NO_MODEL_SELECTED);
+
+        await view.onClose();
+    });
+
+    it("names an active vision model that is absent from the role catalog", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            const models =
+                p?.task === "vision"
+                    ? [
+                          {
+                              hf_repo: "llava-7b",
+                              gguf_filename: "",
+                              display_name: "llava-7b",
+                              size_gb: 1,
+                              min_ram_gb: 1,
+                              description: "",
+                              quality_tier: "good",
+                              installed: true,
+                              source: "native",
+                              task: "vision",
+                              featured: true,
+                              downloads: 1,
+                              param_count: "",
+                          },
+                      ]
+                    : [];
+            return Promise.resolve(ok({ total: models.length, limit: 50, offset: 0, models, has_more: false }));
+        });
+        (plugin.api as any).config = vi.fn().mockResolvedValue({ chat_model: "llama3", vision_model: "moondream2" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(menuTitles(openRailMenu(container, "lilbee-vision-model-select"))).toEqual([
+            "(disabled)",
+            "llava-7b",
+            "Browse catalog…",
+        ]);
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe("moondream2");
+
+        await view.onClose();
     });
 });
