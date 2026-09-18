@@ -1292,6 +1292,21 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
         });
 
+        it("refreshes the rail when the chat view is already open", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const refreshRail = vi.fn();
+            const leaf = Object.assign(new WorkspaceLeaf(plugin.app as any), {
+                view: Object.assign(Object.create(ChatView.prototype), { refreshRail }),
+            });
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+
+            await (plugin as any).activateChatView();
+
+            expect(refreshRail).toHaveBeenCalledTimes(1);
+        });
+
         it("sets view state on right leaf when no chat view exists", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
