@@ -766,6 +766,8 @@ export interface SharedConfig {
     serverUninstalled: boolean;
     /** Show a reminder on launch while a newer server release exists and automatic updates are off. */
     serverUpdateReminder: boolean;
+    /** The CUDA build was already offered for the build now installed. */
+    cudaBuildOffered: boolean;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
@@ -777,6 +779,7 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     serverAutoUpdate: true,
     serverUninstalled: false,
     serverUpdateReminder: true,
+    cudaBuildOffered: false,
 };
 
 /** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
@@ -1339,6 +1342,9 @@ export const PLACEMENT_MODE = {
 /** The backend name for a fleet the server reports no usable device for. */
 export const ENGINE_BACKEND_CPU = "cpu";
 
+/** Lower-case substring an NVIDIA device carries in the name the server reports. */
+export const NVIDIA_DEVICE_MARKER = "nvidia";
+
 /** One detected GPU. Mirrors the server's GpuInfoResponse. */
 export interface GpuInfo {
     index: number;
@@ -1562,6 +1568,20 @@ export interface GpuDetection {
     amd: AmdProbe;
     /** When the probe ran, ISO 8601. */
     detectedAt: string;
+}
+
+/** Probe outcomes that leave the driver's CUDA version unknown. */
+const CUDA_VERSION_UNREAD: ReadonlySet<NvidiaProbeStatus> = new Set([
+    NVIDIA_PROBE_STATUS.MISSING,
+    NVIDIA_PROBE_STATUS.SANDBOXED,
+    NVIDIA_PROBE_STATUS.UNREADABLE,
+]);
+
+/** Whether the probe that chose the installed build read no CUDA version. A probe that
+ *  read one chose the build with it, so the build it chose is the deliberate answer.
+ *  A null detection predates detection tracking and knows nothing either. */
+export function cudaVersionUnknown(detection: GpuDetection | null): boolean {
+    return detection === null || CUDA_VERSION_UNREAD.has(detection.nvidia.status);
 }
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
