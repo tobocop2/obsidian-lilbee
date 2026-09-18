@@ -13,6 +13,7 @@ export class ManagedConsentModal extends Modal {
     constructor(
         app: App,
         private includeDev: boolean,
+        private installDir: string,
     ) {
         super(app);
     }
@@ -81,6 +82,17 @@ export class ManagedConsentModal extends Modal {
             cls: "lilbee-managed-consent-prov-pending",
             text: MESSAGES.MANAGED_CONSENT_PROV_PENDING,
         });
+        this.renderInstallDir(card);
+    }
+
+    // Outside the provenance block, which is emptied and rebuilt when the release lookup answers.
+    private renderInstallDir(card: HTMLElement): void {
+        const install = card.createDiv({ cls: "lilbee-managed-consent-install" });
+        install.createSpan({
+            cls: "lilbee-managed-consent-install-label",
+            text: MESSAGES.MANAGED_CONSENT_INSTALL_LABEL,
+        });
+        install.createSpan({ cls: "lilbee-managed-consent-install-path", text: this.installDir });
     }
 
     private renderProvLabel(): void {

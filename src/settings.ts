@@ -56,6 +56,7 @@ import { AGENT_LABELS, AGENT_LINKS, MESSAGES } from "./locales/en";
 import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./agent-integration";
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
+import { startReindexSync } from "./utils/reindex";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
 import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
@@ -2639,10 +2640,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             const result = await this.plugin.api.updateConfig({ [key]: num });
             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-            if (opts.reindex && result.reindex_required) {
-                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                void this.plugin.triggerSync();
-            }
+            if (opts.reindex) startReindexSync(this.plugin, result.reindex_required);
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
         }
@@ -2686,9 +2684,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                                 return;
                             }
                             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                            if (!result.value.reindex_required) return;
-                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                            void this.plugin.triggerSync();
+                            startReindexSync(this.plugin, result.value.reindex_required);
                         });
                     })
                     .addButton((btn) =>
@@ -3028,9 +3024,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             return;
                         }
                         new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                        if (!result.value.reindex_required) return;
-                        new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                        void this.plugin.triggerSync();
+                        startReindexSync(this.plugin, result.value.reindex_required);
                     });
                 this.serverConfigInputs.set("embedding_model", text.inputEl);
             });

@@ -131,6 +131,8 @@ export class CatalogModal extends Modal {
     private drawerCollapsedByUser = true;
     private focusedRepo: string | null = null;
     private focusDebounceTimeout: number | null = null;
+    /** Set only by openCatalog; resolves the caller waiting behind this modal. */
+    private dismissed: (() => void) | null = null;
 
     /**
      * @param initialTaskFilter Pre-select a task tab when opening (e.g.
@@ -151,6 +153,14 @@ export class CatalogModal extends Modal {
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
         bindEscapeToClose(this);
+    }
+
+    /** Opens the catalog over whatever is already on screen and resolves when it closes. */
+    openCatalog(): Promise<void> {
+        return new Promise((resolve) => {
+            this.dismissed = resolve;
+            this.open();
+        });
     }
 
     onOpen(): void {
@@ -341,6 +351,8 @@ export class CatalogModal extends Modal {
             window.clearTimeout(this.focusDebounceTimeout);
             this.focusDebounceTimeout = null;
         }
+        this.dismissed?.();
+        this.dismissed = null;
     }
 
     private onScroll = (): void => {

@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
-import type { SyncOptions } from "../types";
 import { MESSAGES } from "../locales/en";
+import type { RebuildPlugin } from "./reindex";
 import { ConfirmModal } from "../views/confirm-modal";
 
 /** A server degradation the plugin knows how to fix: what to tell the user, and what the button does. */
@@ -10,13 +10,17 @@ export interface WarningRemedy {
 }
 
 /** The slice of the plugin a warning-remedy action needs: the app for dialogs and the rebuild entry point. */
-export interface WarningRemedyPlugin {
+export interface WarningRemedyPlugin extends RebuildPlugin {
     app: App;
-    triggerSync: (options?: SyncOptions) => void | Promise<void>;
 }
 
 /** Codes the plugin can fix itself; every other code falls back to the server's remedy text. */
-const KNOWN_CODES = new Set(["fts_unavailable", "embedding_prefix_mismatch", "stale_index"]);
+const KNOWN_CODES = new Set([
+    "fts_unavailable",
+    "embedding_prefix_mismatch",
+    "index_embedding_mismatch",
+    "stale_index",
+]);
 
 function rebuildAction(plugin: WarningRemedyPlugin): () => void {
     return () => {

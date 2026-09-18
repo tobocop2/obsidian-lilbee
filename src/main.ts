@@ -472,7 +472,8 @@ export default class LilbeePlugin extends Plugin {
             }
         }
 
-        if (!this.settings.setupCompleted) {
+        // A run left part-way records a server but not a finished wizard, so the remaining steps still run.
+        if (!this.settings.wizardCompleted) {
             new SetupWizard(this.app, this).open();
         }
 
@@ -714,7 +715,8 @@ export default class LilbeePlugin extends Plugin {
         const registry = this.vaultRegistry;
         if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
 
-        const binaryPresent = new ServerBinary(sharedBinDir(registry.sharedRoot)).installed() !== null;
+        const binDir = sharedBinDir(registry.sharedRoot);
+        const binaryPresent = new ServerBinary(binDir).installed() !== null;
         if (binaryPresent && !this.serverUninstalled) {
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
@@ -723,7 +725,7 @@ export default class LilbeePlugin extends Plugin {
         // The gate owns the server lifecycle for each outcome, so it persists
         // directly via persistAll() rather than saveSettings() — the latter
         // would fire its own startManagedServer on a mode switch and race ours.
-        const result = await new ManagedConsentModal(this.app, this.settings.includeDevBuilds).openConsent();
+        const result = await new ManagedConsentModal(this.app, this.settings.includeDevBuilds, binDir).openConsent();
         if (result.kind === MANAGED_CONSENT_RESULT.DOWNLOAD) {
             this.settings.serverMode = SERVER_MODE.MANAGED;
             this.previousServerMode = SERVER_MODE.MANAGED;
@@ -1800,6 +1802,8 @@ export default class LilbeePlugin extends Plugin {
         // Object.assign only merges one level, so a stored agentIntegration would
         // shadow the defaults of any key added to it later.
         this.settings.agentIntegration = { ...DEFAULT_AGENT_INTEGRATION, ...(raw?.agentIntegration ?? {}) };
+        // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
+        this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
         this.previousServerMode = this.settings.serverMode;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());

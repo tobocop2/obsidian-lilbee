@@ -61,6 +61,10 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.topK).toBe(12);
     });
 
+    it("has wizardCompleted defaulting to false", () => {
+        expect(DEFAULT_SETTINGS.wizardCompleted).toBe(false);
+    });
+
     it("has wikiEnabled defaulting to false", () => {
         expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
     });
@@ -81,6 +85,7 @@ describe("DEFAULT_SETTINGS", () => {
             "serverMode",
             "serverUrl",
             "setupCompleted",
+            "wizardCompleted",
             "sharedRoot",
             "storeContentInVault",
             "lastCatalogTab",

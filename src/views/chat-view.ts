@@ -45,6 +45,7 @@ import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { addCloseButton } from "../components/close-button";
+import { startReindexSync } from "../utils/reindex";
 import { remedyForWarning } from "../utils/warning-remedies";
 import { MESSAGES } from "../locales/en";
 import {
@@ -718,9 +719,7 @@ export class ChatView extends ItemView {
             this.activeEmbeddingModel = result.value.model;
             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
             this.plugin.refreshSettingsTab();
-            if (!result.value.reindex_required) return;
-            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-            void this.plugin.triggerSync();
+            startReindexSync(this.plugin, result.value.reindex_required);
         });
     }
 

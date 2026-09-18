@@ -8,6 +8,7 @@ import type {
     ServerMode,
     SSEEvent,
     SyncDone,
+    SyncOptions,
 } from "../types";
 import {
     CATALOG_TAB,
@@ -26,9 +27,10 @@ import {
     MODEL_TASK,
 } from "../types";
 import { CatalogModal } from "./catalog-modal";
-import { isUsableHostedRow } from "./catalog-helpers";
+import { isForeignVendorQuant, isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
+import { reindexSyncOptions } from "../utils/reindex";
 import {
     bindEscapeToClose,
     closeSettings,
@@ -43,6 +45,13 @@ import {
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
+
+/** The progress panel the sync step drives: bar fill, status line, and the step frame around them. */
+interface SyncProgress {
+    fill: HTMLElement;
+    label: HTMLElement;
+    step: HTMLElement;
+}
 
 /**
  * Ordered, visible-in-indicator steps. The indicator labels these 1..6 so the
@@ -137,9 +146,11 @@ const MAX_FEATURED_PICKS = 8;
 /** Rows asked of the catalog per request: enough that the ones that run can replace the ones that do not. */
 const PICKS_CATALOG_LIMIT = 40;
 
-/** A row the server says will not run here: the fit it reported is wont_run, or it refuses the architecture. */
+/** A row that will not run here: the server reported wont_run, it refuses the architecture, or the quant is built for another vendor. */
 function isUnrunnable(model: FeaturedModel): boolean {
-    return model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED;
+    return (
+        model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED || isForeignVendorQuant(model)
+    );
 }
 
 /** A row the wizard can offer in place of another: it runs here, and a hosted row is ready without an API key of its own. */
@@ -253,6 +264,8 @@ export class SetupWizard extends Modal {
     private pulledModelName = "";
     private selectedEmbedding: EmbeddingModel | null = null;
     private embeddingModels: EmbeddingModel[] = [];
+    /** True only while the wizard's own managed start reports a download; a download started from Settings is not ours to stop. */
+    private ownsServerDownload = false;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -271,11 +284,20 @@ export class SetupWizard extends Modal {
     }
 
     onClose(): void {
-        this.pullController?.abort();
-        this.syncController?.abort();
+        // One reading for the stop and the notice, so the notice never depends on what the stop does to the state.
+        const serverDownloading = this.plugin.isDownloadingServer();
+        this.stopStartedWork(serverDownloading);
         this.plugin.setupWizardOpen = false;
         void this.plugin.resumeDeferredAgentPicker();
-        if (!this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        // A download in flight, whoever started it, means there is a server on the way.
+        if (!serverDownloading && !this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+    }
+
+    /** Stops everything the wizard started, the server download included when the wizard's own start began it. */
+    private stopStartedWork(serverDownloading: boolean): void {
+        this.pullController?.abort();
+        this.syncController?.abort();
+        if (serverDownloading && this.ownsServerDownload) this.plugin.cancelServerDownload();
     }
 
     /** Records setup as complete: the point from which the plugin starts itself on the next launch. */
@@ -285,7 +307,7 @@ export class SetupWizard extends Modal {
         await this.plugin.saveSettings();
     }
 
-    private renderStep(): void {
+    private renderStep(syncOptions?: SyncOptions): void {
         const { contentEl } = this;
         contentEl.empty();
 
@@ -303,7 +325,7 @@ export class SetupWizard extends Modal {
                 this.renderEmbeddingPicker();
                 break;
             case WIZARD_STEP.SYNC:
-                this.renderSync();
+                this.renderSync(syncOptions);
                 break;
             case WIZARD_STEP.WIKI:
                 this.renderWiki();
@@ -516,6 +538,8 @@ export class SetupWizard extends Modal {
                 panelShown = true;
             }
             setPhase(event.phase, event.message, event.percent);
+            // Ownership tracks the reported phase: nothing is ours before the first download event or after the last.
+            this.ownsServerDownload = event.phase === MANAGED_PHASE.DOWNLOADING;
             if (event.phase === MANAGED_PHASE.ERROR) failed = true;
         };
 
@@ -552,6 +576,8 @@ export class SetupWizard extends Modal {
             panel.hide();
             statusEl.setText(MESSAGES.ERROR_START_SERVER);
             (nextBtn as HTMLButtonElement).disabled = false;
+        } finally {
+            this.ownsServerDownload = false;
         }
     }
 
@@ -744,14 +770,7 @@ export class SetupWizard extends Modal {
         });
 
         const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
-        catalogBtn.addEventListener("click", () => {
-            // Close the wizard first so the catalog modal isn't stacked on top
-            // of two close-X buttons. Users can re-open the wizard from the
-            // settings tab if they want to come back; their model selection is
-            // saved on the catalog side via the regular Use button.
-            this.close();
-            new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).open();
-        });
+        catalogBtn.addEventListener("click", () => void this.browseCatalog());
 
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
         this.primaryBtn = downloadBtn;
@@ -772,6 +791,12 @@ export class SetupWizard extends Modal {
         });
 
         void this.loadFeaturedModels(modelsContainer, memGB, statusEl, downloadBtn);
+    }
+
+    /** The catalog opens over the wizard; the step is read again on close, so the remaining steps still run. */
+    private async browseCatalog(): Promise<void> {
+        await new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).openCatalog();
+        this.renderStep();
     }
 
     private async loadFeaturedModels(
@@ -1037,8 +1062,9 @@ export class SetupWizard extends Modal {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", label));
                         return;
                     }
+                    const syncOptions = reindexSyncOptions(result.value.reindex_required);
                     this.step = WIZARD_STEP.SYNC;
-                    this.renderStep();
+                    this.renderStep(syncOptions);
                 })();
                 return;
             }
@@ -1047,10 +1073,14 @@ export class SetupWizard extends Modal {
             void this.pullEmbeddingModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
-        void this.loadEmbeddingModels(modelsContainer, statusEl);
+        void this.loadEmbeddingModels(modelsContainer, statusEl, downloadBtn);
     }
 
-    private async loadEmbeddingModels(container: HTMLElement, statusEl: HTMLElement): Promise<void> {
+    private async loadEmbeddingModels(
+        container: HTMLElement,
+        statusEl: HTMLElement,
+        downloadBtn: HTMLButtonElement,
+    ): Promise<void> {
         try {
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.EMBEDDING,
@@ -1062,7 +1092,7 @@ export class SetupWizard extends Modal {
                 this.embeddingModels = [];
                 this.selectedEmbedding = null;
                 this.renderCatalogFailure(container, statusEl, result.error.message, () => {
-                    void this.loadEmbeddingModels(container, statusEl);
+                    void this.loadEmbeddingModels(container, statusEl, downloadBtn);
                 });
                 return;
             }
@@ -1077,14 +1107,14 @@ export class SetupWizard extends Modal {
             this.embeddingModels = [];
             this.selectedEmbedding = null;
             this.renderCatalogFailure(container, statusEl, errorMessage(e, MESSAGES.ERROR_LOAD_MODELS), () => {
-                void this.loadEmbeddingModels(container, statusEl);
+                void this.loadEmbeddingModels(container, statusEl, downloadBtn);
             });
             return;
         }
         if (this.embeddingModels.length === 0) {
             this.selectedEmbedding = null;
             this.renderCatalogFailure(container, statusEl, MESSAGES.WIZARD_NO_MODELS_OFFERED, () => {
-                void this.loadEmbeddingModels(container, statusEl);
+                void this.loadEmbeddingModels(container, statusEl, downloadBtn);
             });
             return;
         }
@@ -1093,6 +1123,7 @@ export class SetupWizard extends Modal {
         const activeIdx = activeRef ? this.embeddingModels.findIndex((m) => m.hf_repo === activeRef) : -1;
         const defaultIdx = activeIdx >= 0 ? activeIdx : 0;
         this.selectedEmbedding = this.embeddingModels[defaultIdx];
+        this.setPrimaryActionLabel(downloadBtn, this.selectedEmbedding);
 
         this.renderSectionHeading(container, MESSAGES.WIZARD_EMBEDDING_RECOMMENDED);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
@@ -1101,13 +1132,14 @@ export class SetupWizard extends Modal {
             const entry = this.embeddingModels[i];
             renderModelCard(grid, entry, {
                 isSelected: i === defaultIdx,
-                onClick: () => this.selectEmbedding(grid, entry),
+                onClick: () => this.selectEmbedding(grid, entry, downloadBtn),
             });
         }
     }
 
-    private selectEmbedding(grid: HTMLElement, model: EmbeddingModel): void {
+    private selectEmbedding(grid: HTMLElement, model: EmbeddingModel, downloadBtn: HTMLButtonElement): void {
         this.selectedEmbedding = model;
+        this.setPrimaryActionLabel(downloadBtn, model);
         for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
             if (el.dataset.repo === model.hf_repo) {
@@ -1169,8 +1201,9 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
+            const syncOptions = reindexSyncOptions(setResult.value.reindex_required);
             this.step = WIZARD_STEP.SYNC;
-            this.renderStep();
+            this.renderStep(syncOptions);
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
@@ -1188,7 +1221,7 @@ export class SetupWizard extends Modal {
         }
     }
 
-    private renderSync(): void {
+    private renderSync(syncOptions?: SyncOptions): void {
         const step = this.beginStep();
         this.renderStepHeader(step, MESSAGES.TITLE_INDEX_VAULT);
         step.createEl("p", { text: MESSAGES.WIZARD_SYNC_HELP });
@@ -1210,63 +1243,76 @@ export class SetupWizard extends Modal {
             this.skip();
         });
 
-        void this.runSync(progressFill, progressLabel, step);
+        void this.runSync({ fill: progressFill, label: progressLabel, step }, syncOptions);
     }
 
-    private async runSync(progressFill: HTMLElement, progressLabel: HTMLElement, step: HTMLElement): Promise<void> {
+    private async runSync(ui: SyncProgress, options?: SyncOptions): Promise<void> {
         this.syncController = new AbortController();
         try {
             let lastEvent: SSEEvent | null = null;
-            for await (const event of this.plugin.api.syncStream(this.syncController.signal)) {
-                if (event.event === SSE_EVENT.FILE_START) {
-                    const d = event.data as { current_file: number; total_files: number; file?: string };
-                    const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
-                    this.updateProgress(step, progressFill, pct);
-                    progressLabel.setText(
-                        MESSAGES.STATUS_PROCESSING_FILES.replace("{current}", String(d.current_file)).replace(
-                            "{total}",
-                            String(d.total_files),
-                        ),
-                    );
-                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
-                    const d = event.data as BatchProgressPayload;
-                    this.updateProgress(step, progressFill, Math.round((d.current / d.total) * 100));
-                    progressLabel.setText(MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status));
-                }
-                if (event.event === SSE_EVENT.EMBED) {
-                    const d = event.data as { file?: string };
-                    if (d.file) {
-                        progressLabel.setText(MESSAGES.STATUS_INDEXING.replace("{file}", d.file));
-                    }
-                } else if (event.event === SSE_EVENT.ERROR) {
-                    const d = event.data as { message?: string } | string;
-                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
-                    progressLabel.setText(msg);
-                    throw new Error(msg);
-                }
+            for await (const event of this.plugin.api.syncStream(this.syncController.signal, options)) {
+                this.applySyncEvent(event, ui);
                 lastEvent = event;
             }
-
-            if (lastEvent?.event === SSE_EVENT.DONE) {
-                this.syncResult = lastEvent.data as SyncDone;
-            }
-            this.updateProgress(step, progressFill, 100);
-            progressLabel.setText(MESSAGES.STATUS_DONE);
-            this.step = WIZARD_STEP.WIKI;
-            this.renderStep();
+            this.finishSync(lastEvent, ui);
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_INDEXING_CANCELLED);
             } else if (err instanceof SessionTokenError) {
                 const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
                 new Notice(msg);
-                progressLabel.setText(msg);
+                ui.label.setText(msg);
             } else {
-                progressLabel.setText(MESSAGES.ERROR_INDEXING_FAILED);
+                ui.label.setText(MESSAGES.ERROR_INDEXING_FAILED);
             }
         } finally {
             this.syncController = null;
         }
+    }
+
+    /** Paint one sync event. An error event throws; runSync renders the failure. */
+    private applySyncEvent(event: SSEEvent, ui: SyncProgress): void {
+        if (event.event === SSE_EVENT.FILE_START) {
+            const d = event.data as { current_file: number; total_files: number; file?: string };
+            const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
+            this.updateProgress(ui.step, ui.fill, pct);
+            ui.label.setText(
+                MESSAGES.STATUS_PROCESSING_FILES.replace("{current}", String(d.current_file)).replace(
+                    "{total}",
+                    String(d.total_files),
+                ),
+            );
+        } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+            const d = event.data as BatchProgressPayload;
+            this.updateProgress(ui.step, ui.fill, Math.round((d.current / d.total) * 100));
+            ui.label.setText(MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status));
+        }
+        if (event.event === SSE_EVENT.EMBED) {
+            const d = event.data as { file?: string };
+            if (d.file) {
+                ui.label.setText(MESSAGES.STATUS_INDEXING.replace("{file}", d.file));
+            }
+        } else if (event.event === SSE_EVENT.ERROR) {
+            const d = event.data as { message?: string } | string;
+            const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
+            ui.label.setText(msg);
+            throw new Error(msg);
+        }
+    }
+
+    /** The wizard leaves the sync step only over an index the server can search. */
+    private finishSync(lastEvent: SSEEvent | null, ui: SyncProgress): void {
+        const done = lastEvent?.event === SSE_EVENT.DONE ? (lastEvent.data as SyncDone) : null;
+        if (done) this.syncResult = done;
+        if (done?.index_mismatch) {
+            new Notice(done.index_mismatch.message);
+            ui.label.setText(done.index_mismatch.message);
+            return;
+        }
+        this.updateProgress(ui.step, ui.fill, 100);
+        ui.label.setText(MESSAGES.STATUS_DONE);
+        this.step = WIZARD_STEP.WIKI;
+        this.renderStep();
     }
 
     private renderWiki(): void {
@@ -1433,11 +1479,15 @@ export class SetupWizard extends Modal {
     }
 
     skip(): void {
+        // An explicit skip ends the wizard; it claims no server, so setupCompleted is left alone.
+        this.plugin.settings.wizardCompleted = true;
+        void this.plugin.saveSettings();
         this.close();
     }
 
     async complete(): Promise<void> {
         this.plugin.settings.setupCompleted = true;
+        this.plugin.settings.wizardCompleted = true;
         await this.plugin.saveSettings();
         this.close();
         // The done step's action is an explicit "Open chat", so land the user

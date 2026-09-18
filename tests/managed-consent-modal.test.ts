@@ -18,8 +18,11 @@ import { MESSAGES } from "../src/locales/en";
 type MockedReleaseFn = ReturnType<typeof vi.fn>;
 const mockedGetLatestRelease = binMgr.getLatestRelease as unknown as MockedReleaseFn;
 
+/** The directory the caller hands the modal; every assertion compares against this value, never a copy. */
+const INSTALL_DIR = "/Users/test/Library/Application Support/lilbee/bin";
+
 function openModal(): { modal: ManagedConsentModal; promise: Promise<unknown>; root: MockElement } {
-    const modal = new ManagedConsentModal(new App(), false);
+    const modal = new ManagedConsentModal(new App(), false, INSTALL_DIR);
     const promise = modal.openConsent();
     const root = modal.contentEl as unknown as MockElement;
     return { modal, promise, root };
@@ -211,6 +214,31 @@ describe("ManagedConsentModal", () => {
         const { root } = openModal();
         await flush();
         expect(root.find("lilbee-managed-consent-prov-asset-size")?.textContent).toContain("?");
+    });
+
+    it("names the install directory it was given, in full", async () => {
+        mockedGetLatestRelease.mockResolvedValue({
+            tag: "v0.6.66",
+            url: "https://x/lilbee",
+            assetName: "lilbee-macos-arm64",
+            variant: "default",
+            size: 412_000_000,
+        });
+        const { root } = openModal();
+        await flush();
+
+        expect(root.find("lilbee-managed-consent-install-label")?.textContent).toBe(
+            MESSAGES.MANAGED_CONSENT_INSTALL_LABEL,
+        );
+        expect(root.find("lilbee-managed-consent-install-path")?.textContent).toBe(INSTALL_DIR);
+    });
+
+    it("still names the install directory when release info is unavailable", async () => {
+        mockedGetLatestRelease.mockRejectedValue(new Error("offline"));
+        const { root } = openModal();
+        await flush();
+
+        expect(root.find("lilbee-managed-consent-install-path")?.textContent).toBe(INSTALL_DIR);
     });
 
     it("does not overwrite the resolved DOM if release fetch fails after a choice was made", async () => {

@@ -2644,6 +2644,27 @@ describe("ChatView health warnings", () => {
         expect(container.find("lilbee-chat-warning-action")).not.toBeNull();
     });
 
+    it("offers a plugin rebuild when the index was built with another embedding model", async () => {
+        const plugin = makePlugin();
+        plugin.healthWarnings = [
+            {
+                code: "index_embedding_mismatch",
+                message: "This index was built with a different embedding model.",
+                remedy: "Run lilbee rebuild.",
+            },
+        ];
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const text = container.textContent ?? "";
+        expect(text).toContain("Rebuild the index");
+        expect(text).not.toContain("Run lilbee rebuild.");
+        expect(container.find("lilbee-chat-warning-action")).not.toBeNull();
+    });
+
     it("falls back to the server remedy for an unknown code", async () => {
         const plugin = makePlugin();
         plugin.healthWarnings = [
@@ -4025,7 +4046,7 @@ describe("ChatView — embedding model selector", () => {
         expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_EMBEDDING_UPDATED)).toBe(true);
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
-        expect(plugin.triggerSync).toHaveBeenCalled();
+        expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         // 4u1: embedding success path must also refresh the Settings tab so
         // the dropdown / subtitle reflect the new active embedding.
         expect(plugin.refreshSettingsTab).toHaveBeenCalled();
