@@ -1,9 +1,11 @@
 import { App, Modal } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry } from "../types";
+import type { CatalogEntry, ModelInfoSource, ModelShowResponse, ModelTask } from "../types";
+import { MODEL_INFO_SOURCE } from "../types";
 import { MESSAGES } from "../locales/en";
 import { renderModelDetail } from "../components/model-detail";
 import { bindEscapeToClose, formatAbbreviatedCount } from "../utils";
+import { modelShowRows } from "../utils/model-show-rows";
 
 interface ContextWindowField {
     context_window?: number;
@@ -14,11 +16,11 @@ interface QuantizationField {
 }
 
 export class ModelInfoModal extends Modal {
-    private entry: CatalogEntry;
+    private source: ModelInfoSource;
 
-    constructor(app: App, _plugin: LilbeePlugin, entry: CatalogEntry) {
+    constructor(app: App, _plugin: LilbeePlugin, source: ModelInfoSource) {
         super(app);
-        this.entry = entry;
+        this.source = source;
         bindEscapeToClose(this);
     }
 
@@ -28,31 +30,47 @@ export class ModelInfoModal extends Modal {
         contentEl.addClass("lilbee-model-info-modal");
 
         contentEl.createEl("h2", { text: MESSAGES.MODEL_INFO_TITLE });
-        const detailHost = contentEl.createDiv({ cls: "lilbee-model-info-detail" });
-        renderModelDetail(this.entry, detailHost);
-
-        this.renderMoreInfo(contentEl);
-        this.renderHfLink(contentEl);
+        if (this.source.kind === MODEL_INFO_SOURCE.CATALOG) {
+            this.renderCatalogEntry(contentEl, this.source.entry);
+            return;
+        }
+        this.renderServerAnswer(contentEl, this.source.ref, this.source.task, this.source.details);
     }
 
-    private renderMoreInfo(parent: HTMLElement): void {
+    private renderCatalogEntry(parent: HTMLElement, entry: CatalogEntry): void {
+        const detailHost = parent.createDiv({ cls: "lilbee-model-info-detail" });
+        renderModelDetail(entry, detailHost);
+        this.renderMoreInfo(parent, entry);
+        this.renderHfLink(parent, entry.hf_repo);
+    }
+
+    /** No Hugging Face link here: a ref the catalog does not carry need not be a Hugging Face repo. */
+    private renderServerAnswer(parent: HTMLElement, ref: string, task: ModelTask, details: ModelShowResponse): void {
+        const detailHost = parent.createDiv({ cls: "lilbee-model-info-detail" });
+        detailHost.createEl("h3", { cls: "lilbee-detail-name", text: ref });
         const section = parent.createDiv({ cls: "lilbee-model-info-section" });
-        addRow(section, MESSAGES.MODEL_INFO_TASK, this.entry.task);
-        if (this.entry.param_count) addRow(section, MESSAGES.MODEL_INFO_PARAMS, this.entry.param_count);
-        const ctx = (this.entry as CatalogEntry & ContextWindowField).context_window;
+        addRow(section, MESSAGES.MODEL_INFO_TASK, task);
+        for (const row of modelShowRows(details)) addRow(section, row.label, row.value);
+    }
+
+    private renderMoreInfo(parent: HTMLElement, entry: CatalogEntry): void {
+        const section = parent.createDiv({ cls: "lilbee-model-info-section" });
+        addRow(section, MESSAGES.MODEL_INFO_TASK, entry.task);
+        if (entry.param_count) addRow(section, MESSAGES.MODEL_INFO_PARAMS, entry.param_count);
+        const ctx = (entry as CatalogEntry & ContextWindowField).context_window;
         if (typeof ctx === "number" && ctx > 0) addRow(section, MESSAGES.MODEL_INFO_CONTEXT, String(ctx));
-        if (this.entry.min_ram_gb > 0) addRow(section, MESSAGES.MODEL_INFO_RAM, `${this.entry.min_ram_gb} GB`);
-        const quant = (this.entry as CatalogEntry & QuantizationField).quantization;
+        if (entry.min_ram_gb > 0) addRow(section, MESSAGES.MODEL_INFO_RAM, `${entry.min_ram_gb} GB`);
+        const quant = (entry as CatalogEntry & QuantizationField).quantization;
         if (typeof quant === "string" && quant.length > 0) addRow(section, MESSAGES.MODEL_INFO_QUANT, quant);
-        if (this.entry.downloads > 0) {
-            addRow(section, MESSAGES.MODEL_INFO_DOWNLOADS, formatAbbreviatedCount(this.entry.downloads));
+        if (entry.downloads > 0) {
+            addRow(section, MESSAGES.MODEL_INFO_DOWNLOADS, formatAbbreviatedCount(entry.downloads));
         }
     }
 
-    private renderHfLink(parent: HTMLElement): void {
-        if (!this.entry.hf_repo) return;
+    private renderHfLink(parent: HTMLElement, hfRepo: string): void {
+        if (!hfRepo) return;
         const linkRow = parent.createDiv({ cls: "lilbee-model-info-link-row" });
-        const url = `https://huggingface.co/${this.entry.hf_repo}`;
+        const url = `https://huggingface.co/${hfRepo}`;
         const link = linkRow.createEl("a", {
             cls: "lilbee-hf-link",
             text: MESSAGES.MODEL_INFO_HF_LINK_LABEL,
