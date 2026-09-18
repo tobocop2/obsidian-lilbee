@@ -6,6 +6,7 @@ import {
     CATALOG_TAB,
     KEY_STATUS,
     MODEL_COMPAT,
+    MODEL_INFO_SOURCE,
     MODEL_TASK,
     SSE_EVENT,
     TASK_TYPE,
@@ -369,7 +370,7 @@ export class CatalogModal extends Modal {
             if (entry) {
                 e.preventDefault();
                 e.stopPropagation();
-                new ModelInfoModal(this.app, this.plugin, entry).open();
+                new ModelInfoModal(this.app, this.plugin, { kind: MODEL_INFO_SOURCE.CATALOG, entry }).open();
             }
         }
     };
@@ -712,7 +713,8 @@ export class CatalogModal extends Modal {
             onPull: (e) => this.handlePull(e),
             onUse: (e, btn) => void this.handleUse(e, btn),
             onRemove: (e, btn) => this.handleRemove(e, btn),
-            onInfo: (e) => new ModelInfoModal(this.app, this.plugin, e).open(),
+            onInfo: (e) =>
+                new ModelInfoModal(this.app, this.plugin, { kind: MODEL_INFO_SOURCE.CATALOG, entry: e }).open(),
         });
     }
 
@@ -784,7 +786,7 @@ export class CatalogModal extends Modal {
         setIcon(infoBtn, "info");
         infoBtn.addEventListener("click", (e: Event) => {
             e.stopPropagation();
-            new ModelInfoModal(this.app, this.plugin, entry).open();
+            new ModelInfoModal(this.app, this.plugin, { kind: MODEL_INFO_SOURCE.CATALOG, entry }).open();
         });
 
         const actionEl = row.createDiv({ cls: "lilbee-catalog-list-col-action" });

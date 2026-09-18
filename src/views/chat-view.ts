@@ -90,9 +90,11 @@ interface RailOption {
     checked: boolean;
 }
 
-/** Label shown on a chip trigger: the checked option, else the first (matching a native select). */
-function railTriggerLabel(options: RailOption[]): string {
-    return (options.find((o) => o.checked) ?? options[0])?.label ?? "";
+/** Label shown on a chip trigger: the checked option, else the role's active ref, else a placeholder. */
+function railTriggerLabel(options: RailOption[], activeRef: string): string {
+    const checked = options.find((o) => o.checked);
+    if (checked) return checked.label;
+    return displayLabelForRef(activeRef) || MESSAGES.LABEL_NO_MODEL_SELECTED;
 }
 
 type OptionalRoleTask = typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
@@ -450,7 +452,7 @@ export class ChatView extends ItemView {
                 this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
                 this.chatInstalled = chatInstalled.models;
                 this.chatActive = serverConfig ? configString(serverConfig, "chat_model") : "";
-                this.chatTriggerTextEl?.setText(railTriggerLabel(this.chatOptionGroups().flat()));
+                this.chatTriggerTextEl?.setText(railTriggerLabel(this.chatOptionGroups().flat(), this.chatActive));
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
                 this.fillOptionalRoleData(
@@ -553,7 +555,7 @@ export class ChatView extends ItemView {
         this.activeEmbeddingModel = serverConfig ? configString(serverConfig, "embedding_model") : "";
         this.embeddingModels =
             embeddingResult && embeddingResult.isOk() ? embeddingResult.value.models.filter((m) => m.installed) : [];
-        this.embeddingTriggerTextEl?.setText(railTriggerLabel(this.embeddingOptions()));
+        this.embeddingTriggerTextEl?.setText(railTriggerLabel(this.embeddingOptions(), this.activeEmbeddingModel));
     }
 
     /** Embedding menu entries: installed builds, or the bare active ref when none are installed. */
@@ -833,7 +835,7 @@ export class ChatView extends ItemView {
                 this.handleOptionalRoleSelection(spec, value),
             ),
         );
-        textEl.setText(railTriggerLabel(this.optionalRoleMenuOptions(spec)));
+        textEl.setText(railTriggerLabel(this.optionalRoleMenuOptions(spec), active));
     }
 
     private handleOptionalRoleSelection(spec: OptionalRoleSpec, value: string): void {
@@ -1210,6 +1212,11 @@ export class ChatView extends ItemView {
                 this.plugin.settings.searchChunkType,
                 { summary: this.summary, sessionId: this.sessionId },
             )) {
+                // The server trails memory_extracted after done; any other frame once the stream ended is malformed.
+                if (state.streamEnded && event.event !== SSE_EVENT.MEMORY_EXTRACTED) {
+                    console.warn(`[lilbee] ignoring a ${event.event} frame that arrived after the chat stream ended`);
+                    break;
+                }
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
             if (!state.streamEnded && !this.streamController?.signal.aborted) {

@@ -43,6 +43,7 @@ import {
     LOG_FILE,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
+    MODEL_INFO_SOURCE,
     MODEL_TASK,
     REQUEST_OUTCOME,
     SERVER_MODE,
@@ -64,6 +65,7 @@ import {
     type HealthWarning,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
+    type ModelShowResponse,
     type RequestOutcome,
     type ServerMode,
     type SetupOutcome,
@@ -91,6 +93,7 @@ import {
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
+import { modelShowRows } from "./utils/model-show-rows";
 import {
     errorMessage,
     extractServerErrorDetail,
@@ -2281,21 +2284,34 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
 
-        // The catalog search may miss the active model (e.g. it is installed
-        // but not in the featured catalog). Fall back to the first row in the
-        // response, which is close enough for the info modal.
         const repo = extractHfRepo(ref);
         const result = await this.api.catalog({ task, search: repo });
-        if (result.isErr()) {
-            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+        const entry = result.isOk() ? result.value.models.find((e) => e.hf_repo === repo) : undefined;
+        if (entry) {
+            new ModelInfoModal(this.app, this, { kind: MODEL_INFO_SOURCE.CATALOG, entry }).open();
             return;
         }
-        const entry = result.value.models.find((e) => e.hf_repo === repo) ?? result.value.models[0];
-        if (!entry) {
-            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+        await this.openModelInfoFromServer(ref, task);
+    }
+
+    /** The catalog carries no row for the active model, so ask the server what it is serving. */
+    private async openModelInfoFromServer(
+        ref: string,
+        task: typeof MODEL_TASK.CHAT | typeof MODEL_TASK.EMBEDDING,
+    ): Promise<void> {
+        let details: ModelShowResponse;
+        try {
+            details = await this.api.showModel(ref);
+        } catch {
+            new Notice(MESSAGES.NOTICE_MODEL_INFO_UNAVAILABLE(ref));
             return;
         }
-        new ModelInfoModal(this.app, this, entry).open();
+        // The server answers with an empty object for a model it cannot describe.
+        if (modelShowRows(details).length === 0) {
+            new Notice(MESSAGES.NOTICE_MODEL_INFO_UNAVAILABLE(ref));
+            return;
+        }
+        new ModelInfoModal(this.app, this, { kind: MODEL_INFO_SOURCE.SERVER, ref, task, details }).open();
     }
 
     async fetchActiveModel(): Promise<void> {
@@ -2913,6 +2929,8 @@ export default class LilbeePlugin extends Plugin {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         if (existing.length > 0) {
             void this.app.workspace.revealLeaf(existing[0]);
+            // A rail opened before a model was activated still shows the old one.
+            this.refreshOpenChatRails();
             return;
         }
         if (this.openingChatLeaf) return;

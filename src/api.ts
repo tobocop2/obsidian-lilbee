@@ -742,13 +742,13 @@ export class LilbeeClient {
         return (await res.json()) as DocumentsResponse;
     }
 
-    async removeDocuments(names: string[]): Promise<{ removed: number; not_found: string[] }> {
+    async removeDocuments(names: string[]): Promise<{ removed: string[]; not_found: string[] }> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents/remove`, {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ names }),
         });
-        return (await res.json()) as { removed: number; not_found: string[] };
+        return (await res.json()) as { removed: string[]; not_found: string[] };
     }
 
     /** Download the per-page text dataset as raw bytes (parquet or jsonl). */

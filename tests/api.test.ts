@@ -837,7 +837,7 @@ describe("pullModel()", () => {
 
     describe("removeDocuments()", () => {
         it("POSTs to /api/documents/remove", async () => {
-            fetchMock.mockResolvedValue(jsonResponse({ removed: 2, not_found: [] }));
+            fetchMock.mockResolvedValue(jsonResponse({ removed: ["a.md", "b.md"], not_found: [] }));
 
             const result = await client.removeDocuments(["a.md", "b.md"]);
 
@@ -849,7 +849,7 @@ describe("pullModel()", () => {
                     body: JSON.stringify({ names: ["a.md", "b.md"] }),
                 }),
             );
-            expect(result.removed).toBe(2);
+            expect(result.removed).toEqual(["a.md", "b.md"]);
         });
     });
 
