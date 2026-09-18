@@ -21,6 +21,7 @@ import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from ".
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
+import { readEngineBackend } from "./engine-backend";
 import { ErrorJournal } from "./error-journal";
 import { ServerBinary, getLatestRelease, checkForUpdate, isDownloadCanceled, migrateFlatBinary } from "./server-binary";
 import type { DownloadProgress, EnsureResult, ReleaseInfo } from "./server-binary";
@@ -1324,11 +1325,12 @@ export default class LilbeePlugin extends Plugin {
 
     private attachExportLink(notice: Notice): void {
         const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
-        link.addEventListener("click", () => void exportDiagnostics(this.diagnosticsContext()));
+        link.addEventListener("click", () => void this.diagnosticsContext().then(exportDiagnostics));
     }
 
-    /** Snapshot of plugin + server state for the diagnostics collector. */
-    diagnosticsContext(): DiagnosticsContext {
+    /** Snapshot of plugin + server state for the diagnostics collector. The engine
+     *  backend is only the server's to answer, so the snapshot asks for it. */
+    async diagnosticsContext(): Promise<DiagnosticsContext> {
         return {
             dataDir: this.serverManager?.dataDir ?? null,
             sharedRoot: this.vaultRegistry?.sharedRoot ?? null,
@@ -1338,10 +1340,22 @@ export default class LilbeePlugin extends Plugin {
             serverVersion: this.getSharedLilbeeVersion(),
             serverVariant: this.getSharedLilbeeVariant(),
             gpuDetection: this.getSharedGpuDetection(),
+            engineBackend: await this.readEngineBackend(),
             serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
             serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
+            serverBinaryPath: this.serverManager?.binaryPath ?? null,
             lastOutput: this.serverManager?.lastOutput ?? "",
         };
+    }
+
+    /** The backend the server reports, or null with the reason journalled. */
+    private async readEngineBackend(): Promise<string | null> {
+        try {
+            return await readEngineBackend(this.api);
+        } catch (err) {
+            this.journal.record("engine-backend", errorMessage(err, String(err)));
+            return null;
+        }
     }
 
     private showError(label: string, err: unknown): void {
@@ -1754,7 +1768,7 @@ export default class LilbeePlugin extends Plugin {
         this.addCommand({
             id: "export-diagnostics",
             name: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS,
-            callback: () => void exportDiagnostics(this.diagnosticsContext()),
+            callback: () => void this.diagnosticsContext().then(exportDiagnostics),
         });
 
         this.addCommand({

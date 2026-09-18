@@ -318,6 +318,11 @@ describe("ServerManager", () => {
             expect(mgr.dataDir).toBe("/tmp/data");
             expect(mgr.lastOutput).toBe("");
         });
+
+        it("reports the binary it spawns", () => {
+            const mgr = new ServerManager(defaultOpts({ binaryPath: "/shared/bin/v0.4.0/lilbee-macos-arm64" }));
+            expect(mgr.binaryPath).toBe("/shared/bin/v0.4.0/lilbee-macos-arm64");
+        });
     });
 
     // ── start: spawn path ───────────────────────────────────────────
