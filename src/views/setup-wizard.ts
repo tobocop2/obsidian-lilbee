@@ -8,6 +8,7 @@ import type {
     ServerMode,
     SSEEvent,
     SyncDone,
+    SyncOptions,
 } from "../types";
 import {
     CATALOG_TAB,
@@ -29,6 +30,7 @@ import { CatalogModal } from "./catalog-modal";
 import { isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
+import { reindexSyncOptions } from "../utils/reindex";
 import {
     bindEscapeToClose,
     closeSettings,
@@ -43,6 +45,13 @@ import {
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
+
+/** The progress panel the sync step drives: bar fill, status line, and the step frame around them. */
+interface SyncProgress {
+    fill: HTMLElement;
+    label: HTMLElement;
+    step: HTMLElement;
+}
 
 /**
  * Ordered, visible-in-indicator steps. The indicator labels these 1..6 so the
@@ -285,7 +294,7 @@ export class SetupWizard extends Modal {
         await this.plugin.saveSettings();
     }
 
-    private renderStep(): void {
+    private renderStep(syncOptions?: SyncOptions): void {
         const { contentEl } = this;
         contentEl.empty();
 
@@ -303,7 +312,7 @@ export class SetupWizard extends Modal {
                 this.renderEmbeddingPicker();
                 break;
             case WIZARD_STEP.SYNC:
-                this.renderSync();
+                this.renderSync(syncOptions);
                 break;
             case WIZARD_STEP.WIKI:
                 this.renderWiki();
@@ -1037,8 +1046,9 @@ export class SetupWizard extends Modal {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", label));
                         return;
                     }
+                    const syncOptions = reindexSyncOptions(result.value.reindex_required);
                     this.step = WIZARD_STEP.SYNC;
-                    this.renderStep();
+                    this.renderStep(syncOptions);
                 })();
                 return;
             }
@@ -1169,8 +1179,9 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
+            const syncOptions = reindexSyncOptions(setResult.value.reindex_required);
             this.step = WIZARD_STEP.SYNC;
-            this.renderStep();
+            this.renderStep(syncOptions);
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
@@ -1188,7 +1199,7 @@ export class SetupWizard extends Modal {
         }
     }
 
-    private renderSync(): void {
+    private renderSync(syncOptions?: SyncOptions): void {
         const step = this.beginStep();
         this.renderStepHeader(step, MESSAGES.TITLE_INDEX_VAULT);
         step.createEl("p", { text: MESSAGES.WIZARD_SYNC_HELP });
@@ -1210,63 +1221,76 @@ export class SetupWizard extends Modal {
             this.skip();
         });
 
-        void this.runSync(progressFill, progressLabel, step);
+        void this.runSync({ fill: progressFill, label: progressLabel, step }, syncOptions);
     }
 
-    private async runSync(progressFill: HTMLElement, progressLabel: HTMLElement, step: HTMLElement): Promise<void> {
+    private async runSync(ui: SyncProgress, options?: SyncOptions): Promise<void> {
         this.syncController = new AbortController();
         try {
             let lastEvent: SSEEvent | null = null;
-            for await (const event of this.plugin.api.syncStream(this.syncController.signal)) {
-                if (event.event === SSE_EVENT.FILE_START) {
-                    const d = event.data as { current_file: number; total_files: number; file?: string };
-                    const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
-                    this.updateProgress(step, progressFill, pct);
-                    progressLabel.setText(
-                        MESSAGES.STATUS_PROCESSING_FILES.replace("{current}", String(d.current_file)).replace(
-                            "{total}",
-                            String(d.total_files),
-                        ),
-                    );
-                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
-                    const d = event.data as BatchProgressPayload;
-                    this.updateProgress(step, progressFill, Math.round((d.current / d.total) * 100));
-                    progressLabel.setText(MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status));
-                }
-                if (event.event === SSE_EVENT.EMBED) {
-                    const d = event.data as { file?: string };
-                    if (d.file) {
-                        progressLabel.setText(MESSAGES.STATUS_INDEXING.replace("{file}", d.file));
-                    }
-                } else if (event.event === SSE_EVENT.ERROR) {
-                    const d = event.data as { message?: string } | string;
-                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
-                    progressLabel.setText(msg);
-                    throw new Error(msg);
-                }
+            for await (const event of this.plugin.api.syncStream(this.syncController.signal, options)) {
+                this.applySyncEvent(event, ui);
                 lastEvent = event;
             }
-
-            if (lastEvent?.event === SSE_EVENT.DONE) {
-                this.syncResult = lastEvent.data as SyncDone;
-            }
-            this.updateProgress(step, progressFill, 100);
-            progressLabel.setText(MESSAGES.STATUS_DONE);
-            this.step = WIZARD_STEP.WIKI;
-            this.renderStep();
+            this.finishSync(lastEvent, ui);
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_INDEXING_CANCELLED);
             } else if (err instanceof SessionTokenError) {
                 const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
                 new Notice(msg);
-                progressLabel.setText(msg);
+                ui.label.setText(msg);
             } else {
-                progressLabel.setText(MESSAGES.ERROR_INDEXING_FAILED);
+                ui.label.setText(MESSAGES.ERROR_INDEXING_FAILED);
             }
         } finally {
             this.syncController = null;
         }
+    }
+
+    /** Paint one sync event. An error event throws; runSync renders the failure. */
+    private applySyncEvent(event: SSEEvent, ui: SyncProgress): void {
+        if (event.event === SSE_EVENT.FILE_START) {
+            const d = event.data as { current_file: number; total_files: number; file?: string };
+            const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
+            this.updateProgress(ui.step, ui.fill, pct);
+            ui.label.setText(
+                MESSAGES.STATUS_PROCESSING_FILES.replace("{current}", String(d.current_file)).replace(
+                    "{total}",
+                    String(d.total_files),
+                ),
+            );
+        } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+            const d = event.data as BatchProgressPayload;
+            this.updateProgress(ui.step, ui.fill, Math.round((d.current / d.total) * 100));
+            ui.label.setText(MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status));
+        }
+        if (event.event === SSE_EVENT.EMBED) {
+            const d = event.data as { file?: string };
+            if (d.file) {
+                ui.label.setText(MESSAGES.STATUS_INDEXING.replace("{file}", d.file));
+            }
+        } else if (event.event === SSE_EVENT.ERROR) {
+            const d = event.data as { message?: string } | string;
+            const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
+            ui.label.setText(msg);
+            throw new Error(msg);
+        }
+    }
+
+    /** The wizard leaves the sync step only over an index the server can search. */
+    private finishSync(lastEvent: SSEEvent | null, ui: SyncProgress): void {
+        const done = lastEvent?.event === SSE_EVENT.DONE ? (lastEvent.data as SyncDone) : null;
+        if (done) this.syncResult = done;
+        if (done?.index_mismatch) {
+            new Notice(done.index_mismatch.message);
+            ui.label.setText(done.index_mismatch.message);
+            return;
+        }
+        this.updateProgress(ui.step, ui.fill, 100);
+        ui.label.setText(MESSAGES.STATUS_DONE);
+        this.step = WIZARD_STEP.WIKI;
+        this.renderStep();
     }
 
     private renderWiki(): void {

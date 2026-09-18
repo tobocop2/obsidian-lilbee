@@ -1643,6 +1643,42 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
 
+        it("stops on the sync step when the index was built by another embedding model", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 1300,
+                            failed: [],
+                            index_mismatch: {
+                                message: "This index was built with embedding model 'nomic', but lilbee uses 'minilm'.",
+                            },
+                        },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(
+                Notice.instances.some((n) => n.message.includes("This index was built with embedding model 'nomic'")),
+            ).toBe(true);
+            expect(texts.some((t) => t.includes("This index was built with embedding model 'nomic'"))).toBe(true);
+            expect(texts.some((t) => t === MESSAGES.STATUS_DONE)).toBe(false);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(false);
+        });
+
         it("renders BATCH_PROGRESS percent and per-file status during initial sync", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             let labelAtBatch = "";
@@ -2825,6 +2861,75 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
         });
 
+        it("installed embedding that invalidates the index rebuilds in the sync step", async () => {
+            Notice.clear();
+            const entries = [
+                makeEntry({
+                    hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                    display_name: "All MiniLM L6 v2",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.setEmbeddingModel = vi
+                .fn()
+                .mockResolvedValue(
+                    ok({ model: "second-state/All-MiniLM-L6-v2-Embedding-GGUF", reindex_required: true }),
+                );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.api.syncStream).toHaveBeenCalledWith(expect.anything(), { forceRebuild: true });
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
+        });
+
+        it("installed embedding the index already uses runs a plain sync", async () => {
+            const entries = [
+                makeEntry({
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "nomic-embed-text",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.api.syncStream).toHaveBeenCalledWith(expect.anything(), undefined);
+        });
+
         it("installed-embedding click surfaces notice when setEmbeddingModel returns err", async () => {
             Notice.clear();
             const entries = [
@@ -2961,6 +3066,38 @@ describe("SetupWizard", () => {
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic/nomic-embed-text");
+        });
+
+        it("downloaded embedding that invalidates the index rebuilds in the sync step", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+                })(),
+            );
+            plugin.api.setEmbeddingModel = vi
+                .fn()
+                .mockResolvedValue(ok({ model: "nomic/nomic-embed-text", reindex_required: true }));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
+
+            expect(plugin.api.syncStream).toHaveBeenCalledWith(expect.anything(), { forceRebuild: true });
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
         });
 
         it("pullEmbeddingModel surfaces notice and keeps step when setEmbeddingModel returns err", async () => {

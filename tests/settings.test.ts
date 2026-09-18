@@ -3298,7 +3298,7 @@ describe("managed mode settings", () => {
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
-            expect(plugin.triggerSync).toHaveBeenCalled();
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("shows error notice on updateConfig failure", async () => {
@@ -3433,6 +3433,7 @@ describe("managed mode settings", () => {
             expect(dropdowns.length).toBe(1);
             await dropdowns[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("does not reindex when the server says the index still matches", async () => {
@@ -3616,7 +3617,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.catalog).toHaveBeenCalled();
         });
 
-        it("fallback text input calls setEmbeddingModel on non-empty value", async () => {
+        it("fallback text input sets the model and rebuilds when the index no longer matches", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -3643,6 +3644,7 @@ describe("managed mode settings", () => {
             expect(texts.length).toBe(1);
             await texts[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("fallback text input does not reindex when the index still matches", async () => {
