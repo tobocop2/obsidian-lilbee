@@ -1340,7 +1340,7 @@ export const PLACEMENT_MODE = {
 } as const satisfies Record<string, PlacementMode>;
 
 /** The backend name for a fleet the server reports no usable device for. */
-export const ENGINE_BACKEND_CPU = "cpu";
+export const ENGINE_BACKEND_CPU = "CPU";
 
 /** Lower-case substring an NVIDIA device carries in the name the server reports. */
 export const NVIDIA_DEVICE_MARKER = "nvidia";
@@ -1365,7 +1365,8 @@ export interface GpuStat {
     utilization_pct: number | null;
     free_bytes: number;
     total_bytes: number;
-    temperature_c: number | null;
+    /** Absent on servers before 0.6.90b437; null on backends that do not report it. */
+    temperature_c?: number | null;
 }
 
 /** Server-issued hint when GPU monitoring is degraded (e.g. Intel hosts without intel_gpu_top). */

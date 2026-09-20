@@ -2,7 +2,8 @@ import type { LilbeeClient } from "./api";
 import { ENGINE_BACKEND_CPU, NVIDIA_DEVICE_MARKER } from "./types";
 import type { GpuInfo } from "./types";
 
-/** Ceiling on the backend read. The export must finish while the server is wedged. */
+/** Ceiling on a device read. Both the diagnostics export and the launch cross-check
+ *  must finish while the server is wedged. */
 const READ_TIMEOUT_MS = 5_000;
 
 /** The one backend a fleet runs on. The server keeps a single backend's devices

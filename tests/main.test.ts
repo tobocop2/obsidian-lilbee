@@ -5204,41 +5204,15 @@ describe("LilbeePlugin", () => {
                 rejected_spec_json: null,
             });
 
-        it("reports the NEW backend after the server restarts on a different build", async () => {
+        it("reads the backend on every export instead of caching the first answer", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok" }));
             plugin.api.placement = vi.fn().mockResolvedValue(placementOn("CUDA"));
-            await (plugin as any).probeServerHealth();
-            await flush();
             expect((await plugin.diagnosticsContext()).engineBackend).toBe("CUDA");
 
-            // One failed probe: below the streak threshold, so nothing marks the server unreachable.
-            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
-            await (plugin as any).probeServerHealth();
-
-            // It comes back on a build that serves no GPU.
-            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok" }));
+            // The server comes back on a build that serves no GPU.
             plugin.api.placement = vi.fn().mockResolvedValue(placementOn(null));
-            await (plugin as any).probeServerHealth();
-            await flush();
-            expect((await plugin.diagnosticsContext()).engineBackend).toBe("cpu");
-        });
-
-        it("reports the NEW backend after a restart through the plugin's own restart button", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok" }));
-            plugin.api.placement = vi.fn().mockResolvedValue(placementOn("CUDA"));
-            await (plugin as any).probeServerHealth();
-            await flush();
-            expect((await plugin.diagnosticsContext()).engineBackend).toBe("CUDA");
-
-            // A restart driven by the plugin never fails a probe: it suppresses probing instead.
-            plugin.api.placement = vi.fn().mockResolvedValue(placementOn(null));
-            await (plugin as any).probeServerHealth();
-            await flush();
-            expect((await plugin.diagnosticsContext()).engineBackend).toBe("cpu");
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("CPU");
         });
 
         it("tolerates a single failed probe without flipping to error", async () => {

@@ -99,7 +99,7 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         "",
         "## Last server output",
         "```",
-        redactSecrets(ctx.lastOutput) || "(empty)",
+        ctx.lastOutput || "(empty)",
         "```",
         "",
         "## Collected files",
@@ -107,10 +107,11 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         "",
         "## Plugin journal (errors and lifecycle events)",
         "```",
-        redactSecrets(journalText(ctx)) || "(none)",
+        journalText(ctx) || "(none)",
         "```",
     ];
-    return lines.join("\n");
+    // Every field passes one redactor on the way out, so a new field cannot skip it.
+    return redactSecrets(lines.join("\n"));
 }
 
 /** Gathers logs, config, settings, and the journal into a redacted bundle. */

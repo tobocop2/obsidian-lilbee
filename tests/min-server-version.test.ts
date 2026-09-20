@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { MIN_SERVER_VERSION, higherVersion } from "../src/min-server-version";
+import {
+    MIN_SERVER_VERSION,
+    PLACEMENT_MIN_SERVER_VERSION,
+    SESSIONS_MIN_SERVER_VERSION,
+    higherVersion,
+} from "../src/min-server-version";
 
 describe("higherVersion", () => {
     it("returns the later version when a is older", () => {
@@ -16,7 +21,7 @@ describe("higherVersion", () => {
 });
 
 describe("MIN_SERVER_VERSION", () => {
-    it("is a non-empty version string, not a GitHub release tag lookup", () => {
-        expect(MIN_SERVER_VERSION).toBe("0.6.90b420");
+    it("pins the later of the two per-feature floors", () => {
+        expect(MIN_SERVER_VERSION).toBe(higherVersion(SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION));
     });
 });

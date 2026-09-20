@@ -164,6 +164,22 @@ describe("collectDiagnostics", () => {
         expect(bundle.summaryMarkdown).toContain("Traceback: boom");
     });
 
+    it("blanks a credential in every summary field, not only the two that ask for it", () => {
+        const ctx = makeContext({
+            settings: { ...DEFAULT_SETTINGS, manualToken: "sk-settings-9f2c" },
+            serverUrl: "http://127.0.0.1:1234/?api_key=sk-url-4b7a",
+            lastOutput: "authorization: Bearer sk-output-11de",
+            journalEntries: [{ timestamp: "t", label: "chat", message: "hf_token=sk-journal-77aa", stack: null }],
+        });
+        const summary = collectDiagnostics(ctx).summaryMarkdown;
+        expect(summary).toContain(`- Server URL: http://127.0.0.1:1234/?api_key=${REDACTED}`);
+        expect(summary).not.toContain("sk-url-4b7a");
+        expect(summary).not.toContain("sk-output-11de");
+        expect(summary).not.toContain("sk-journal-77aa");
+        expect(summary).not.toContain("sk-settings-9f2c");
+        expect(fileText(ctx, "settings.json")).not.toContain("sk-settings-9f2c");
+    });
+
     it("renders placeholders for empty stderr, journal, url, shared root, and server version", () => {
         const bundle = collectDiagnostics(
             makeContext({ lastOutput: "", serverUrl: "", sharedRoot: null, serverVersion: "" }),

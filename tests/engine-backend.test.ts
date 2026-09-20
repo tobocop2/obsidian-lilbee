@@ -28,18 +28,15 @@ function clientReturning(result: Awaited<ReturnType<LilbeeClient["placement"]>>)
 
 describe("readEngineBackend", () => {
     it("names the backend of the devices the server reports", async () => {
-        const { api } = clientReturning(ok(placement([gpu(), gpu({ index: 1 })])));
-        await expect(readEngineBackend(api)).resolves.toBe("CUDA");
+        const cuda = clientReturning(ok(placement([gpu(), gpu({ index: 1 })])));
+        await expect(readEngineBackend(cuda.api)).resolves.toBe("CUDA");
+        const vulkan = clientReturning(ok(placement([gpu({ backend: "Vulkan", label: "Vulkan0" })])));
+        await expect(readEngineBackend(vulkan.api)).resolves.toBe("Vulkan");
     });
 
     it("names the CPU when the server reports no device", async () => {
         const { api } = clientReturning(ok(placement([])));
         await expect(readEngineBackend(api)).resolves.toBe(ENGINE_BACKEND_CPU);
-    });
-
-    it("reads the backend from the server's GPU report", async () => {
-        const { api } = clientReturning(ok(placement([gpu({ backend: "Vulkan", label: "Vulkan0" })])));
-        await expect(readEngineBackend(api)).resolves.toBe("Vulkan");
     });
 
     it("returns null when the server cannot report a placement", async () => {

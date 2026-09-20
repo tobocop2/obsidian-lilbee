@@ -1133,8 +1133,8 @@ describe("PlacementView live usage bars", () => {
 
     it("shows N/A when the temperature field is absent from the payload entirely", async () => {
         const { view, contentEl } = await openView(makePlugin(makeApi()));
-        const staleStat = { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB };
-        (view as unknown as StatsApplier).applyStats([staleStat as unknown as GpuStat]);
+        const staleStat: GpuStat = { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB };
+        (view as unknown as StatsApplier).applyStats([staleStat]);
         expect(tempVal(contentEl, 0).textContent).toBe("N/A");
     });
 });
