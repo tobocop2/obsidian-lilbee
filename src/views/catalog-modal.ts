@@ -27,6 +27,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
 } from "../utils";
+import { applyEmbeddingModel } from "../utils/reindex";
 import { renderModelCard, renderCompatTag } from "../components/model-card";
 import { renderModelDetail } from "../components/model-detail";
 import { ModelInfoModal } from "./model-info-modal";
@@ -550,7 +551,7 @@ export class CatalogModal extends Modal {
             {
                 heading: MESSAGES.RAIL_FOR_YOU,
                 help: MESSAGES.RAIL_FOR_YOU_HELP,
-                rows: forYouRail(this.entries),
+                rows: forYouRail(this.entries, this.plugin.settings.serverMode),
             },
             {
                 heading: MESSAGES.RAIL_YOUR_COLLECTION,
@@ -917,7 +918,7 @@ export class CatalogModal extends Modal {
         // necessarily the one the user clicked.
         const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
         if (entry.task === MODEL_TASK.EMBEDDING) {
-            return this.plugin.api.setEmbeddingModel(ref);
+            return applyEmbeddingModel(this.plugin, ref);
         }
         if (entry.task === MODEL_TASK.RERANK) {
             return this.plugin.api.setRerankerModel(ref);

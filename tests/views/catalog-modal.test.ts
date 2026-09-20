@@ -80,6 +80,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
         refreshOpenChatRails: vi.fn(),
+        triggerSync: vi.fn(),
         taskQueue,
         enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
         ...overrides,
@@ -1076,6 +1077,24 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
+        });
+
+        it("rebuilds the index when the embedding model it activates invalidates it", async () => {
+            const plugin = makePlugin();
+            plugin.api.setEmbeddingModel = vi.fn((m: string) =>
+                Promise.resolve(ok({ model: m, reindex_required: true })),
+            );
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "embedding" })])),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE)!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("activates by the concrete GGUF file ref when the filename is not a glob", async () => {

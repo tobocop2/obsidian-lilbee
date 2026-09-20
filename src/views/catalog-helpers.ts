@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { CatalogEntry, CatalogSource, CatalogTab, KeyStatus, ModelTask } from "../types";
+import type { CatalogEntry, CatalogSource, CatalogTab, KeyStatus, ModelTask, ServerMode } from "../types";
 import {
     CATALOG_SOURCE,
     CATALOG_TAB,
@@ -9,6 +9,7 @@ import {
     MODEL_COMPAT,
     MODEL_TASK,
     PLATFORM,
+    SERVER_MODE,
 } from "../types";
 import { MESSAGES } from "../locales/en";
 
@@ -129,8 +130,13 @@ const FOR_YOU_ROLE_ORDER: ModelTask[] = [MODEL_TASK.CHAT, MODEL_TASK.EMBEDDING, 
  */
 const VENDOR_QUANT = /(^|[^a-z0-9])(rocm|cuda)(\d|fp|bf|q)/i;
 
-/** A quant built for a GPU toolkit macOS does not have. The catalog reports no vendor, so the name is the only signal. */
-export function isForeignVendorQuant(entry: CatalogEntry): boolean {
+/**
+ * A quant built for a GPU toolkit macOS does not have. The catalog reports no vendor, so the name
+ * is the only signal. The model loads on the server's host, which is this machine only in managed
+ * mode; an external server runs on a host whose GPU we don't know, so every row stays.
+ */
+export function isForeignVendorQuant(entry: CatalogEntry, serverMode: ServerMode): boolean {
+    if (serverMode !== SERVER_MODE.MANAGED) return false;
     if (process.platform !== PLATFORM.DARWIN || HOSTED_SOURCES.has(entry.source)) return false;
     // The first repo segment names who published the file, not how it was built, so it is dropped.
     const modelName = entry.hf_repo.slice(entry.hf_repo.indexOf("/") + 1);
@@ -138,12 +144,12 @@ export function isForeignVendorQuant(entry: CatalogEntry): boolean {
 }
 
 /** A catalog row a user can run: featured, supported, not known unrunnable, not built for another vendor's GPU, and key-ready when hosted. */
-export function isRunnablePick(entry: CatalogEntry): boolean {
+export function isRunnablePick(entry: CatalogEntry, serverMode: ServerMode): boolean {
     if (
         !entry.featured ||
         entry.compat !== MODEL_COMPAT.SUPPORTED ||
         entry.fit === HARDWARE_FIT.WONT_RUN ||
-        isForeignVendorQuant(entry)
+        isForeignVendorQuant(entry, serverMode)
     ) {
         return false;
     }
@@ -158,8 +164,8 @@ export function isRunnablePick(entry: CatalogEntry): boolean {
  * provider key. Rows with no fit chip are kept (a failed probe must not empty
  * the rail) but rank behind known fits.
  */
-export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
-    const runnable = entries.filter(isRunnablePick);
+export function forYouRail(entries: CatalogEntry[], serverMode: ServerMode): CatalogEntry[] {
+    const runnable = entries.filter((entry) => isRunnablePick(entry, serverMode));
     const picks: CatalogEntry[] = [];
     for (const task of FOR_YOU_ROLE_ORDER) {
         const best = runnable

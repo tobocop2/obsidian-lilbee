@@ -75,6 +75,7 @@ import {
     type SetupStartPayload,
     INDETERMINATE_PROGRESS,
     type AddDone,
+    type IndexMismatch,
     type SyncDone,
     type SSEEvent,
     type WarmProgress,
@@ -91,6 +92,7 @@ import {
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
+import { applyConfig } from "./utils/reindex";
 import {
     errorMessage,
     extractServerErrorDetail,
@@ -172,6 +174,13 @@ function summarizeSyncResult(done: AddDone): string {
     if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
     if (done.tracked.length > 0) parts.push(`${done.tracked.length} already tracked`);
     return parts.join(", ");
+}
+
+/** Warn about an index the server can no longer search, and say whether it did. */
+function noticeIndexMismatch(done: AddDone): boolean {
+    if (!done.index_mismatch) return false;
+    new Notice(done.index_mismatch.message, NOTICE_ERROR_DURATION_MS);
+    return true;
 }
 
 /** Forward-slash form of a path with no trailing separator. */
@@ -259,6 +268,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
         held_out: Array.isArray(obj.held_out) ? (obj.held_out as SkippedSource[]) : [],
+        index_mismatch: (obj.index_mismatch as IndexMismatch | null | undefined) ?? null,
     };
 }
 
@@ -518,7 +528,11 @@ export default class LilbeePlugin extends Plugin {
         this.app.workspace.requestSaveLayout?.();
     }
 
-    async startManagedServer(onProgress?: ManagedServerProgressHandler, allowTakeOver = true): Promise<void> {
+    async startManagedServer(
+        onProgress?: ManagedServerProgressHandler,
+        allowTakeOver = true,
+        signal?: AbortSignal,
+    ): Promise<void> {
         if (this.startingServer) return;
         const registry = this.vaultRegistry;
         if (!registry) return;
@@ -542,13 +556,13 @@ export default class LilbeePlugin extends Plugin {
             if (foreignDataDir !== null) {
                 // Negotiate outside this call's startingServer window.
                 window.setTimeout(() => {
-                    void this.negotiateTakeOver(registry, onProgress, allowTakeOver, foreignDataDir);
+                    void this.negotiateTakeOver(registry, onProgress, allowTakeOver, foreignDataDir, signal);
                 }, 0);
                 return;
             }
 
             const binary = new ServerBinary(sharedBinDir(sharedRoot));
-            const installed = await this.ensureBinaryWithUi(binary, onProgress);
+            const installed = await this.ensureBinaryWithUi(binary, onProgress, signal);
             if (installed === null) return;
             this.recordDownloadedBinary(installed);
             // A spawn after unload would leak a server no plugin instance tracks.
@@ -572,7 +586,7 @@ export default class LilbeePlugin extends Plugin {
                     this.serverManager = null;
                     // Recurse outside this call's startingServer window.
                     window.setTimeout(() => {
-                        void this.negotiateTakeOver(registry, onProgress, allowTakeOver);
+                        void this.negotiateTakeOver(registry, onProgress, allowTakeOver, null, signal);
                     }, 0);
                     return;
                 }
@@ -597,6 +611,7 @@ export default class LilbeePlugin extends Plugin {
         onProgress?: ManagedServerProgressHandler,
         allowTakeOver = true,
         knownOwnerDataDir: string | null = null,
+        signal?: AbortSignal,
     ): Promise<void> {
         const owner: { dataDir: string; pid: number | null } | null = knownOwnerDataDir
             ? { dataDir: knownOwnerDataDir, pid: null }
@@ -636,7 +651,7 @@ export default class LilbeePlugin extends Plugin {
         }
         this.journal.lifecycle(`take-over complete: the server of ${ownerName} is gone; starting ours`);
         new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
-        await this.startManagedServer(onProgress, false);
+        await this.startManagedServer(onProgress, false, signal);
     }
 
     /**
@@ -711,14 +726,17 @@ export default class LilbeePlugin extends Plugin {
      * already present we start straight away; otherwise we ask for consent and
      * route on the user's choice (download / switch-to-external / cancel).
      */
-    async ensureManagedConsentThenStart(onProgress?: ManagedServerProgressHandler): Promise<SetupOutcome> {
+    async ensureManagedConsentThenStart(
+        onProgress?: ManagedServerProgressHandler,
+        signal?: AbortSignal,
+    ): Promise<SetupOutcome> {
         const registry = this.vaultRegistry;
         if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
 
         const binDir = sharedBinDir(registry.sharedRoot);
         const binaryPresent = new ServerBinary(binDir).installed() !== null;
         if (binaryPresent && !this.serverUninstalled) {
-            await this.startManagedServer(onProgress);
+            await this.startManagedServer(onProgress, true, signal);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
 
@@ -731,7 +749,7 @@ export default class LilbeePlugin extends Plugin {
             this.previousServerMode = SERVER_MODE.MANAGED;
             await this.persistAll();
             this.setServerUninstalled(false);
-            await this.startManagedServer(onProgress);
+            await this.startManagedServer(onProgress, true, signal);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
         if (result.kind === MANAGED_CONSENT_RESULT.EXTERNAL) {
@@ -793,9 +811,14 @@ export default class LilbeePlugin extends Plugin {
     /** Aborts the in-flight server download, if any. Set while a download runs. */
     private downloadController: AbortController | null = null;
 
-    private startDownloadController(): AbortController {
-        this.downloadController = new AbortController();
-        return this.downloadController;
+    /** The controller for one download. A caller's signal aborts it too, so the caller owns the download it asked for. */
+    private startDownloadController(signal?: AbortSignal): AbortController {
+        const controller = new AbortController();
+        // A listener never fires for a signal that aborted before this point, so read it as well.
+        signal?.addEventListener("abort", () => controller.abort(), { once: true });
+        if (signal?.aborted) controller.abort();
+        this.downloadController = controller;
+        return controller;
     }
 
     private finishDownload(): void {
@@ -815,6 +838,7 @@ export default class LilbeePlugin extends Plugin {
     private async ensureBinaryWithUi(
         binary: ServerBinary,
         onProgress?: ManagedServerProgressHandler,
+        signal?: AbortSignal,
     ): Promise<EnsureResult | null> {
         if (binary.installed() === null) {
             this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
@@ -835,7 +859,7 @@ export default class LilbeePlugin extends Plugin {
                     });
                 },
                 onQuarantineFailed: () => this.showGatekeeperHelp(),
-                signal: this.startDownloadController().signal,
+                signal: this.startDownloadController(signal).signal,
             });
             this.finishDownload();
             this.setStatusClass(null);
@@ -1059,7 +1083,7 @@ export default class LilbeePlugin extends Plugin {
     private async sendStorageMove(target: StorageMoveTarget): Promise<void> {
         const notice = new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZING, NOTICE_PERMANENT);
         try {
-            await this.api.updateConfig({
+            await applyConfig(this, {
                 documents_dir: target.documentsDir,
                 vault_base: target.vaultBase,
             });
@@ -2336,7 +2360,7 @@ export default class LilbeePlugin extends Plugin {
         // Patch only when the server reports it explicitly off; older servers omit the key.
         const cfg = await this.api.config();
         if (cfg.show_reasoning === false) {
-            await this.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: true });
+            await applyConfig(this, { [CONFIG_KEY.SHOW_REASONING]: true });
         }
         this.settings.reasoningDefaulted = true;
         await this.persistAll();
@@ -2615,6 +2639,7 @@ export default class LilbeePlugin extends Plugin {
             skipped: [],
             held_out: [],
             tracked: [],
+            index_mismatch: null,
         };
         let done = 0;
         for (const batch of batches) {
@@ -2630,6 +2655,8 @@ export default class LilbeePlugin extends Plugin {
                         merged.held_out.push(...parsed.held_out);
                         merged.tracked.push(...parsed.tracked);
                         merged.unchanged += parsed.unchanged;
+                        // The last batch's verdict is the state the index ends in.
+                        merged.index_mismatch = parsed.index_mismatch;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
@@ -2737,7 +2764,7 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
-            if (syncResult) {
+            if (syncResult && !noticeIndexMismatch(syncResult)) {
                 const summary = summarizeSyncResult(syncResult);
                 new Notice(summary ? MESSAGES.NOTICE_SYNC_SUMMARY(summary) : MESSAGES.STATUS_NOTHING_NEW);
             }
@@ -3368,7 +3395,7 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
-            if (syncResult) {
+            if (syncResult && !noticeIndexMismatch(syncResult)) {
                 const summary = summarizeSyncResult(syncResult);
                 if (summary) new Notice(MESSAGES.STATUS_SYNCED.replace("{summary}", summary));
             }

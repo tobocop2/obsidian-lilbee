@@ -95,8 +95,12 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     // progress mocks still drive the wizard panel) and report a managed start.
     // Tests exercising the external / cancel branches override this.
     if (!("ensureManagedConsentThenStart" in overrides)) {
-        plugin.ensureManagedConsentThenStart = vi.fn(async (onProgress?: unknown) => {
-            await (plugin.startManagedServer as (p?: unknown) => Promise<void>)(onProgress);
+        plugin.ensureManagedConsentThenStart = vi.fn(async (onProgress?: unknown, signal?: AbortSignal) => {
+            await (plugin.startManagedServer as (p?: unknown, t?: boolean, s?: AbortSignal) => Promise<void>)(
+                onProgress,
+                true,
+                signal,
+            );
             return { kind: "started", mode: "managed" };
         });
     }
@@ -125,10 +129,16 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /** A managed start that reports the given phases and then never settles. */
 function pendingStartEmitting(...phases: string[]) {
-    return vi.fn(async (onProgress?: (e: { phase: string; message: string }) => void) => {
-        for (const phase of phases) onProgress?.({ phase, message: "" });
-        await new Promise(() => {});
-    });
+    return vi.fn(
+        async (
+            onProgress?: (e: { phase: string; message: string }) => void,
+            _allowTakeOver?: boolean,
+            _signal?: AbortSignal,
+        ) => {
+            for (const phase of phases) onProgress?.({ phase, message: "" });
+            await new Promise(() => {});
+        },
+    );
 }
 
 /** Opens the wizard, moves it to the server step, and presses Next in managed mode. */
@@ -1716,7 +1726,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = WIZARD_STEP.SYNC;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1728,6 +1738,42 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("This index was built with embedding model 'nomic'"))).toBe(true);
             expect(texts.some((t) => t === MESSAGES.STATUS_DONE)).toBe(false);
             expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(false);
+        });
+
+        it("offers a rebuild that runs the sync step again over a mismatched index", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const calls: (Record<string, unknown> | undefined)[] = [];
+            plugin.api.syncStream = vi.fn().mockImplementation((_signal?: AbortSignal, options?: any) => {
+                calls.push(options);
+                return (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 1300,
+                            failed: [],
+                            index_mismatch: { message: "Built with 'nomic'; lilbee uses 'minilm'." },
+                        },
+                    };
+                })();
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.SYNC;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const rebuildBtn = findButtons(el).find((b) => b.textContent === MESSAGES.BUTTON_REBUILD_INDEX)!;
+            expect(rebuildBtn).toBeDefined();
+            rebuildBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(calls).toEqual([undefined, { forceRebuild: true }]);
         });
 
         it("renders BATCH_PROGRESS percent and per-file status during initial sync", async () => {
@@ -2431,12 +2477,13 @@ describe("SetupWizard", () => {
                 isDownloadingServer: vi.fn(() => true),
             });
             // The wizard's own download is reported and still running when the wizard closes.
-            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const start = pendingStartEmitting("downloading");
+            plugin.startManagedServer = start;
             const wizard = await startManagedFromServerStep(plugin);
 
             wizard.close();
 
-            expect(plugin.cancelServerDownload).toHaveBeenCalledTimes(1);
+            expect(start.mock.calls[0]?.[2]?.aborted).toBe(true);
         });
 
         it("does not claim there is no server after cancelling the download it started", async () => {
@@ -2456,23 +2503,19 @@ describe("SetupWizard", () => {
             expect(messages).toEqual([]);
         });
 
-        it("stays silent when the cancel clears the download state as it runs", async () => {
-            let downloading = true;
+        it("leaves a download it did not start running when the wizard closes", async () => {
             const plugin = makePlugin({
                 serverManager: null,
                 settings: { serverMode: "managed", setupCompleted: false },
-                isDownloadingServer: vi.fn(() => downloading),
-                // A cancel that clears the state in the same tick must not unmask the notice.
-                cancelServerDownload: vi.fn(() => {
-                    downloading = false;
-                }),
+                isDownloadingServer: vi.fn(() => true),
             });
-            plugin.startManagedServer = pendingStartEmitting("downloading");
-            const wizard = await startManagedFromServerStep(plugin);
+            // Settings started this download, so the wizard holds no controller over it.
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
 
             wizard.close();
 
-            expect(plugin.cancelServerDownload).toHaveBeenCalledTimes(1);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
             expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
         });
 
@@ -4560,12 +4603,14 @@ describe("SetupWizard", () => {
             });
         }
 
-        async function openPicksStep(catalog: ReturnType<typeof vi.fn>) {
-            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+        async function openPicksStep(catalog: ReturnType<typeof vi.fn>, serverMode = "external") {
+            const plugin = makePlugin({ settings: { serverMode, setupCompleted: true } });
             plugin.api.catalog = catalog;
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            wizard.next();
+            // Managed setup reaches the picks step through the server step, which these rows do not exercise.
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
             await tick();
             return { plugin, el: wizard.contentEl as unknown as MockElement };
         }
@@ -4757,7 +4802,7 @@ describe("SetupWizard", () => {
                 );
                 const wider = [...featured, catalogRow(0), catalogRow(1)];
 
-                const { el } = await openPicksStep(splitCatalog(featured, wider));
+                const { el } = await openPicksStep(splitCatalog(featured, wider), "managed");
 
                 // A Mac has neither the AMD nor the NVIDIA runtime these quants are built for.
                 expect(renderedRepos(el)).toEqual(["f/0", "f/1", "org/Other-0-GGUF", "org/Other-1-GGUF"]);
@@ -4771,7 +4816,7 @@ describe("SetupWizard", () => {
             try {
                 const featured = featuredRow(1).concat(vendorQuant());
 
-                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]), "managed");
 
                 expect(renderedRepos(el)).toEqual(["f/0", "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF"]);
                 expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
@@ -4794,7 +4839,7 @@ describe("SetupWizard", () => {
                     }),
                 );
 
-                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]), "managed");
 
                 // A hosted row runs on the provider's hardware, so this host decides nothing about it.
                 expect(renderedRepos(el)).toEqual(["f/0", "ollama/rocm6-tuned:7b"]);
@@ -4815,7 +4860,7 @@ describe("SetupWizard", () => {
                     }),
                 );
 
-                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]));
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]), "managed");
 
                 expect(renderedRepos(el)).toEqual(["f/0", "org/Barracuda7B-GGUF"]);
                 expect(plugin.api.catalog).toHaveBeenCalledTimes(1);

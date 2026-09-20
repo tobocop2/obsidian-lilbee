@@ -2796,6 +2796,33 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(true);
         });
 
+        it("addToLilbee warns about an index built by another embedder instead of reporting success", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* mismatchedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["test.md"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        index_mismatch: { message: "This index was built with 'nomic'; lilbee uses 'minilm'." },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(mismatchedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes("This index was built with 'nomic'"))).toBe(true);
+            expect(messages.some((m) => m.includes("1 added"))).toBe(false);
+        });
+
         it("addToLilbee reports already-tracked sources as their own outcome, not as failures", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -4880,6 +4907,7 @@ describe("LilbeePlugin", () => {
                 skipped: ["e"],
                 held_out: [{ filename: "f", reason: "no text extracted" }],
                 tracked: [],
+                index_mismatch: null,
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -4892,6 +4920,7 @@ describe("LilbeePlugin", () => {
                 skipped: [],
                 held_out: [],
                 tracked: [],
+                index_mismatch: null,
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
@@ -4913,7 +4942,17 @@ describe("LilbeePlugin", () => {
                 skipped: ["z.pdf"],
                 held_out: [],
                 tracked: ["already-there"],
+                index_mismatch: null,
             });
+
+            // The server's mismatch verdict rides through both shapes.
+            expect(
+                parseAddDoneEvent({
+                    added: [],
+                    updated: [],
+                    index_mismatch: { message: "built with 'nomic', lilbee uses 'minilm'" },
+                })?.index_mismatch,
+            ).toEqual({ message: "built with 'nomic', lilbee uses 'minilm'" });
 
             // Malformed inputs return null.
             expect(parseAddDoneEvent(null)).toBeNull();
@@ -9722,6 +9761,30 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
             expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
             expect(Notice.instances.length).toBe(0);
+        });
+
+        it("triggerSync warns about an index built by another embedder instead of reporting a summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* mismatchedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["a.md"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        index_mismatch: { message: "This index was built with 'nomic'; lilbee uses 'minilm'." },
+                    },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(mismatchedDone());
+            await plugin.triggerSync();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.includes("This index was built with 'nomic'"))).toBe(true);
+            expect(messages.some((m) => m.includes("1 added"))).toBe(false);
         });
 
         it("triggerSync aborts the stream and reports an idle error when the server stalls", async () => {

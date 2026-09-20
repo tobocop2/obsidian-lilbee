@@ -30,7 +30,7 @@ import { CatalogModal } from "./catalog-modal";
 import { isForeignVendorQuant, isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
-import { reindexSyncOptions } from "../utils/reindex";
+import { applyEmbeddingModelDeferred } from "../utils/reindex";
 import {
     bindEscapeToClose,
     closeSettings,
@@ -51,6 +51,8 @@ interface SyncProgress {
     fill: HTMLElement;
     label: HTMLElement;
     step: HTMLElement;
+    /** Row the sync step's buttons live in; a stopped sync adds its way out here. */
+    actions: HTMLElement;
 }
 
 /**
@@ -147,15 +149,17 @@ const MAX_FEATURED_PICKS = 8;
 const PICKS_CATALOG_LIMIT = 40;
 
 /** A row that will not run here: the server reported wont_run, it refuses the architecture, or the quant is built for another vendor. */
-function isUnrunnable(model: FeaturedModel): boolean {
+function isUnrunnable(model: FeaturedModel, serverMode: ServerMode): boolean {
     return (
-        model.fit === HARDWARE_FIT.WONT_RUN || model.compat === MODEL_COMPAT.UNSUPPORTED || isForeignVendorQuant(model)
+        model.fit === HARDWARE_FIT.WONT_RUN ||
+        model.compat === MODEL_COMPAT.UNSUPPORTED ||
+        isForeignVendorQuant(model, serverMode)
     );
 }
 
 /** A row the wizard can offer in place of another: it runs here, and a hosted row is ready without an API key of its own. */
-function canSubstitute(model: FeaturedModel): boolean {
-    if (isUnrunnable(model)) return false;
+function canSubstitute(model: FeaturedModel, serverMode: ServerMode): boolean {
+    if (isUnrunnable(model, serverMode)) return false;
     return !HOSTED_SOURCES.has(model.source) || isUsableHostedRow(model);
 }
 
@@ -238,17 +242,25 @@ export function pickNativeChatModels(
  * order. Rows left without a substitute stay, behind the ones that run. Never
  * drops a row.
  */
-function substituteUnrunnable(row: FeaturedModel[], candidates: FeaturedModel[]): FeaturedModel[] {
-    const unrunnable = row.filter(isUnrunnable);
+function substituteUnrunnable(
+    row: FeaturedModel[],
+    candidates: FeaturedModel[],
+    serverMode: ServerMode,
+): FeaturedModel[] {
+    const unrunnable = row.filter((m) => isUnrunnable(m, serverMode));
     const taken = new Set(row.map((m) => m.hf_repo));
     const substitutes: FeaturedModel[] = [];
     for (const m of candidates) {
         if (substitutes.length >= unrunnable.length) break;
-        if (taken.has(m.hf_repo) || !canSubstitute(m)) continue;
+        if (taken.has(m.hf_repo) || !canSubstitute(m, serverMode)) continue;
         substitutes.push(m);
         taken.add(m.hf_repo);
     }
-    return [...row.filter((m) => !isUnrunnable(m)), ...substitutes, ...unrunnable.slice(substitutes.length)];
+    return [
+        ...row.filter((m) => !isUnrunnable(m, serverMode)),
+        ...substitutes,
+        ...unrunnable.slice(substitutes.length),
+    ];
 }
 
 export class SetupWizard extends Modal {
@@ -264,8 +276,8 @@ export class SetupWizard extends Modal {
     private pulledModelName = "";
     private selectedEmbedding: EmbeddingModel | null = null;
     private embeddingModels: EmbeddingModel[] = [];
-    /** True only while the wizard's own managed start reports a download; a download started from Settings is not ours to stop. */
-    private ownsServerDownload = false;
+    /** Scopes the wizard's own managed start; a download started from Settings has no controller here and survives a close. */
+    private serverStartController: AbortController | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -286,18 +298,18 @@ export class SetupWizard extends Modal {
     onClose(): void {
         // One reading for the stop and the notice, so the notice never depends on what the stop does to the state.
         const serverDownloading = this.plugin.isDownloadingServer();
-        this.stopStartedWork(serverDownloading);
+        this.stopStartedWork();
         this.plugin.setupWizardOpen = false;
         void this.plugin.resumeDeferredAgentPicker();
         // A download in flight, whoever started it, means there is a server on the way.
         if (!serverDownloading && !this.plugin.settings.setupCompleted) new Notice(MESSAGES.NOTICE_SETUP_INCOMPLETE);
     }
 
-    /** Stops everything the wizard started, the server download included when the wizard's own start began it. */
-    private stopStartedWork(serverDownloading: boolean): void {
+    /** Stops everything the wizard started: a model pull, a sync, and its own managed-server start. */
+    private stopStartedWork(): void {
         this.pullController?.abort();
         this.syncController?.abort();
-        if (serverDownloading && this.ownsServerDownload) this.plugin.cancelServerDownload();
+        this.serverStartController?.abort();
     }
 
     /** Records setup as complete: the point from which the plugin starts itself on the next launch. */
@@ -538,13 +550,13 @@ export class SetupWizard extends Modal {
                 panelShown = true;
             }
             setPhase(event.phase, event.message, event.percent);
-            // Ownership tracks the reported phase: nothing is ours before the first download event or after the last.
-            this.ownsServerDownload = event.phase === MANAGED_PHASE.DOWNLOADING;
             if (event.phase === MANAGED_PHASE.ERROR) failed = true;
         };
 
+        const controller = new AbortController();
+        this.serverStartController = controller;
         try {
-            const outcome = await this.plugin.ensureManagedConsentThenStart(onProgress);
+            const outcome = await this.plugin.ensureManagedConsentThenStart(onProgress, controller.signal);
 
             if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) {
                 // User chose External from the consent modal: reveal the
@@ -577,7 +589,7 @@ export class SetupWizard extends Modal {
             statusEl.setText(MESSAGES.ERROR_START_SERVER);
             (nextBtn as HTMLButtonElement).disabled = false;
         } finally {
-            this.ownsServerDownload = false;
+            this.serverStartController = null;
         }
     }
 
@@ -883,13 +895,14 @@ export class SetupWizard extends Modal {
 
     /** Trades the rows that will not run for the most popular ones that do. The wider catalog is read only when there is something to trade. */
     private async replaceUnrunnablePicks(row: FeaturedModel[]): Promise<FeaturedModel[]> {
-        if (!row.some(isUnrunnable)) return row;
+        const serverMode = this.plugin.settings.serverMode;
+        if (!row.some((m) => isUnrunnable(m, serverMode))) return row;
         const result = await this.plugin.api.catalog({
             task: MODEL_TASK.CHAT,
             sort: FILTERS.SORT.DOWNLOADS,
             limit: PICKS_CATALOG_LIMIT,
         });
-        return substituteUnrunnable(row, result.isOk() ? result.value.models : []);
+        return substituteUnrunnable(row, result.isOk() ? result.value.models : [], serverMode);
     }
 
     /** Say why the grid is empty and let the user try again without restarting
@@ -1057,12 +1070,11 @@ export class SetupWizard extends Modal {
                 const ref = this.selectedEmbedding.hf_repo;
                 const label = this.selectedEmbedding.display_name;
                 void (async () => {
-                    const result = await this.plugin.api.setEmbeddingModel(ref);
+                    const { result, syncOptions } = await applyEmbeddingModelDeferred(this.plugin, ref);
                     if (result.isErr()) {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", label));
                         return;
                     }
-                    const syncOptions = reindexSyncOptions(result.value.reindex_required);
                     this.step = WIZARD_STEP.SYNC;
                     this.renderStep(syncOptions);
                 })();
@@ -1193,7 +1205,7 @@ export class SetupWizard extends Modal {
                 }
             }
 
-            const setResult = await this.plugin.api.setEmbeddingModel(model.hf_repo);
+            const { result: setResult, syncOptions } = await applyEmbeddingModelDeferred(this.plugin, model.hf_repo);
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.setText(setResult.error.message);
@@ -1201,7 +1213,6 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            const syncOptions = reindexSyncOptions(setResult.value.reindex_required);
             this.step = WIZARD_STEP.SYNC;
             this.renderStep(syncOptions);
         } catch (err) {
@@ -1243,7 +1254,7 @@ export class SetupWizard extends Modal {
             this.skip();
         });
 
-        void this.runSync({ fill: progressFill, label: progressLabel, step }, syncOptions);
+        void this.runSync({ fill: progressFill, label: progressLabel, step, actions }, syncOptions);
     }
 
     private async runSync(ui: SyncProgress, options?: SyncOptions): Promise<void> {
@@ -1307,12 +1318,21 @@ export class SetupWizard extends Modal {
         if (done?.index_mismatch) {
             new Notice(done.index_mismatch.message);
             ui.label.setText(done.index_mismatch.message);
+            this.offerRebuild(ui);
             return;
         }
         this.updateProgress(ui.step, ui.fill, 100);
         ui.label.setText(MESSAGES.STATUS_DONE);
         this.step = WIZARD_STEP.WIKI;
         this.renderStep();
+    }
+
+    /** The way out of an index the server cannot search: run the step again and rebuild it. */
+    private offerRebuild(ui: SyncProgress): void {
+        const rebuildBtn = ui.actions.createEl("button", { text: MESSAGES.BUTTON_REBUILD_INDEX, cls: "mod-cta" });
+        rebuildBtn.addEventListener("click", () => {
+            this.renderStep({ forceRebuild: true });
+        });
     }
 
     private renderWiki(): void {

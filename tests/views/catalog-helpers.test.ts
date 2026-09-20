@@ -17,7 +17,7 @@ import {
     taskToTabId,
     yourCollectionRail,
 } from "../../src/views/catalog-helpers";
-import { CATALOG_SOURCE, CATALOG_TAB, KEY_STATUS } from "../../src/types";
+import { CATALOG_SOURCE, CATALOG_TAB, KEY_STATUS, SERVER_MODE } from "../../src/types";
 import type { CatalogEntry } from "../../src/types";
 
 function row(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -300,7 +300,12 @@ describe("catalog-helpers", () => {
                 pick({ hf_repo: "f/embed", task: "embedding" }),
                 pick({ hf_repo: "f/chat-2", task: "chat" }),
             ];
-            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/chat", "f/embed", "f/vision", "f/rerank"]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual([
+                "f/chat",
+                "f/embed",
+                "f/vision",
+                "f/rerank",
+            ]);
         });
 
         it("forYouRail drops a pick the machine cannot hold", () => {
@@ -308,7 +313,7 @@ describe("catalog-helpers", () => {
                 pick({ hf_repo: "f/huge", task: "chat", fit: "wont_run" }),
                 pick({ hf_repo: "f/ok", task: "embedding" }),
             ];
-            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
         it("forYouRail drops a pick built for a GPU toolkit macOS does not have", () => {
@@ -322,7 +327,25 @@ describe("catalog-helpers", () => {
                     }),
                     pick({ hf_repo: "f/ok", task: "embedding" }),
                 ];
-                expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+                expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("forYouRail keeps that pick on a Mac driving an external server, whose card it does not know", () => {
+            const platform = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+            try {
+                const rows = [
+                    pick({
+                        hf_repo: "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF",
+                        task: "chat",
+                        gguf_filename: "Flash-Next-ROCmFP4-FAST-Imatrix-Q4_K_M.gguf",
+                    }),
+                ];
+                expect(forYouRail(rows, SERVER_MODE.EXTERNAL).map((r) => r.hf_repo)).toEqual([
+                    "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF",
+                ]);
             } finally {
                 platform.mockRestore();
             }
@@ -338,7 +361,7 @@ describe("catalog-helpers", () => {
                         gguf_filename: "Flash-Next-ROCmFP4-FAST-Imatrix-Q4_K_M.gguf",
                     }),
                 ];
-                expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual([
+                expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual([
                     "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF",
                 ]);
             } finally {
@@ -362,7 +385,9 @@ describe("catalog-helpers", () => {
                     ["org/rocm/Llama-3-GGUF", "Llama-3-Q4_K_M.gguf"],
                 ];
                 const hidden = portable
-                    .filter(([hf_repo, gguf_filename]) => isForeignVendorQuant(pick({ hf_repo, gguf_filename })))
+                    .filter(([hf_repo, gguf_filename]) =>
+                        isForeignVendorQuant(pick({ hf_repo, gguf_filename }), SERVER_MODE.MANAGED),
+                    )
                     .map(([hf_repo]) => hf_repo);
                 expect(hidden).toEqual([]);
             } finally {
@@ -376,7 +401,7 @@ describe("catalog-helpers", () => {
                 pick({ hf_repo: "f/unknown-arch", task: "vision", compat: "unknown" }),
                 pick({ hf_repo: "f/ok", task: "embedding" }),
             ];
-            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
         it("forYouRail keeps a null-fit row when no known-fit row exists", () => {
@@ -385,7 +410,7 @@ describe("catalog-helpers", () => {
                 pick({ hf_repo: "f/ok", task: "embedding" }),
             ];
             // The null-fit chat row is kept (failed probe must not empty the rail).
-            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/nosize", "f/ok"]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual(["f/nosize", "f/ok"]);
         });
 
         it("forYouRail ranks a known fit ahead of a null fit", () => {
@@ -394,7 +419,7 @@ describe("catalog-helpers", () => {
                 pick({ hf_repo: "f/ok", task: "chat" }),
             ];
             // Both qualify, but the known-fit row ranks first.
-            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
         it("forYouRail excludes a hosted row missing its provider key", () => {
@@ -408,12 +433,12 @@ describe("catalog-helpers", () => {
                 }),
                 pick({ hf_repo: "f/ok", task: "chat" }),
             ];
-            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
         it("forYouRail ignores rows that are not featured", () => {
             const rows = [row({ hf_repo: "p/plain", compat: "supported", fit: "fits" })];
-            expect(forYouRail(rows)).toEqual([]);
+            expect(forYouRail(rows, SERVER_MODE.MANAGED)).toEqual([]);
         });
 
         it("forYouRail ranks a comfortable fit above a tight one, then alphabetically", () => {
@@ -422,7 +447,7 @@ describe("catalog-helpers", () => {
                 pick({ hf_repo: "f/fits-z", display_name: "zzz", task: "chat" }),
                 pick({ hf_repo: "f/fits-b", display_name: "bbb", task: "chat" }),
             ];
-            expect(forYouRail(rows)[0].hf_repo).toBe("f/fits-b");
+            expect(forYouRail(rows, SERVER_MODE.MANAGED)[0].hf_repo).toBe("f/fits-b");
         });
 
         it("yourCollectionRail returns only installed entries", () => {
