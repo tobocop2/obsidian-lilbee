@@ -1001,7 +1001,9 @@
 .lilbee-model-card-status {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+    row-gap: 4px;
     font-size: 11px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
@@ -1032,6 +1034,10 @@
     letter-spacing: 0.06em;
     font-size: 10px;
     color: var(--text-normal);
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .lilbee-model-card-downloads {

@@ -125,7 +125,7 @@ describe("renderModelCard", () => {
             expect(card.find("lilbee-model-card-status-label")).toBeNull();
             const downloads = card.find("lilbee-model-card-downloads")!;
             expect(downloads.textContent).toBe("42 downloads");
-            expect(card.find("lilbee-model-card-status-dot")?.classList.contains("is-muted")).toBe(true);
+            expect(card.find("lilbee-model-card-status-dot")?.classList.list).toEqual(["lilbee-model-card-status-dot"]);
         });
 
         it("formats download counts in thousands", () => {

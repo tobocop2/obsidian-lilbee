@@ -3504,26 +3504,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 text.inputEl.addEventListener("input", () => {
                     edited = true;
                 });
-                let sends = 0;
+                let inFlight: AbortController | null = null;
                 const saveToken = async (): Promise<void> => {
                     if (!edited) return;
                     edited = false;
                     const trimmed = text.inputEl.value.trim();
-                    const send = ++sends;
-                    // False once an edit lands during the request: that edit owns the field, so this attempt writes nothing back.
-                    const stillCurrent = (): boolean => text.inputEl.value.trim() === trimmed;
-                    // False once a later save starts: that attempt owns the field, so this one leaves it alone.
-                    const isLatestSend = (): boolean => send === sends;
+                    // Only the newest save owns the field, so starting one supersedes the save before it.
+                    inFlight?.abort();
+                    const sending = new AbortController();
+                    inFlight = sending;
                     try {
                         await applyConfig(this.plugin, { hf_token: trimmed });
                     } catch {
+                        if (sending.signal.aborted) return;
                         new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
-                        const inForce = this.plugin.getSharedHfToken();
-                        // With no token in force the box holds the only copy of what the user typed, so the refusal leaves it there.
-                        if (inForce !== "" && isLatestSend() && stillCurrent()) text.setValue(inForce);
+                        // The refused value stays in the box, so the next blur sends it again.
+                        edited = true;
                         return;
                     }
-                    if (!stillCurrent()) return;
+                    // An edit that landed during the request owns the field, stored copy included.
+                    if (sending.signal.aborted || text.inputEl.value.trim() !== trimmed) return;
                     this.plugin.setSharedHfToken(trimmed);
                     new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
                 };

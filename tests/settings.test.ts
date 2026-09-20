@@ -4631,7 +4631,7 @@ describe("managed mode settings", () => {
             expect(plugin.getSharedHfToken()).toBe("hf_stored");
         });
 
-        it("puts the stored token back in the field when the server rejects a save", async () => {
+        it("keeps a refused token in the field over the stored one", async () => {
             const plugin = makePlugin({ hfToken: "hf_stored" });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
@@ -4640,14 +4640,12 @@ describe("managed mode settings", () => {
             const field = tokenField(captured);
 
             await saveToken(captured, "hf_rejected");
-            expect(field.inputEl.value).toBe("hf_stored");
+            expect(field.inputEl.value).toBe("hf_rejected");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
             expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_FAILED_HF_TOKEN)).toBe(true);
-
-            await blurField(field);
-            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
         });
 
-        it("keeps a refused token in the field when no token is stored", async () => {
+        it("retries the refused token on the next blur", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
@@ -4655,12 +4653,12 @@ describe("managed mode settings", () => {
             const captured = captureSettingCallbacks(() => tab.display());
             const field = tokenField(captured);
 
-            await saveToken(captured, "hf_typed");
-            expect(field.inputEl.value).toBe("hf_typed");
-            expect(plugin.getSharedHfToken()).toBe("");
+            await saveToken(captured, "hf_retry");
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
 
             await blurField(field);
-            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(2);
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ hf_token: "hf_retry" });
         });
 
         it("keeps an accepted token when an earlier save of the same value is rejected", async () => {
@@ -4668,8 +4666,11 @@ describe("managed mode settings", () => {
             const settle: Array<{ accept: () => void; refuse: () => void }> = [];
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
                 () =>
-                    new Promise<void>((resolve, reject) => {
-                        settle.push({ accept: resolve, refuse: () => reject(new Error("fail")) });
+                    new Promise((resolve, reject) => {
+                        settle.push({
+                            accept: () => resolve({ updated: [], reindex_required: false }),
+                            refuse: () => reject(new Error("fail")),
+                        });
                     }),
             );
             mockChatPicker(plugin);
@@ -4692,19 +4693,23 @@ describe("managed mode settings", () => {
             expect(plugin.getSharedHfToken()).toBe("hf_same");
         });
 
-        it("keeps an accepted token when a later save of the same value is rejected", async () => {
+        it("leaves the stored token alone when the last save of a repeated value is refused", async () => {
             const plugin = makePlugin({ hfToken: "hf_stored" });
             const settle: Array<{ accept: () => void; refuse: () => void }> = [];
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
                 () =>
-                    new Promise<void>((resolve, reject) => {
-                        settle.push({ accept: resolve, refuse: () => reject(new Error("fail")) });
+                    new Promise((resolve, reject) => {
+                        settle.push({
+                            accept: () => resolve({ updated: [], reindex_required: false }),
+                            refuse: () => reject(new Error("fail")),
+                        });
                     }),
             );
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
             const field = tokenField(captured);
+            Notice.clear();
 
             field.edit("hf_same");
             void field.handler();
@@ -4718,7 +4723,35 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(field.inputEl.value).toBe("hf_same");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
+            expect(Notice.instances.filter((n: any) => n.message === MESSAGES.NOTICE_HF_TOKEN_SAVED)).toHaveLength(0);
+        });
+
+        it("raises one saved notice when both saves of a repeated value are accepted", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            const accept: Array<() => void> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () => new Promise((resolve) => accept.push(() => resolve({ updated: [], reindex_required: false }))),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+            Notice.clear();
+
+            field.edit("hf_same");
+            void field.handler();
+            field.edit("hf_same");
+            void field.handler();
+            expect(accept).toHaveLength(2);
+
+            accept[0]!();
+            await new Promise((r) => setTimeout(r, 0));
+            accept[1]!();
+            await new Promise((r) => setTimeout(r, 0));
+
             expect(plugin.getSharedHfToken()).toBe("hf_same");
+            expect(Notice.instances.filter((n: any) => n.message === MESSAGES.NOTICE_HF_TOKEN_SAVED)).toHaveLength(1);
         });
 
         it("keeps a newer edit in the field when an earlier save is rejected", async () => {
@@ -4743,16 +4776,26 @@ describe("managed mode settings", () => {
             expect(plugin.getSharedHfToken()).toBe("hf_stored");
         });
 
-        it("leaves the accepted token in the field when the server accepts a save", async () => {
+        it("does not store an accepted token once a newer edit is in the field", async () => {
             const plugin = makePlugin({ hfToken: "hf_stored" });
+            const accept: Array<() => void> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () => new Promise((resolve) => accept.push(() => resolve({ updated: [], reindex_required: false }))),
+            );
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
             const field = tokenField(captured);
 
-            await saveToken(captured, "hf_accepted");
-            expect(field.inputEl.value).toBe("hf_accepted");
-            expect(plugin.getSharedHfToken()).toBe("hf_accepted");
+            field.edit("hf_sent");
+            void field.handler();
+            expect(accept).toHaveLength(1);
+            field.edit("hf_typing");
+            accept[0]!();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(field.inputEl.value).toBe("hf_typing");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
         });
 
         it("keeps the newer token when an earlier save answers last", async () => {
@@ -4785,8 +4828,11 @@ describe("managed mode settings", () => {
             const settle: Array<{ accept: () => void; refuse: () => void }> = [];
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
                 () =>
-                    new Promise<void>((resolve, reject) => {
-                        settle.push({ accept: resolve, refuse: () => reject(new Error("fail")) });
+                    new Promise((resolve, reject) => {
+                        settle.push({
+                            accept: () => resolve({ updated: [], reindex_required: false }),
+                            refuse: () => reject(new Error("fail")),
+                        });
                     }),
             );
             mockChatPicker(plugin);
