@@ -12,16 +12,35 @@
     },
     "/api/agent-config": {
       "GET": {
+        "fields": {
+          "clients": "array"
+        },
         "streams": false
       }
     },
     "/api/agent-config/{client:str}": {
       "GET": {
+        "fields": {
+          "client": "unknown",
+          "config": "object",
+          "content": "string",
+          "format": "unknown",
+          "stdio_config": "object",
+          "surfaces": "array"
+        },
         "streams": false
       }
     },
     "/api/ask": {
       "POST": {
+        "fields": {
+          "answer": "string",
+          "cited_sources": "array",
+          "compaction": "object",
+          "dropped_sources": "array",
+          "retrieval_query": "string",
+          "sources": "array"
+        },
         "streams": false
       }
     },
@@ -32,6 +51,14 @@
     },
     "/api/chat": {
       "POST": {
+        "fields": {
+          "answer": "string",
+          "cited_sources": "array",
+          "compaction": "object",
+          "dropped_sources": "array",
+          "retrieval_query": "string",
+          "sources": "array"
+        },
         "streams": false
       }
     },
@@ -45,6 +72,10 @@
         "streams": false
       },
       "PATCH": {
+        "fields": {
+          "reindex_required": "boolean",
+          "updated": "array"
+        },
         "streams": false
       }
     },
@@ -60,11 +91,22 @@
     },
     "/api/documents": {
       "GET": {
+        "fields": {
+          "documents": "array",
+          "has_more": "boolean",
+          "limit": "number",
+          "offset": "number",
+          "total": "number"
+        },
         "streams": false
       }
     },
     "/api/documents/remove": {
       "POST": {
+        "fields": {
+          "not_found": "array",
+          "removed": "array"
+        },
         "streams": false
       }
     },
@@ -75,6 +117,10 @@
     },
     "/api/gpus": {
       "GET": {
+        "fields": {
+          "gpus": "array",
+          "notice": "string"
+        },
         "streams": false
       }
     },
@@ -85,6 +131,19 @@
     },
     "/api/health": {
       "GET": {
+        "fields": {
+          "chat_ctx": "number",
+          "chat_error": "string",
+          "chat_prefill_processed": "number",
+          "chat_prefill_total": "number",
+          "chat_ready": "boolean",
+          "chat_slots": "number",
+          "chat_status": "unknown",
+          "embed_token_cap": "number",
+          "status": "string",
+          "version": "string",
+          "warnings": "array"
+        },
         "streams": false
       }
     },
@@ -95,47 +154,91 @@
     },
     "/api/memories": {
       "GET": {
+        "fields": {
+          "memories": "array"
+        },
         "streams": false
       },
       "POST": {
+        "fields": {
+          "id": "string",
+          "kind": "unknown"
+        },
         "streams": false
       }
     },
     "/api/memories/{memory_id:str}": {
       "DELETE": {
+        "fields": {
+          "deleted": "boolean",
+          "id": "string"
+        },
         "streams": false
       },
       "PATCH": {
+        "fields": {
+          "id": "string",
+          "updated": "boolean"
+        },
         "streams": false
       }
     },
     "/api/models": {
       "GET": {
+        "fields": {
+          "chat": "object",
+          "embedding": "object",
+          "reranker": "object",
+          "vision": "object"
+        },
         "streams": false
       }
     },
     "/api/models/catalog": {
       "GET": {
+        "fields": {
+          "has_more": "boolean",
+          "limit": "number",
+          "models": "array",
+          "next_offset": "number",
+          "offset": "number",
+          "total": "number"
+        },
         "streams": false
       }
     },
     "/api/models/chat": {
       "PUT": {
+        "fields": {
+          "model": "string",
+          "reindex_required": "boolean"
+        },
         "streams": false
       }
     },
     "/api/models/embedding": {
       "PUT": {
+        "fields": {
+          "model": "string",
+          "reindex_required": "boolean"
+        },
         "streams": false
       }
     },
     "/api/models/external": {
       "GET": {
+        "fields": {
+          "error": "string",
+          "models": "array"
+        },
         "streams": false
       }
     },
     "/api/models/installed": {
       "GET": {
+        "fields": {
+          "models": "array"
+        },
         "streams": false
       }
     },
@@ -146,6 +249,10 @@
     },
     "/api/models/reranker": {
       "PUT": {
+        "fields": {
+          "model": "string",
+          "reindex_required": "boolean"
+        },
         "streams": false
       }
     },
@@ -156,27 +263,80 @@
     },
     "/api/models/vision": {
       "PUT": {
+        "fields": {
+          "model": "string",
+          "reindex_required": "boolean"
+        },
         "streams": false
       }
     },
     "/api/models/{model:str}": {
       "DELETE": {
+        "fields": {
+          "deleted": "boolean",
+          "freed_gb": "number",
+          "model": "string"
+        },
         "streams": false
       }
     },
     "/api/placement": {
       "DELETE": {
+        "fields": {
+          "co_tenants": "array",
+          "gpus": "array",
+          "manual": "boolean",
+          "notice": "string",
+          "rejected_spec_json": "string",
+          "roles": "array",
+          "skipped_not_installed": "array",
+          "spec_json": "string",
+          "unplaceable": "array"
+        },
         "streams": false
       },
       "GET": {
+        "fields": {
+          "co_tenants": "array",
+          "gpus": "array",
+          "manual": "boolean",
+          "notice": "string",
+          "rejected_spec_json": "string",
+          "roles": "array",
+          "skipped_not_installed": "array",
+          "spec_json": "string",
+          "unplaceable": "array"
+        },
         "streams": false
       },
       "PUT": {
+        "fields": {
+          "co_tenants": "array",
+          "gpus": "array",
+          "manual": "boolean",
+          "notice": "string",
+          "rejected_spec_json": "string",
+          "roles": "array",
+          "skipped_not_installed": "array",
+          "spec_json": "string",
+          "unplaceable": "array"
+        },
         "streams": false
       }
     },
     "/api/placement/preview": {
       "POST": {
+        "fields": {
+          "co_tenants": "array",
+          "gpus": "array",
+          "manual": "boolean",
+          "notice": "string",
+          "rejected_spec_json": "string",
+          "roles": "array",
+          "skipped_not_installed": "array",
+          "spec_json": "string",
+          "unplaceable": "array"
+        },
         "streams": false
       }
     },
@@ -187,40 +347,79 @@
     },
     "/api/sessions": {
       "GET": {
+        "fields": {
+          "sessions": "array"
+        },
         "streams": false
       },
       "POST": {
+        "fields": {
+          "messages": "array",
+          "meta": "object",
+          "summary": "string"
+        },
         "streams": false
       }
     },
     "/api/sessions/{session_id:str}": {
       "DELETE": {
+        "fields": {
+          "deleted": "boolean",
+          "id": "string"
+        },
         "streams": false
       },
       "GET": {
+        "fields": {
+          "messages": "array",
+          "meta": "object",
+          "summary": "string"
+        },
         "streams": false
       },
       "PATCH": {
+        "fields": {
+          "id": "string",
+          "title": "string"
+        },
         "streams": false
       }
     },
     "/api/sessions/{session_id:str}/claim": {
       "POST": {
+        "fields": {
+          "messages": "array",
+          "meta": "object",
+          "summary": "string"
+        },
         "streams": false
       }
     },
     "/api/sessions/{session_id:str}/messages": {
       "POST": {
+        "fields": {
+          "messages": "array",
+          "meta": "object",
+          "summary": "string"
+        },
         "streams": false
       }
     },
     "/api/sessions/{session_id:str}/summary": {
       "PUT": {
+        "fields": {
+          "messages": "array",
+          "meta": "object",
+          "summary": "string"
+        },
         "streams": false
       }
     },
     "/api/shutdown": {
       "POST": {
+        "fields": {
+          "status": "unknown"
+        },
         "streams": false
       }
     },
@@ -231,6 +430,17 @@
     },
     "/api/status": {
       "GET": {
+        "fields": {
+          "command": "string",
+          "config": "object",
+          "document_count": "number",
+          "entities": "object",
+          "index": "object",
+          "skipped": "array",
+          "skipped_total": "number",
+          "sources": "array",
+          "total_chunks": "number"
+        },
         "streams": false
       }
     },
@@ -246,6 +456,11 @@
     },
     "/api/wiki": {
       "DELETE": {
+        "fields": {
+          "pages_removed": "number",
+          "rows_deleted": "boolean",
+          "sources_cleared": "number"
+        },
         "streams": false
       },
       "GET": {
@@ -269,16 +484,29 @@
     },
     "/api/wiki/drafts/accept/{slug:path}": {
       "POST": {
+        "fields": {
+          "moved_to": "string",
+          "reindexed_chunks": "number",
+          "requested_slug": "string",
+          "slug": "string"
+        },
         "streams": false
       }
     },
     "/api/wiki/drafts/diff/{slug:path}": {
       "GET": {
+        "fields": {
+          "diff": "string",
+          "slug": "string"
+        },
         "streams": false
       }
     },
     "/api/wiki/drafts/{slug:path}": {
       "DELETE": {
+        "fields": {
+          "slug": "string"
+        },
         "streams": false
       }
     },
@@ -289,21 +517,44 @@
     },
     "/api/wiki/index": {
       "POST": {
+        "fields": {
+          "entries": "number"
+        },
         "streams": false
       }
     },
     "/api/wiki/lint": {
       "POST": {
+        "fields": {
+          "errors": "number",
+          "issues": "array",
+          "total": "number",
+          "warnings": "number"
+        },
         "streams": false
       }
     },
     "/api/wiki/prune": {
       "POST": {
+        "fields": {
+          "archived": "number",
+          "flagged": "number",
+          "reconciled": "number",
+          "records": "array"
+        },
         "streams": false
       }
     },
     "/api/wiki/status": {
       "GET": {
+        "fields": {
+          "drafts": "number",
+          "lint_errors": "number",
+          "lint_warnings": "number",
+          "pages": "number",
+          "summaries": "number",
+          "wiki_enabled": "boolean"
+        },
         "streams": false
       }
     },
@@ -342,11 +593,16 @@
         "streams": true
       }
     },
+    "/v1/messages": {
+      "POST": {
+        "streams": true
+      }
+    },
     "/v1/models": {
       "GET": {
         "streams": false
       }
     }
   },
-  "version": "0.6.90b420.dev733"
+  "version": "0.6.90b441"
 }

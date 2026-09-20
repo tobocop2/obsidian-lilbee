@@ -13,6 +13,11 @@ shows up as ``application/json`` and the JSON-vs-stream flip that broke
 ``wikiUpdate`` would sail straight through. We read the handler's return
 annotation instead, which is where the truth lives.
 
+That annotation also names the response model, so each operation carries its
+field names and the JSON shape each field lands in. A path can stay put while a
+field changes type, which is how the plugin came to declare the removed-document
+count as a number against a server that answers with a list of names.
+
 Usage::
 
     python3 scripts/dump-server-contract.py --lilbee ~/projects/lilbee
@@ -35,8 +40,58 @@ _IGNORED_METHODS = {"OPTIONS", "HEAD"}
 
 # Runs inside the lilbee venv, so it cannot import anything from this file.
 _CHILD = r'''
-import json, sys
+import json, sys, types, typing
+from pydantic import BaseModel
 from lilbee.server.app import create_app
+
+def _unwrap(ann):
+    """Strip Annotated, Response[...] and an optional None arm off a return annotation."""
+    while True:
+        origin = typing.get_origin(ann)
+        if origin is typing.Annotated:
+            ann = typing.get_args(ann)[0]
+            continue
+        if origin in (typing.Union, types.UnionType):
+            arms = [a for a in typing.get_args(ann) if a is not type(None)]
+            if len(arms) != 1:
+                return None
+            ann = arms[0]
+            continue
+        if origin is not None and getattr(origin, "__name__", "") == "Response":
+            ann = typing.get_args(ann)[0]
+            continue
+        return ann
+
+def _kind(ann) -> str:
+    """The JSON shape a field annotation lands in the response body as."""
+    ann = _unwrap(ann)
+    origin = typing.get_origin(ann)
+    if origin in (list, set, frozenset, tuple):
+        return "array"
+    if origin is dict or ann is dict:
+        return "object"
+    if ann is bool:
+        return "boolean"
+    if ann in (int, float):
+        return "number"
+    if ann is str:
+        return "string"
+    if isinstance(ann, type) and issubclass(ann, BaseModel):
+        return "object"
+    return "unknown"
+
+def _fields(handler):
+    """The response body's field names and shapes, or None when the route has no model."""
+    try:
+        hints = typing.get_type_hints(handler.fn, include_extras=True)
+    except Exception:
+        return None
+    model = _unwrap(hints.get("return"))
+    if not (isinstance(model, type) and issubclass(model, BaseModel)):
+        return None
+    if model.model_config.get("extra") == "allow":
+        return None
+    return {name: _kind(field.annotation) for name, field in model.model_fields.items()}
 
 def _streams(handler) -> bool:
     """True when the handler returns an SSE stream on its success path.
@@ -61,7 +116,11 @@ for route in app.routes:
         if method in ("OPTIONS", "HEAD"):
             continue
         handler = entry[0] if isinstance(entry, tuple) else entry
-        ops.setdefault(route.path, {})[method] = {"streams": _streams(handler)}
+        op = {"streams": _streams(handler)}
+        fields = _fields(handler)
+        if fields is not None:
+            op["fields"] = fields
+        ops.setdefault(route.path, {})[method] = op
 
 print(json.dumps({
     "version": app.openapi_schema.info.version,
