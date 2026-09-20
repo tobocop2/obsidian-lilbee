@@ -237,16 +237,35 @@ describe("DocumentsModal", () => {
     });
 
     it.each([
-        { case: "one name", listed: ["a.md"], removed: ["a.md"], notFound: [], notice: "lilbee: removed 1 document" },
+        {
+            case: "one name",
+            listed: ["a.md"],
+            removed: ["a.md"],
+            notFound: [],
+            notices: ["lilbee: removed 1 document"],
+        },
         {
             case: "many names",
             listed: ["a.md", "b.md"],
             removed: ["a.md", "b.md"],
             notFound: [],
-            notice: "lilbee: removed 2 documents",
+            notices: ["lilbee: removed 2 documents"],
         },
-        { case: "no names", listed: ["a.md"], removed: [], notFound: ["a.md"], notice: "lilbee: removed 0 documents" },
-    ])("notice counts the names the server removed: $case", async ({ listed, removed, notFound, notice }) => {
+        {
+            case: "no names",
+            listed: ["a.md"],
+            removed: [],
+            notFound: ["a.md"],
+            notices: ["lilbee: removed 0 documents", "lilbee: 1 document is no longer on the server"],
+        },
+        {
+            case: "several names the server no longer has",
+            listed: ["a.md", "b.md"],
+            removed: [],
+            notFound: ["a.md", "b.md"],
+            notices: ["lilbee: removed 0 documents", "lilbee: 2 documents are no longer on the server"],
+        },
+    ])("notice counts the names the server removed: $case", async ({ listed, removed, notFound, notices }) => {
         vi.useRealTimers();
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(listed.map((filename) => makeDoc({ filename }))));
@@ -266,7 +285,11 @@ describe("DocumentsModal", () => {
         await tick();
         await tick();
 
-        expect(Notice.instances.map((n) => n.message)).toContain(notice);
+        const messages = Notice.instances.map((n) => n.message);
+        for (const notice of notices) expect(messages).toContain(notice);
+        if (notFound.length === 0) {
+            expect(messages.some((m) => m.includes("no longer on the server"))).toBe(false);
+        }
     });
 
     it("notice prints the server removed count, not the selected count", async () => {

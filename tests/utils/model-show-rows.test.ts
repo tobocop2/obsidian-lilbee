@@ -7,8 +7,16 @@ describe("modelShowRows", () => {
         expect(modelShowRows({})).toEqual([]);
     });
 
-    it("returns no rows when the server answers with fields that carry no label", () => {
-        expect(modelShowRows({ chat_template: "{{ prompt }}", file_type: "Q4_K_M" })).toEqual([]);
+    it("gives the multi-line blobs and the raw file-type code no rows", () => {
+        expect(modelShowRows({ chat_template: "{{ prompt }}", parameters: "num_ctx 4096", file_type: "15" })).toEqual(
+            [],
+        );
+    });
+
+    it("labels the embedding length", () => {
+        expect(modelShowRows({ embedding_length: "1024" })).toEqual([
+            { label: MESSAGES.LABEL_STATUS_EMBEDDING_LENGTH, value: "1024" },
+        ]);
     });
 
     it("labels the architecture", () => {
@@ -23,11 +31,16 @@ describe("modelShowRows", () => {
         ]);
     });
 
-    it("keeps architecture before context length", () => {
-        const rows = modelShowRows({ context_length: "32768", architecture: "qwen3" });
+    it("orders the rows the same whatever order the server answers in", () => {
+        const rows = modelShowRows({
+            embedding_length: "1024",
+            context_length: "32768",
+            architecture: "qwen3",
+        });
         expect(rows.map((r) => r.label)).toEqual([
             MESSAGES.LABEL_STATUS_ARCHITECTURE,
             MESSAGES.LABEL_STATUS_CONTEXT_LENGTH,
+            MESSAGES.LABEL_STATUS_EMBEDDING_LENGTH,
         ]);
     });
 });

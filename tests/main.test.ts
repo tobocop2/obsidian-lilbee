@@ -2206,6 +2206,34 @@ describe("LilbeePlugin", () => {
                     task: MODEL_TASK.EMBEDDING,
                 }),
             );
+            const { modelShowRows } = await import("../src/utils/model-show-rows");
+            const source = (ModelInfoModal as ReturnType<typeof vi.fn>).mock.calls[0][2] as {
+                details: Record<string, string>;
+            };
+            expect(modelShowRows(source.details)).toEqual([
+                { label: MESSAGES.LABEL_STATUS_ARCHITECTURE, value: "bert" },
+                { label: MESSAGES.LABEL_STATUS_EMBEDDING_LENGTH, value: "1024" },
+            ]);
+        });
+
+        it("lilbee:model-info-active-chat opens the modal for an answer whose fields carry no rows", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            const details = { chat_template: "{{ prompt }}" };
+            stubModelApis(plugin, vi.fn().mockResolvedValue(catalogPage([])), vi.fn().mockResolvedValue(details));
+            const cb = await getCommandCallback(plugin, "model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).toHaveBeenCalledWith(
+                expect.anything(),
+                plugin,
+                expect.objectContaining({ kind: MODEL_INFO_SOURCE.SERVER, details }),
+            );
+            expect(Notice.instances.map((n) => n.message)).not.toContain(
+                MESSAGES.NOTICE_MODEL_INFO_UNAVAILABLE("qwen/qwen3-8b"),
+            );
         });
 
         function checkOf(plugin: Awaited<ReturnType<typeof createPlugin>>, id: string) {

@@ -1027,6 +1027,25 @@ describe("LilbeeSettingTab", () => {
             expect(input.value).toBe("Answer from the cited documents.");
         });
 
+        it("restores the Default placeholder when a later config reports an empty prompt", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "Answer from the cited documents.",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            await new Promise((r) => setTimeout(r, 0));
+
+            const input = (tab as any).serverConfigInputs.get("rag_system_prompt");
+            expect(input.placeholder).toBe("Answer from the cited documents.");
+
+            (tab as any).adoptServerConfig({ rag_system_prompt: "" });
+            expect(input.placeholder).toBe(MESSAGES.PLACEHOLDER_DEFAULT);
+            expect(input.value).toBe("");
+        });
+
         it("tolerates a config with system prompts when their inputs were never registered", async () => {
             // loadServerDefaults can run before the prompt inputs are captured;
             // the config pass walks the registered inputs, so an absent one is skipped.

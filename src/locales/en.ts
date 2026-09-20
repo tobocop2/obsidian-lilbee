@@ -876,6 +876,8 @@ export const MESSAGES = {
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
     NOTICE_DELETED: (count: number) => `lilbee: removed ${count} ${count === 1 ? "document" : "documents"}`,
+    NOTICE_DELETE_NOT_FOUND: (count: number) =>
+        `lilbee: ${count} ${count === 1 ? "document is" : "documents are"} no longer on the server`,
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
@@ -937,6 +939,7 @@ export const MESSAGES = {
     STATUS_VALUE_OCR_OFF: "Off",
     LABEL_STATUS_ARCHITECTURE: "Architecture",
     LABEL_STATUS_CONTEXT_LENGTH: "Context length",
+    LABEL_STATUS_EMBEDDING_LENGTH: "Embedding length",
     LABEL_STATUS_SERVED_CONTEXT: "Serving context",
     LABEL_STATUS_WARNINGS: "Degraded",
     LABEL_STATUS_WIKI: "Wiki",

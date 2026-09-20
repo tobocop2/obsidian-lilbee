@@ -95,7 +95,6 @@ import {
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { applyConfig } from "./utils/reindex";
-import { modelShowRows } from "./utils/model-show-rows";
 import {
     errorMessage,
     extractServerErrorDetail,
@@ -2330,8 +2329,9 @@ export default class LilbeePlugin extends Plugin {
             new Notice(MESSAGES.NOTICE_MODEL_INFO_UNAVAILABLE(ref));
             return;
         }
-        // The server answers with an empty object for a model it cannot describe.
-        if (modelShowRows(details).length === 0) {
+        // The server answers with an empty object for a model it cannot describe. A populated
+        // answer opens the modal even when none of its fields earns a row.
+        if (Object.keys(details).length === 0) {
             new Notice(MESSAGES.NOTICE_MODEL_INFO_UNAVAILABLE(ref));
             return;
         }

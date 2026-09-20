@@ -86,6 +86,7 @@ export class DocumentsModal extends Modal {
         try {
             const result = await this.plugin.api.removeDocuments(names);
             new Notice(MESSAGES.NOTICE_DELETED(result.removed.length));
+            if (result.not_found.length > 0) new Notice(MESSAGES.NOTICE_DELETE_NOT_FOUND(result.not_found.length));
             this.resetAndFetch();
         } catch {
             new Notice(MESSAGES.ERROR_DELETE_DOCUMENTS);
