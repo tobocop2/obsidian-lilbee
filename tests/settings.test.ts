@@ -1023,9 +1023,13 @@ describe("LilbeeSettingTab", () => {
             Notice.clear();
             const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
             mockChatPicker(plugin);
+            // A server without /api/config/defaults: the fetch settles, with nothing in it.
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = {};
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).toEqual({});
+            });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
@@ -1036,6 +1040,69 @@ describe("LilbeeSettingTab", () => {
                     n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
                 ),
             ).toBe(true);
+        });
+
+        it("reports nothing when the reset is clicked before the defaults arrive", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            // The defaults fetch is still in flight, so the click has nothing to reset to yet.
+            expect((tab as any).configDefaults).toBeNull();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await extraButtonOnClicks[RAG_PROMPT_RESET]();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)) ||
+                        n.message.includes(MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
+                ),
+            ).toBe(false);
+        });
+
+        it("a reset clicked after a keystroke lands last on the server", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "Answer from the cited documents.",
+            });
+            const tab = makeTab(plugin);
+            const { textAreaByName, extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).not.toBeNull();
+            });
+
+            let releaseKeystroke: () => void = () => {};
+            const updateConfig = plugin.api.updateConfig as ReturnType<typeof vi.fn>;
+            updateConfig.mockClear();
+            updateConfig.mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        releaseKeystroke = () => resolve({ updated: [], reindex_required: false });
+                    }),
+            );
+
+            const typed = textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
+            await vi.waitFor(() => {
+                expect(updateConfig).toHaveBeenCalledTimes(1);
+            });
+            const reset = extraButtonOnClicks[RAG_PROMPT_RESET]();
+            await new Promise((r) => setTimeout(r, 0));
+            // The reset waits for the typed write rather than racing it.
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            releaseKeystroke();
+            await typed;
+            await reset;
+
+            expect(updateConfig.mock.calls.map((c) => c[0])).toEqual([
+                { rag_system_prompt: "You are a pirate." },
+                { rag_system_prompt: "Answer from the cited documents." },
+            ]);
+            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
         });
 
         it("keeps the mirrored setting when the server refuses the reset", async () => {

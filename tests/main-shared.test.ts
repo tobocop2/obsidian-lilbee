@@ -334,6 +334,22 @@ describe("managed server tracks the open vault's data dir", () => {
         expect(smB.dataDir).toBe("/shared/vaults/b");
     });
 
+    it("hands the supervisor the prompts settings hold now, not a copy from build time", async () => {
+        const plugin = await createPlugin();
+        const registry = plugin.vaultRegistry!;
+        plugin.settings.ragSystemPrompt = "You are a pirate.";
+        plugin.settings.generalSystemPrompt = "You are a tutor.";
+        const ctor = (await import("../src/server-manager")).ServerManager as unknown as ReturnType<typeof vi.fn>;
+        ctor.mockClear();
+        (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        const readPrompts = ctor.mock.calls.at(-1)![0].systemPrompts as () => { rag: string; general: string };
+        expect(readPrompts()).toEqual({ rag: "You are a pirate.", general: "You are a tutor." });
+
+        // A reset clears the mirror; the supervisor must see the cleared value on its next spawn.
+        plugin.settings.ragSystemPrompt = "";
+        expect(readPrompts()).toEqual({ rag: "", general: "You are a tutor." });
+    });
+
     it("falls back to the default per-vault dir when the open vault is unregistered", async () => {
         const plugin = await createPlugin();
         const registry = plugin.vaultRegistry!;

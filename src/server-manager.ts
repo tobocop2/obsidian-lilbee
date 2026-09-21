@@ -168,6 +168,12 @@ export async function awaitServerGone(dataDir: string, timeoutMs: number): Promi
     return false;
 }
 
+/** The system prompts a spawned server starts with, empty when the server's own default applies. */
+export interface SystemPrompts {
+    rag: string;
+    general: string;
+}
+
 export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
@@ -183,8 +189,8 @@ export interface ServerManagerOptions {
      * scope models to each per-vault data-dir and re-download per vault.
      */
     modelsDir: string;
-    ragSystemPrompt: string;
-    generalSystemPrompt: string;
+    /** Read once per spawn, never captured at construction. */
+    systemPrompts: () => SystemPrompts;
     /**
      * Version of the installed binary, i.e. what a spawn would launch. May
      * carry the release tag's leading "v", which the server's health report
@@ -356,11 +362,12 @@ export class ServerManager {
             LILBEE_MODELS_DIR: this.opts.modelsDir,
             LILBEE_EXCLUSIVE_SCOPE: this.opts.sharedRoot,
         };
-        if (this.opts.ragSystemPrompt) {
-            env.LILBEE_RAG_SYSTEM_PROMPT = this.opts.ragSystemPrompt;
+        const prompts = this.opts.systemPrompts();
+        if (prompts.rag) {
+            env.LILBEE_RAG_SYSTEM_PROMPT = prompts.rag;
         }
-        if (this.opts.generalSystemPrompt) {
-            env.LILBEE_GENERAL_SYSTEM_PROMPT = this.opts.generalSystemPrompt;
+        if (prompts.general) {
+            env.LILBEE_GENERAL_SYSTEM_PROMPT = prompts.general;
         }
         return env;
     }

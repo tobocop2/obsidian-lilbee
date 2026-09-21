@@ -547,7 +547,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigSliders: Map<string, { setValue: (v: number) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
-    private configDefaults: Record<string, unknown> = {};
+    // Null until /api/config/defaults answers; an empty map is a server that cannot report defaults.
+    private configDefaults: Record<string, unknown> | null = null;
+    // Newest write started for a server-config key; the next write to that key waits for it.
+    private configWrites: Map<string, Promise<unknown>> = new Map();
     // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
     private suppressChangeEvents = false;
     private chatModeSettingEl: HTMLElement | null = null;
@@ -1975,16 +1978,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** Send a system prompt to the server. The server has no empty prompt to store, so an
-     *  empty box writes nothing and leaves the prompt in force; the reset button restores the default. */
+    /** Send a system prompt to the server. An empty box writes nothing: the saved prompt stays in force. */
     private async pushSystemPrompt(key: string, value: string, name: string): Promise<void> {
         const trimmed = value.trim();
         if (trimmed === "") return;
         try {
-            await applyConfig(this.plugin, { [key]: trimmed });
+            await this.writeConfigKey(key, trimmed);
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
         }
+    }
+
+    /** PATCH one server-config key. Writes to the same key are sent in the order they started. */
+    private writeConfigKey(key: string, value: unknown): Promise<unknown> {
+        const pending = this.configWrites.get(key) ?? Promise.resolve();
+        const next = pending.then(() => applyConfig(this.plugin, { [key]: value }));
+        this.configWrites.set(
+            key,
+            next.catch(() => undefined),
+        );
+        return next;
     }
 
     /** Runs a programmatic setValue with the control's onChange muted, so nothing echoes to the server. */
@@ -2077,16 +2090,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
                 .onClick(async () => {
                     // Silent no-op until defaults have loaded (old servers or racing first click).
-                    if (!(key in this.configDefaults)) return;
-                    if (await this.pushConfigDefault(key, label)) this.refresh();
+                    const defaults = this.configDefaults;
+                    if (defaults === null || !(key in defaults)) return;
+                    if (await this.pushConfigDefault(key, label, defaults[key])) this.refresh();
                 }),
         );
     }
 
     /** Write the server's default for one key. False means the write failed and said so. */
-    private async pushConfigDefault(key: string, label: string): Promise<boolean> {
+    private async pushConfigDefault(key: string, label: string, value: unknown): Promise<boolean> {
         try {
-            await applyConfig(this.plugin, { [key]: this.configDefaults[key] });
+            await this.writeConfigKey(key, value);
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
             return false;
@@ -2095,19 +2109,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return true;
     }
 
-    /** A system prompt lives in two places, so the reset writes both: the server's default, then
-     *  the plugin's mirror. A server with no defaults endpoint says so rather than failing silently. */
+    /** Reset a system prompt in both places it lives: the server's value, then the plugin's mirror. */
     private appendPromptResetAffordance(setting: Setting, spec: ConfigRowSpec, settingsKey: PromptSettingKey): Setting {
         return setting.addExtraButton((btn) =>
             btn
                 .setIcon(ICON_RESET)
                 .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
                 .onClick(async () => {
-                    if (!(spec.key in this.configDefaults)) {
+                    const defaults = this.configDefaults;
+                    // Still loading: nothing to reset to yet, and nothing has gone wrong.
+                    if (defaults === null) return;
+                    if (!(spec.key in defaults)) {
                         new Notice(MESSAGES.NOTICE_FAILED_RESET(spec.name));
                         return;
                     }
-                    if (!(await this.pushConfigDefault(spec.key, spec.name))) return;
+                    if (!(await this.pushConfigDefault(spec.key, spec.name, defaults[spec.key]))) return;
                     this.plugin.settings[settingsKey] = DEFAULT_SETTINGS[settingsKey];
                     await this.plugin.saveSettings();
                     this.refresh();

@@ -55,8 +55,7 @@ describe("integration: server start", () => {
             dataDir: tempDir,
             sharedRoot: tempDir,
             modelsDir: `${tempDir}/models`,
-            ragSystemPrompt: "",
-            generalSystemPrompt: "",
+            systemPrompts: () => ({ rag: "", general: "" }),
             installedVersion: "",
         });
 

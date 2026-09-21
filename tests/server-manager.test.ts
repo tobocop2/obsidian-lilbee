@@ -45,8 +45,7 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         dataDir: "/tmp/data",
         sharedRoot: "/tmp/shared",
         modelsDir: "/tmp/models",
-        ragSystemPrompt: "",
-        generalSystemPrompt: "",
+        systemPrompts: () => ({ rag: "", general: "" }),
         installedVersion: "",
         ...overrides,
     };
@@ -295,6 +294,11 @@ describe("ServerManager", () => {
         return mgr;
     }
 
+    /** Environment the *n*th spawn was given. */
+    function spawnEnv(n: number): Record<string, string> {
+        return (spawnSpy.mock.calls[n][2] as { env: Record<string, string> }).env;
+    }
+
     /** Wait out tryAdopt's async tick so the spawned mock child exists. */
     async function spawnedChild(): Promise<MockChild> {
         await vi.advanceTimersByTimeAsync(0);
@@ -338,8 +342,8 @@ describe("ServerManager", () => {
         });
 
         it("passes the scope, models dir, and parent pid in the environment", async () => {
-            await startFresh({ ragSystemPrompt: "rag!", generalSystemPrompt: "gen!" });
-            const env = (spawnSpy.mock.calls[0][2] as { env: Record<string, string> }).env;
+            await startFresh({ systemPrompts: () => ({ rag: "rag!", general: "gen!" }) });
+            const env = spawnEnv(0);
             expect(env.LILBEE_EXCLUSIVE_SCOPE).toBe("/tmp/shared");
             expect(env.LILBEE_MODELS_DIR).toBe("/tmp/models");
             expect(env.LILBEE_PARENT_PID).toBe(String(process.pid));
@@ -349,9 +353,8 @@ describe("ServerManager", () => {
 
         it("omits the prompt env vars when the prompts are empty", async () => {
             await startFresh();
-            const env = (spawnSpy.mock.calls[0][2] as { env: Record<string, string> }).env;
-            expect(env).not.toHaveProperty("LILBEE_RAG_SYSTEM_PROMPT");
-            expect(env).not.toHaveProperty("LILBEE_GENERAL_SYSTEM_PROMPT");
+            expect(spawnEnv(0)).not.toHaveProperty("LILBEE_RAG_SYSTEM_PROMPT");
+            expect(spawnEnv(0)).not.toHaveProperty("LILBEE_GENERAL_SYSTEM_PROMPT");
         });
 
         it("sends the session token on the readiness probe", async () => {
@@ -826,6 +829,25 @@ describe("ServerManager", () => {
             expect(appendFileSyncSpy).not.toHaveBeenCalled();
             expect(spawnSpy).toHaveBeenCalledTimes(2); // no phantom crash-restart
         });
+
+        it("exports the prompts settings hold now, not the ones the first spawn had", async () => {
+            // Reset clears the plugin's mirror; a restart from the same settings tab must
+            // not put the old prompt back in force.
+            const prompts = { rag: "You are a pirate.", general: "You are a tutor." };
+            const mgr = new ServerManager(defaultOpts({ systemPrompts: () => ({ ...prompts }) }));
+            await mgr.start();
+            expect(spawnEnv(0).LILBEE_RAG_SYSTEM_PROMPT).toBe("You are a pirate.");
+
+            prompts.rag = "";
+            const first = child();
+            const restartP = mgr.restart();
+            first._emit("exit", 0, null);
+            await vi.advanceTimersByTimeAsync(1000);
+            await restartP;
+
+            expect(spawnEnv(1)).not.toHaveProperty("LILBEE_RAG_SYSTEM_PROMPT");
+            expect(spawnEnv(1).LILBEE_GENERAL_SYSTEM_PROMPT).toBe("You are a tutor.");
+        });
     });
 
     // ── crashes ─────────────────────────────────────────────────────
@@ -840,6 +862,20 @@ describe("ServerManager", () => {
             await vi.advanceTimersByTimeAsync(3000);
             expect(spawnSpy).toHaveBeenCalledTimes(2);
             expect(mgr.state).toBe("ready");
+        });
+
+        it("a crash restart exports the prompts settings hold now", async () => {
+            const prompts = { rag: "You are a pirate.", general: "" };
+            const mgr = new ServerManager(defaultOpts({ systemPrompts: () => ({ ...prompts }) }));
+            await mgr.start();
+            expect(spawnEnv(0).LILBEE_RAG_SYSTEM_PROMPT).toBe("You are a pirate.");
+
+            prompts.rag = "";
+            child()._emit("exit", 1, null);
+            await vi.advanceTimersByTimeAsync(3000);
+
+            expect(spawnSpy).toHaveBeenCalledTimes(2);
+            expect(spawnEnv(1)).not.toHaveProperty("LILBEE_RAG_SYSTEM_PROMPT");
         });
 
         it("a clean exit (SIGTERM) is a take-over, not a crash: no restart", async () => {
