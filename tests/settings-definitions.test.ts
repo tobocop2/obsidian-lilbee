@@ -71,6 +71,7 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, overrides: Record<st
         api: {
             config: vi.fn().mockResolvedValue({ memory_enabled: true, memory_auto_extract: false }),
             configDefaults: vi.fn().mockRejectedValue(new Error("offline")),
+            configSchema: vi.fn().mockRejectedValue(new Error("offline")),
             updateConfig: vi.fn().mockResolvedValue({}),
             catalog: vi.fn().mockRejectedValue(new Error("offline")),
             installedModels: vi.fn().mockResolvedValue({ models: [] }),

@@ -858,6 +858,7 @@ export const MESSAGES = {
     NOTICE_FAILED_SET_MODEL: (type: string) => `Failed to set ${type} model`,
     NOTICE_UPDATED: (field: string) => `lilbee: ${field} updated`,
     NOTICE_FAILED_UPDATE: (field: string) => `lilbee: failed to update ${field}`,
+    NOTICE_FAILED_UPDATE_REASON: (field: string, reason: string) => `lilbee: failed to update ${field}: ${reason}`,
     NOTICE_FIELD_UPDATED: (field: string) => `lilbee: ${field} updated`,
     NOTICE_FIELD_RESET: (field: string) => `lilbee: ${field} reset to default`,
     NOTICE_FAILED_RESET: (field: string) => `lilbee: failed to reset ${field}`,
@@ -1050,6 +1051,8 @@ export const MESSAGES = {
         "Discard reranked results below this score. Leave empty to keep everything the reranker returns.",
     LABEL_FTS_LANGUAGE: "Keyword search language",
     DESC_FTS_LANGUAGE: "Language used for stemming in keyword search, so 'running' matches 'run'.",
+    DESC_FTS_LANGUAGE_FREE_TEXT:
+        "Language used for stemming in keyword search, so 'running' matches 'run'. This server does not publish the languages it accepts, so type one and press Enter. If the server refuses it, the message names the languages it takes.",
     LABEL_CONTEXTUAL_ENRICHMENT: "Add context when indexing",
     DESC_CONTEXTUAL_ENRICHMENT:
         "Give each passage a short note about where it sits in the document. Makes retrieval better and indexing slower.",

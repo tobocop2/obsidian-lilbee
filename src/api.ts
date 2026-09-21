@@ -19,6 +19,7 @@ import type {
     Capability,
     CatalogResponse,
     ConfigResponse,
+    ConfigSchemaResponse,
     CrawlerStatusField,
     CrawlerStatusResponse,
     ConfigUpdateResponse,
@@ -816,6 +817,12 @@ export class LilbeeClient {
     async config(): Promise<ConfigResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`);
         return (await res.json()) as ConfigResponse;
+    }
+
+    /** The values the server accepts per setting. Absent before the server grew the route. */
+    async configSchema(): Promise<ConfigSchemaResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/config/schema`);
+        return (await res.json()) as ConfigSchemaResponse;
     }
 
     async configDefaults(): Promise<Record<string, unknown>> {

@@ -84,6 +84,14 @@
         "streams": false
       }
     },
+    "/api/config/schema": {
+      "GET": {
+        "fields": {
+          "fields": "array"
+        },
+        "streams": false
+      }
+    },
     "/api/crawl": {
       "POST": {
         "streams": true

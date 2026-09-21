@@ -207,6 +207,7 @@ const INVOCATIONS: Record<string, unknown[]> = {
     setupCrawler: [],
     config: [],
     configDefaults: [],
+    configSchema: [],
     updateConfig: [{}],
     gpuStatsStream: [],
     warmStream: [],

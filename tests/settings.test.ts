@@ -14,6 +14,7 @@ import {
     TASK_TYPE,
 } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import configSchema from "./fixtures/config-schema.json";
 import { ServerStartingError } from "../src/api";
 import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
@@ -149,6 +150,7 @@ function makePlugin(
         showModel: vi.fn().mockRejectedValue(new Error("no model")),
         config: vi.fn().mockRejectedValue(new Error("unreachable")),
         configDefaults: vi.fn().mockRejectedValue(new Error("unreachable")),
+        configSchema: vi.fn().mockRejectedValue(new Error("unreachable")),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: true }))),
         setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
@@ -296,6 +298,8 @@ interface BlurCapture {
     inputEl: { value: string };
     /** Set the field's value and fire its input listener, as typing into it does. */
     edit: (value: string) => void;
+    /** Fire the field's keydown listener for one key. */
+    press: (key: string) => void;
 }
 
 interface Captured {
@@ -314,6 +318,8 @@ interface Captured {
     sliderSetValuesByName: Map<string, number[]>;
     /** Every value pushed into a row's dropdown via setValue, in call order. */
     dropdownSetValuesByName: Map<string, string[]>;
+    /** The options a row's dropdown was built with, keyed by the row's display name. */
+    dropdownOptionsByName: Map<string, Record<string, string>>;
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
     blurHandlers: BlurCapture[];
@@ -362,6 +368,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const sliderByName = new Map<string, SliderOnChange>();
     const sliderSetValuesByName = new Map<string, number[]>();
     const dropdownSetValuesByName = new Map<string, string[]>();
+    const dropdownOptionsByName = new Map<string, Record<string, string>>();
     const descByName = new Map<string, string>();
     let currentName = "";
     const origSetName = Setting.prototype.setName;
@@ -403,6 +410,11 @@ function captureSettingCallbacks(fn: () => void): Captured {
                         edit: (value: string) => {
                             text.inputEl.value = value;
                             listeners.get("input")?.();
+                        },
+                        press: (key: string) => {
+                            (listeners.get("keydown") as unknown as ((e: { key: string }) => void) | undefined)?.({
+                                key,
+                            });
                         },
                     };
                     blurHandlers.push(capture);
@@ -475,7 +487,10 @@ function captureSettingCallbacks(fn: () => void): Captured {
         cb(fakeDropdown);
         dropdownOptions.push(options);
         dropdownSetValues.push(setValues);
-        if (name) dropdownSetValuesByName.set(name, setValues);
+        if (name) {
+            dropdownSetValuesByName.set(name, setValues);
+            dropdownOptionsByName.set(name, options);
+        }
         return this;
     };
 
@@ -562,6 +577,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         descByName,
         sliderSetValuesByName,
         dropdownSetValuesByName,
+        dropdownOptionsByName,
         textOnChanges,
         textAreaOnChanges,
         blurHandlers,
@@ -657,11 +673,12 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // sharedRoot + 9 generation + 5 retrieval-advanced + 5 ingest + 2 worker-pool
+            // sharedRoot + 9 generation + 4 retrieval-advanced + 5 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
-            // The API-key rows and the HF token row save on blur, so they register no onChange.
-            expect(textOnChanges.length).toBe(50);
+            // The API-key rows, the HF token row and the keyword search language save on blur,
+            // so they register no onChange.
+            expect(textOnChanges.length).toBe(49);
         });
     });
 
@@ -4628,11 +4645,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
 
-            // blur[0]=openai, blur[1]=anthropic, blur[2]=gemini
-            blurHandlers[0].inputEl.value = "sk-test123";
-            await blurHandlers[0].handler();
+            const row = blurByName.get(MESSAGES.LABEL_OPENAI_API_KEY)!;
+            row.inputEl.value = "sk-test123";
+            await row.handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ openai_api_key: "sk-test123" });
         });
 
@@ -4640,10 +4657,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
 
-            blurHandlers[1].inputEl.value = "sk-ant-test";
-            await blurHandlers[1].handler();
+            const row = blurByName.get(MESSAGES.LABEL_ANTHROPIC_API_KEY)!;
+            row.inputEl.value = "sk-ant-test";
+            await row.handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ anthropic_api_key: "sk-ant-test" });
         });
 
@@ -4651,10 +4669,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
 
-            blurHandlers[2].inputEl.value = "AIza-test";
-            await blurHandlers[2].handler();
+            const row = blurByName.get(MESSAGES.LABEL_GEMINI_API_KEY)!;
+            row.inputEl.value = "AIza-test";
+            await row.handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gemini_api_key: "AIza-test" });
         });
 
@@ -4662,10 +4681,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
 
-            blurHandlers[0].inputEl.value = "";
-            await blurHandlers[0].handler();
+            const row = blurByName.get(MESSAGES.LABEL_OPENAI_API_KEY)!;
+            row.inputEl.value = "";
+            await row.handler();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -4674,10 +4694,11 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
 
-            blurHandlers[0].inputEl.value = "sk-test123";
-            await blurHandlers[0].handler();
+            const row = blurByName.get(MESSAGES.LABEL_OPENAI_API_KEY)!;
+            row.inputEl.value = "sk-test123";
+            await row.handler();
             await new Promise((r) => setTimeout(r, 0));
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
@@ -9148,23 +9169,138 @@ describe("new server config fields", () => {
         expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
     });
 
-    it("fts_language PATCHes a non-empty value only", async () => {
-        const plugin = makePlugin();
-        mockChatPicker(plugin);
-        const tab = makeTab(plugin);
-        const { textByName } = captureSettingCallbacks(() => tab.display());
-        const row = textByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+    describe("the keyword search language", () => {
+        /** Recorded from GET /api/config/schema on a live server, so the row is built from real choices. */
+        const FTS_CHOICES = configSchema.fields.find((field) => field.key === "fts_language")!.choices!;
 
-        await row("German");
-        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
-        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-        await row("  ");
-        expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        /** Recorded from PATCH /api/config with a half-typed value, verbatim. */
+        const REFUSAL =
+            'Server responded 400: {"status_code":400,"detail":"1 validation error for Config\\nfts_language\\n  ' +
+            "Value error, fts_language must be one of: Arabic, Danish, Dutch, English, Finnish, French, German, " +
+            "Greek, Hungarian, Italian, Norwegian, Portuguese, Romanian, Russian, Spanish, Swedish, Tamil, Turkish " +
+            "[type=value_error, input_value='Germ', input_type=str]\"}";
 
-        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
-        Notice.clear();
-        await row("German");
-        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        /** Render once so the schema arrives, then capture the render it triggers. */
+        async function displayWithSchema(plugin: ReturnType<typeof makePlugin>): Promise<Captured> {
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            return captured;
+        }
+
+        function freeTextRow(plugin: ReturnType<typeof makePlugin>): Captured {
+            const tab = makeTab(plugin);
+            return captureSettingCallbacks(() => tab.display());
+        }
+
+        it("offers the languages the server published, and writes the one picked", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ fts_language: "English" });
+            const captured = await displayWithSchema(plugin);
+
+            expect(Object.keys(captured.dropdownOptionsByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!)).toEqual(FTS_CHOICES);
+            expect(captured.dropdownSetValuesByName.get(MESSAGES.LABEL_FTS_LANGUAGE)).toContain("English");
+            // No text box: a half-typed language can no longer be sent.
+            expect(captured.textByName.has(MESSAGES.LABEL_FTS_LANGUAGE)).toBe(false);
+            expect(captured.blurByName.has(MESSAGES.LABEL_FTS_LANGUAGE)).toBe(false);
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!("German");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
+        });
+
+        it("leaves the picker unset when the server has not reported its language", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            const captured = await displayWithSchema(plugin);
+
+            expect(captured.dropdownSetValuesByName.get(MESSAGES.LABEL_FTS_LANGUAGE)).toEqual([]);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("keeps a text box on a server that publishes no languages, and says so", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const captured = freeTextRow(plugin);
+
+            expect(captured.descByName.get(MESSAGES.LABEL_FTS_LANGUAGE)).toBe(MESSAGES.DESC_FTS_LANGUAGE_FREE_TEXT);
+            expect(captured.dropdownOptionsByName.has(MESSAGES.LABEL_FTS_LANGUAGE)).toBe(false);
+        });
+
+        it("sends free text once the field is left, not on every keystroke", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+
+            // Every prefix of a valid language is refused, so typing must write nothing.
+            row.edit("G");
+            row.edit("Germ");
+            row.edit("German");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+
+            await row.handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
+        });
+
+        it("sends on Enter, and not a second time on the blur that follows", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+
+            row.edit("German");
+            row.press("Escape");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+
+            row.press("Enter");
+            await new Promise((r) => setTimeout(r, 0));
+            await row.handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("leaves the server's language alone for an untouched or blank box", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+
+            // The server fills the box without firing an input event.
+            row.inputEl.value = "English";
+            await row.handler();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+
+            row.edit("   ");
+            await row.handler();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("names the languages the server accepts when it refuses the write", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error(REFUSAL));
+            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+
+            Notice.clear();
+            row.edit("Germ");
+            await row.handler();
+            await new Promise((r) => setTimeout(r, 0));
+            const message = Notice.instances.map((n) => n.message).join("\n");
+            expect(message).toContain("failed to update");
+            expect(message).toContain("must be one of: Arabic");
+
+            // A failure the server did not explain still reports the field that failed.
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue("offline");
+            Notice.clear();
+            row.edit("Germ");
+            await row.handler();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(
+                Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FTS_LANGUAGE)),
+            ).toBe(true);
+        });
     });
 
     it("the table model dropdown PATCHes the chosen backend", async () => {

@@ -79,6 +79,7 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
             listModels: vi.fn(),
             config: vi.fn().mockRejectedValue(new Error("offline")),
             configDefaults: vi.fn().mockRejectedValue(new Error("offline")),
+            configSchema: vi.fn().mockRejectedValue(new Error("offline")),
             updateConfig: vi.fn(),
             catalog: vi.fn().mockRejectedValue(new Error("offline")),
             installedModels: vi.fn().mockResolvedValue({ models: [] }),
