@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { LilbeeClient } from "../src/api";
 import { hasNvidiaDevice, readEngineBackend, readFleetDevices } from "../src/engine-backend";
 import { err, ok } from "../src/result";
-import { ENGINE_BACKEND_CPU } from "../src/types";
-import type { GpuInfo, PlacementResponse } from "../src/types";
+import { ENGINE_BACKEND } from "../src/types";
+import type { EngineBackend, GpuInfo, PlacementResponse } from "../src/types";
 
 function gpu(overrides: Partial<GpuInfo> = {}): GpuInfo {
     return {
@@ -17,8 +17,30 @@ function gpu(overrides: Partial<GpuInfo> = {}): GpuInfo {
     };
 }
 
-function placement(gpus: GpuInfo[]): PlacementResponse {
-    return { gpus, roles: [], unplaceable: [], manual: false, spec_json: null, rejected_spec_json: null };
+/** The device a Metal host reports beside `engine_backend: "metal"`, measured on
+ *  lilbee 0.6.90b442. The upper-case `backend` token is the trap: it names the
+ *  same host in a different vocabulary. */
+const APPLE_GPU: GpuInfo = {
+    index: 0,
+    backend: "MTL",
+    label: "MTL0",
+    name: "Apple M1 Pro",
+    total_bytes: 22_906_142_720,
+    free_bytes: 22_905_094_144,
+};
+
+/** The measured shape of `GET /api/placement`. Omit `engine_backend` for a server
+ *  older than 0.6.90b442, which does not send the field. */
+function placement(gpus: GpuInfo[], engine_backend?: EngineBackend): PlacementResponse {
+    return {
+        gpus,
+        engine_backend,
+        roles: [],
+        unplaceable: [],
+        manual: false,
+        spec_json: null,
+        rejected_spec_json: null,
+    };
 }
 
 function clientReturning(result: Awaited<ReturnType<LilbeeClient["placement"]>>) {
@@ -27,16 +49,32 @@ function clientReturning(result: Awaited<ReturnType<LilbeeClient["placement"]>>)
 }
 
 describe("readEngineBackend", () => {
-    it("names the backend of the devices the server reports", async () => {
-        const cuda = clientReturning(ok(placement([gpu(), gpu({ index: 1 })])));
-        await expect(readEngineBackend(cuda.api)).resolves.toBe("CUDA");
-        const vulkan = clientReturning(ok(placement([gpu({ backend: "Vulkan", label: "Vulkan0" })])));
-        await expect(readEngineBackend(vulkan.api)).resolves.toBe("Vulkan");
+    it("reports the backend the server names, not the token its devices carry", async () => {
+        const { api } = clientReturning(ok(placement([APPLE_GPU], ENGINE_BACKEND.METAL)));
+        const backend = await readEngineBackend(api);
+        expect(backend).toBe(ENGINE_BACKEND.METAL);
+        expect(backend).not.toBe(APPLE_GPU.backend);
     });
 
-    it("names the CPU when the server reports no device", async () => {
-        const { api } = clientReturning(ok(placement([])));
-        await expect(readEngineBackend(api)).resolves.toBe(ENGINE_BACKEND_CPU);
+    it("tells a CPU host apart from a probe that never answered", async () => {
+        const cpuHost = clientReturning(ok(placement([], ENGINE_BACKEND.CPU)));
+        const failedProbe = clientReturning(ok(placement([], ENGINE_BACKEND.UNKNOWN)));
+        const onCpuHost = await readEngineBackend(cpuHost.api);
+        const onFailedProbe = await readEngineBackend(failedProbe.api);
+        expect(onCpuHost).toBe(ENGINE_BACKEND.CPU);
+        expect(onFailedProbe).toBe(ENGINE_BACKEND.UNKNOWN);
+        expect(onFailedProbe).not.toBe(onCpuHost);
+    });
+
+    it("keeps the unknown answer when the host lists a device the engine never loaded", async () => {
+        const loaderDevice = gpu({ backend: "VK", label: "VK0", name: "AMD Radeon RX 7900 XTX" });
+        const { api } = clientReturning(ok(placement([loaderDevice], ENGINE_BACKEND.UNKNOWN)));
+        await expect(readEngineBackend(api)).resolves.toBe(ENGINE_BACKEND.UNKNOWN);
+    });
+
+    it("reports no backend from a server too old to send the field", async () => {
+        const { api } = clientReturning(ok(placement([APPLE_GPU])));
+        await expect(readEngineBackend(api)).resolves.toBeNull();
     });
 
     it("returns null when the server cannot report a placement", async () => {

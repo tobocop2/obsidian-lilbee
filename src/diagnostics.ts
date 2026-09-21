@@ -88,7 +88,7 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         `- Plugin version: ${ctx.pluginVersion}`,
         `- Server version: ${ctx.serverVersion || "(unknown)"}`,
         `- Server build: ${ctx.serverVariant ? MESSAGES.LABEL_SERVER_BUILD(ctx.serverVariant) : "(unknown)"}`,
-        `- Engine backend: ${ctx.engineBackend ?? "(unknown)"}`,
+        `- Engine backend: ${MESSAGES.DESC_ENGINE_BACKEND(ctx.engineBackend)}`,
         `- GPU detection: ${ctx.gpuDetection ? MESSAGES.DESC_GPU_DETECTION(ctx.gpuDetection) : MESSAGES.DESC_GPU_DETECTION_NONE}`,
         `- Platform: ${process.platform} ${process.arch}`,
         `- Server state: ${ctx.serverState}`,

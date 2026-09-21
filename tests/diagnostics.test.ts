@@ -4,7 +4,14 @@ import { buildZip, collectDiagnostics, LOG_TAIL_MAX_BYTES, renderSummary, resolv
 import { node } from "../src/node";
 import { MESSAGES } from "../src/locales/en";
 import { REDACTED } from "../src/redact";
-import { DEFAULT_SETTINGS, NVIDIA_PROBE_STATUS, SERVER_STATE, SERVER_VARIANT, SHARED_PATH } from "../src/types";
+import {
+    DEFAULT_SETTINGS,
+    ENGINE_BACKEND,
+    NVIDIA_PROBE_STATUS,
+    SERVER_STATE,
+    SERVER_VARIANT,
+    SHARED_PATH,
+} from "../src/types";
 import type { DiagnosticsContext, GpuDetection } from "../src/types";
 
 const DETECTION: GpuDetection = {
@@ -37,13 +44,18 @@ function makeContext(overrides: Partial<DiagnosticsContext> = {}): DiagnosticsCo
         serverVersion: "v0.4.0",
         serverVariant: SERVER_VARIANT.CU124,
         gpuDetection: DETECTION,
-        engineBackend: "CUDA",
+        engineBackend: ENGINE_BACKEND.CUDA,
         serverState: SERVER_STATE.ERROR,
         serverUrl: "http://127.0.0.1:1234",
         serverBinaryPath: "/shared/bin/v0.4.0/lilbee-macos-arm64",
         lastOutput: "Traceback: boom",
         ...overrides,
     };
+}
+
+/** The one summary line naming the engine backend. */
+function backendLine(summary: string): string {
+    return summary.split("\n").find((line) => line.startsWith("- Engine backend:")) ?? "";
 }
 
 function fileText(ctx: DiagnosticsContext, name: string): string {
@@ -201,14 +213,25 @@ describe("collectDiagnostics", () => {
     });
 
     it("names the engine backend and the binary the server launches", () => {
-        const bundle = collectDiagnostics(makeContext());
-        expect(bundle.summaryMarkdown).toContain("- Engine backend: CUDA");
+        const bundle = collectDiagnostics(makeContext({ engineBackend: ENGINE_BACKEND.METAL }));
+        expect(backendLine(bundle.summaryMarkdown)).toBe("- Engine backend: metal");
         expect(bundle.summaryMarkdown).toContain("- Server binary: /shared/bin/v0.4.0/lilbee-macos-arm64");
     });
 
-    it("says the engine backend is unknown when no server has reported one", () => {
+    it("separates a CPU host from an engine that reported no backend", () => {
+        const onCpuHost = collectDiagnostics(makeContext({ engineBackend: ENGINE_BACKEND.CPU }));
+        const onFailedProbe = collectDiagnostics(makeContext({ engineBackend: ENGINE_BACKEND.UNKNOWN }));
+        expect(backendLine(onCpuHost.summaryMarkdown)).toBe("- Engine backend: cpu");
+        expect(backendLine(onFailedProbe.summaryMarkdown)).toBe(
+            "- Engine backend: unknown (the engine did not report a backend)",
+        );
+        expect(backendLine(onFailedProbe.summaryMarkdown)).not.toBe(backendLine(onCpuHost.summaryMarkdown));
+        expect(backendLine(onFailedProbe.summaryMarkdown)).not.toContain("cpu");
+    });
+
+    it("says no server reported a backend when none answered", () => {
         const bundle = collectDiagnostics(makeContext({ engineBackend: null }));
-        expect(bundle.summaryMarkdown).toContain("- Engine backend: (unknown)");
+        expect(backendLine(bundle.summaryMarkdown)).toBe("- Engine backend: (no server has reported one)");
         expect(bundle.summaryMarkdown).not.toContain("- Engine backend: undefined");
     });
 

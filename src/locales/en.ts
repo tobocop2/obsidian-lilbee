@@ -3,6 +3,8 @@ import {
     AMD_PROBE_STATUS,
     type AmdProbe,
     CUDA_MIN_CEILING,
+    ENGINE_BACKEND,
+    type EngineBackend,
     type GpuDetection,
     MODEL_TASK,
     NVIDIA_PROBE_STATUS,
@@ -494,6 +496,13 @@ export const MESSAGES = {
         return `The NVIDIA driver reports CUDA ${cudaVersionLabel(nvidia.cudaCeiling)}.${floor} ${amd}`;
     },
     DESC_GPU_DETECTION_NONE: "(none recorded)",
+    /** The engine backend in the diagnostics export. `unknown` is the server's own
+     *  answer and reads as neither CPU nor a blank; null is the plugin's own state. */
+    DESC_ENGINE_BACKEND: (backend: EngineBackend | null): string => {
+        if (backend === null) return "(no server has reported one)";
+        if (backend === ENGINE_BACKEND.UNKNOWN) return "unknown (the engine did not report a backend)";
+        return backend;
+    },
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
         `${tag} installed. The release list could not be read from GitHub: ${reason}`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>

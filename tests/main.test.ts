@@ -5181,22 +5181,24 @@ describe("LilbeePlugin", () => {
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
         });
 
-        /** A placement response whose device list names `backend`, or no devices at all. */
-        const placementOn = (backend: string | null) =>
+        /** A placement response naming `engine_backend`, with a device only when the
+         *  backend has one. The device's own token stays upper case, as the server sends it. */
+        const placementOn = (engine_backend: string, device: string | null = null) =>
             ok({
                 gpus:
-                    backend === null
+                    device === null
                         ? []
                         : [
                               {
                                   index: 0,
-                                  backend,
-                                  label: `${backend}0`,
+                                  backend: device,
+                                  label: `${device}0`,
                                   name: "RTX 4080",
                                   total_bytes: 1,
                                   free_bytes: 1,
                               },
                           ],
+                engine_backend,
                 roles: [],
                 unplaceable: [],
                 manual: false,
@@ -5207,12 +5209,12 @@ describe("LilbeePlugin", () => {
         it("reads the backend on every export instead of caching the first answer", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.api.placement = vi.fn().mockResolvedValue(placementOn("CUDA"));
-            expect((await plugin.diagnosticsContext()).engineBackend).toBe("CUDA");
+            plugin.api.placement = vi.fn().mockResolvedValue(placementOn("cuda", "CUDA"));
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("cuda");
 
             // The server comes back on a build that serves no GPU.
-            plugin.api.placement = vi.fn().mockResolvedValue(placementOn(null));
-            expect((await plugin.diagnosticsContext()).engineBackend).toBe("CPU");
+            plugin.api.placement = vi.fn().mockResolvedValue(placementOn("cpu"));
+            expect((await plugin.diagnosticsContext()).engineBackend).toBe("cpu");
         });
 
         it("tolerates a single failed probe without flipping to error", async () => {
@@ -6530,13 +6532,14 @@ describe("LilbeePlugin", () => {
                         gpus: [
                             {
                                 index: 0,
-                                backend: "Vulkan",
-                                label: "Vulkan0",
+                                backend: "VK",
+                                label: "VK0",
                                 name: "RTX 4080",
                                 total_bytes: 1,
                                 free_bytes: 1,
                             },
                         ],
+                        engine_backend: "vulkan",
                         roles: [],
                         unplaceable: [],
                         manual: false,
@@ -6544,7 +6547,7 @@ describe("LilbeePlugin", () => {
                         rejected_spec_json: null,
                     }),
                 );
-                expect((await plugin.diagnosticsContext()).engineBackend).toBe("Vulkan");
+                expect((await plugin.diagnosticsContext()).engineBackend).toBe("vulkan");
             });
 
             it("journals the reason and reports no backend when the read throws", async () => {

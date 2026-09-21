@@ -881,7 +881,7 @@ export interface DiagnosticsContext {
     /** The GPU probe that chose the installed build, or null when none was recorded. */
     gpuDetection: GpuDetection | null;
     /** The backend the server's fleet is running on, or null when no server has reported one. */
-    engineBackend: string | null;
+    engineBackend: EngineBackend | null;
     serverState: ServerState;
     serverUrl: string;
     /** The binary the managed server launches, or null in external mode. */
@@ -1339,8 +1339,22 @@ export const PLACEMENT_MODE = {
     MANUAL: "manual",
 } as const satisfies Record<string, PlacementMode>;
 
-/** The backend name for a fleet the server reports no usable device for. */
-export const ENGINE_BACKEND_CPU = "CPU";
+/** The compute backend the engine selected, as the server reports it. Lower case,
+ *  and a different vocabulary from the upper-case per-device `GpuInfo.backend` that
+ *  arrives in the same payload; neither substitutes for the other. `cpu` and
+ *  `unknown` are separate answers: an empty device list is a host with no usable GPU
+ *  only when the server says `cpu`. */
+export type EngineBackend = "cuda" | "rocm" | "metal" | "sycl" | "vulkan" | "cpu" | "unknown";
+
+export const ENGINE_BACKEND = {
+    CUDA: "cuda",
+    ROCM: "rocm",
+    METAL: "metal",
+    SYCL: "sycl",
+    VULKAN: "vulkan",
+    CPU: "cpu",
+    UNKNOWN: "unknown",
+} as const satisfies Record<string, EngineBackend>;
 
 /** Lower-case substring an NVIDIA device carries in the name the server reports. */
 export const NVIDIA_DEVICE_MARKER = "nvidia";
@@ -1392,6 +1406,8 @@ export interface RolePlacement {
 /** `GET /api/placement`, `POST /api/placement/preview`, and the apply response. */
 export interface PlacementResponse {
     gpus: GpuInfo[];
+    /** The backend the engine selected. Absent on servers before 0.6.90b442. */
+    engine_backend?: EngineBackend;
     roles: RolePlacement[];
     /** Roles that cannot fit the current hardware under this plan. */
     unplaceable: string[];

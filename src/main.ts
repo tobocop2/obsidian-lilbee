@@ -61,6 +61,7 @@ import {
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
+    type EngineBackend,
     type GpuDetection,
     type GpuInfo,
     CHAT_STATUS,
@@ -1393,7 +1394,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /** The backend the server reports, or null with the reason journalled. */
-    private async readEngineBackend(): Promise<string | null> {
+    private async readEngineBackend(): Promise<EngineBackend | null> {
         try {
             return await readEngineBackend(this.api);
         } catch (err) {
