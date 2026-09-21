@@ -130,6 +130,9 @@ interface ConfigRowSpec {
     desc: string;
 }
 
+/** The plugin settings that mirror a server-side system prompt. */
+type PromptSettingKey = "ragSystemPrompt" | "generalSystemPrompt";
+
 /** Slider bounds for a server-config number. */
 interface SliderLimits {
     min: number;
@@ -1972,12 +1975,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** Send a system prompt to the server. An empty box means "use the default",
-     *  so it clears the override rather than setting an empty prompt. */
+    /** Send a system prompt to the server. The server has no empty prompt to store, so an
+     *  empty box writes nothing and leaves the prompt in force; the reset button restores the default. */
     private async pushSystemPrompt(key: string, value: string, name: string): Promise<void> {
         const trimmed = value.trim();
+        if (trimmed === "") return;
         try {
-            await applyConfig(this.plugin, { [key]: trimmed === "" ? null : trimmed });
+            await applyConfig(this.plugin, { [key]: trimmed });
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
         }
@@ -2074,14 +2078,39 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 .onClick(async () => {
                     // Silent no-op until defaults have loaded (old servers or racing first click).
                     if (!(key in this.configDefaults)) return;
-                    const def = this.configDefaults[key];
-                    try {
-                        await applyConfig(this.plugin, { [key]: def });
-                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.refresh();
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+                    if (await this.pushConfigDefault(key, label)) this.refresh();
+                }),
+        );
+    }
+
+    /** Write the server's default for one key. False means the write failed and said so. */
+    private async pushConfigDefault(key: string, label: string): Promise<boolean> {
+        try {
+            await applyConfig(this.plugin, { [key]: this.configDefaults[key] });
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+            return false;
+        }
+        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
+        return true;
+    }
+
+    /** A system prompt lives in two places, so the reset writes both: the server's default, then
+     *  the plugin's mirror. A server with no defaults endpoint says so rather than failing silently. */
+    private appendPromptResetAffordance(setting: Setting, spec: ConfigRowSpec, settingsKey: PromptSettingKey): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon(ICON_RESET)
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    if (!(spec.key in this.configDefaults)) {
+                        new Notice(MESSAGES.NOTICE_FAILED_RESET(spec.name));
+                        return;
                     }
+                    if (!(await this.pushConfigDefault(spec.key, spec.name))) return;
+                    this.plugin.settings[settingsKey] = DEFAULT_SETTINGS[settingsKey];
+                    await this.plugin.saveSettings();
+                    this.refresh();
                 }),
         );
     }
@@ -2152,7 +2181,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private applySystemPromptRow(
         setting: Setting,
         spec: ConfigRowSpec,
-        settingsKey: "ragSystemPrompt" | "generalSystemPrompt",
+        settingsKey: PromptSettingKey,
         initial: string,
     ): void {
         setting
@@ -2168,7 +2197,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
-        this.appendLocalResetAffordance(setting, settingsKey, spec.name);
+        this.appendPromptResetAffordance(setting, spec, settingsKey);
     }
 
     private applyChatModeRow(setting: Setting): void {
