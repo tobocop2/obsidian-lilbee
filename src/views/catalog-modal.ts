@@ -27,6 +27,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
 } from "../utils";
+import { applyEmbeddingModel } from "../utils/reindex";
 import { renderModelCard, renderCompatTag } from "../components/model-card";
 import { renderModelDetail } from "../components/model-detail";
 import { ModelInfoModal } from "./model-info-modal";
@@ -131,6 +132,8 @@ export class CatalogModal extends Modal {
     private drawerCollapsedByUser = true;
     private focusedRepo: string | null = null;
     private focusDebounceTimeout: number | null = null;
+    /** Set only by openCatalog; resolves the caller waiting behind this modal. */
+    private dismissed: (() => void) | null = null;
 
     /**
      * @param initialTaskFilter Pre-select a task tab when opening (e.g.
@@ -151,6 +154,14 @@ export class CatalogModal extends Modal {
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
         bindEscapeToClose(this);
+    }
+
+    /** Opens the catalog over whatever is already on screen and resolves when it closes. */
+    openCatalog(): Promise<void> {
+        return new Promise((resolve) => {
+            this.dismissed = resolve;
+            this.open();
+        });
     }
 
     onOpen(): void {
@@ -341,6 +352,8 @@ export class CatalogModal extends Modal {
             window.clearTimeout(this.focusDebounceTimeout);
             this.focusDebounceTimeout = null;
         }
+        this.dismissed?.();
+        this.dismissed = null;
     }
 
     private onScroll = (): void => {
@@ -538,7 +551,7 @@ export class CatalogModal extends Modal {
             {
                 heading: MESSAGES.RAIL_FOR_YOU,
                 help: MESSAGES.RAIL_FOR_YOU_HELP,
-                rows: forYouRail(this.entries),
+                rows: forYouRail(this.entries, this.plugin.settings.serverMode),
             },
             {
                 heading: MESSAGES.RAIL_YOUR_COLLECTION,
@@ -905,7 +918,7 @@ export class CatalogModal extends Modal {
         // necessarily the one the user clicked.
         const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
         if (entry.task === MODEL_TASK.EMBEDDING) {
-            return this.plugin.api.setEmbeddingModel(ref);
+            return applyEmbeddingModel(this.plugin, ref);
         }
         if (entry.task === MODEL_TASK.RERANK) {
             return this.plugin.api.setRerankerModel(ref);

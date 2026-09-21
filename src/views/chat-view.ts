@@ -45,6 +45,7 @@ import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { addCloseButton } from "../components/close-button";
+import { applyConfig, applyEmbeddingModel } from "../utils/reindex";
 import { remedyForWarning } from "../utils/warning-remedies";
 import { MESSAGES } from "../locales/en";
 import {
@@ -525,7 +526,7 @@ export class ChatView extends ItemView {
 
     private async persistChatMode(mode: ChatMode): Promise<void> {
         try {
-            await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_MODE]: mode });
+            await applyConfig(this.plugin, { [CONFIG_KEY.CHAT_MODE]: mode });
             this.chatModeCurrent = mode;
             this.applyActiveClassToChatModeButtons(mode);
         } catch (err) {
@@ -706,7 +707,7 @@ export class ChatView extends ItemView {
                 this.revertEmbeddingTrigger(previous);
                 return;
             }
-            const result = await this.plugin.api.setEmbeddingModel(value);
+            const result = await applyEmbeddingModel(this.plugin, value);
             if (result.isErr()) {
                 new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
                 this.revertEmbeddingTrigger(previous);
@@ -718,9 +719,6 @@ export class ChatView extends ItemView {
             this.activeEmbeddingModel = result.value.model;
             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
             this.plugin.refreshSettingsTab();
-            if (!result.value.reindex_required) return;
-            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-            void this.plugin.triggerSync();
         });
     }
 

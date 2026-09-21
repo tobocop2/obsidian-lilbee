@@ -814,6 +814,51 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ adaptive_threshold: true });
         });
 
+        it("rebuilds the index when the server says the toggle invalidated it", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["embed_titles"],
+                reindex_required: true,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_EMBED_TITLES)!(true);
+
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_REINDEX_REQUIRED);
+        });
+
+        it("rebuilds the index when the server says a dropdown change invalidated it", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["table_model"],
+                reindex_required: true,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownByName } = captureSettingCallbacks(() => tab.display());
+
+            await dropdownByName.get(MESSAGES.LABEL_TABLE_MODEL)!("slanet_plus");
+
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_REINDEX_REQUIRED);
+        });
+
+        it("runs no sync when the server says the change left the index usable", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_EMBED_TITLES)!(true);
+
+            expect(plugin.triggerSync).not.toHaveBeenCalled();
+        });
+
         it("stays hidden while the server does not report adaptive_threshold", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
@@ -3298,7 +3343,7 @@ describe("managed mode settings", () => {
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
-            expect(plugin.triggerSync).toHaveBeenCalled();
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("shows error notice on updateConfig failure", async () => {
@@ -3433,6 +3478,7 @@ describe("managed mode settings", () => {
             expect(dropdowns.length).toBe(1);
             await dropdowns[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("does not reindex when the server says the index still matches", async () => {
@@ -3616,7 +3662,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.catalog).toHaveBeenCalled();
         });
 
-        it("fallback text input calls setEmbeddingModel on non-empty value", async () => {
+        it("fallback text input sets the model and rebuilds when the index no longer matches", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -3643,6 +3689,7 @@ describe("managed mode settings", () => {
             expect(texts.length).toBe(1);
             await texts[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
         });
 
         it("fallback text input does not reindex when the index still matches", async () => {
@@ -4443,6 +4490,7 @@ describe("managed mode settings", () => {
 
             blurHandlers[0].inputEl.value = "sk-test123";
             await blurHandlers[0].handler();
+            await new Promise((r) => setTimeout(r, 0));
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
     });
@@ -4569,7 +4617,7 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             const answer: Array<() => void> = [];
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
-                () => new Promise<void>((resolve) => answer.push(() => resolve())),
+                () => new Promise((resolve) => answer.push(() => resolve({ updated: [], reindex_required: false }))),
             );
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -5082,6 +5130,7 @@ describe("managed mode settings", () => {
             expect(apiKeyHandler).toBeDefined();
             apiKeyHandler!.inputEl.value = "sk-test";
             await apiKeyHandler!.handler();
+            await new Promise((r) => setTimeout(r, 0));
             expect(plugin.api.invalidateCapability).toHaveBeenCalledWith("api_keys");
         });
     });

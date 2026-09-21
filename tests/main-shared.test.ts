@@ -397,7 +397,7 @@ describe("negotiateTakeOver", () => {
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
         expect(mocks.askServerToExit).toHaveBeenCalledWith("/d", expect.any(Number));
         expect(Notice.instances.some((n) => n.message.includes("switched from"))).toBe(true);
-        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(startSpy).toHaveBeenCalledWith(undefined, false, undefined);
         const journal = plugin.journal.entries.map((e) => e.message);
         expect(journal).toContain("take-over accepted: asking the server of Personal (pid 9) to exit");
         expect(journal).toContain("take-over complete: the server of Personal is gone; starting ours");
@@ -413,7 +413,7 @@ describe("negotiateTakeOver", () => {
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
         expect(mocks.askServerToExit).not.toHaveBeenCalled();
-        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(startSpy).toHaveBeenCalledWith(undefined, false, undefined);
         expect(plugin.journal.entries.map((e) => e.message)).toContain(
             "take-over accepted: asking the server of another vault to exit",
         );
@@ -458,7 +458,7 @@ describe("negotiateTakeOver", () => {
         const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
         await plugin.startManagedServer();
         await new Promise((r) => setTimeout(r, 0)); // the scan negotiates outside startingServer
-        expect(negotiate).toHaveBeenCalledWith(plugin.vaultRegistry, undefined, true, "/d");
+        expect(negotiate).toHaveBeenCalledWith(plugin.vaultRegistry, undefined, true, "/d", undefined);
         expect(plugin.serverManager).toBeNull();
         (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false);
     });
@@ -498,7 +498,7 @@ describe("negotiateTakeOver", () => {
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, undefined, true, "/d");
         expect(mocks.askServerToExit).toHaveBeenCalledWith("/d", expect.any(Number));
-        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(startSpy).toHaveBeenCalledWith(undefined, false, undefined);
         expect(plugin.journal.entries.map((e) => e.message)).toContain(
             "take-over accepted: asking the server of Personal to exit",
         );
@@ -590,6 +590,36 @@ describe("ensureBinaryWithUi guards", () => {
 
         expect(seenSignal?.aborted).toBe(true);
         expect(plugin.isDownloadingServer()).toBe(false);
+    });
+
+    it("the caller's signal aborts the download it asked for", async () => {
+        const plugin = await createPlugin();
+        const caller = new AbortController();
+        let seenSignal: AbortSignal | undefined;
+        const binary = fakeBinary(false, async ({ signal }) => {
+            seenSignal = signal;
+            caller.abort();
+            return INSTALLED;
+        });
+
+        await (plugin as any).ensureBinaryWithUi(binary, undefined, caller.signal);
+
+        expect(seenSignal?.aborted).toBe(true);
+    });
+
+    it("a caller that gave up before the download started never lets it run", async () => {
+        const plugin = await createPlugin();
+        const caller = new AbortController();
+        caller.abort();
+        let seenSignal: AbortSignal | undefined;
+        const binary = fakeBinary(false, async ({ signal }) => {
+            seenSignal = signal;
+            return INSTALLED;
+        });
+
+        await (plugin as any).ensureBinaryWithUi(binary, undefined, caller.signal);
+
+        expect(seenSignal?.aborted).toBe(true);
     });
 
     it("returns the installed binary without creating a notice when it already exists", async () => {

@@ -6,6 +6,7 @@ import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, errorMessage, relativeTimeFromIso } from "../utils";
 import { displayLabelForRef } from "../utils/model-ref";
+import { applyConfig } from "../utils/reindex";
 
 /** Hooks the chat view supplies so the modal can drive it without importing it. */
 export interface SessionsModalHooks {
@@ -87,7 +88,7 @@ export class SessionsModal extends Modal {
     /** Flip the server's writable `sessions_enabled` flag, then reload the list. */
     private async enableSessions(): Promise<void> {
         try {
-            await this.plugin.api.updateConfig({ sessions_enabled: true });
+            await applyConfig(this.plugin, { sessions_enabled: true });
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSIONS_ENABLE_FAILED(reason));

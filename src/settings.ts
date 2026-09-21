@@ -56,6 +56,7 @@ import { AGENT_LABELS, AGENT_LINKS, MESSAGES } from "./locales/en";
 import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./agent-integration";
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
+import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
 import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
@@ -675,10 +676,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return this.localRow(spec.name, spec.desc, (setting) => this.applyConfigList(setting, spec));
     }
 
-    /** Push one server-config value and say whether it took. */
+    /** Write one server-config value and report the outcome. */
     private async pushConfig(key: string, value: unknown, name: string): Promise<void> {
         try {
-            await this.plugin.api.updateConfig({ [key]: value });
+            await applyConfig(this.plugin, { [key]: value });
             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
@@ -1982,7 +1983,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private async pushSystemPrompt(key: string, value: string, name: string): Promise<void> {
         const trimmed = value.trim();
         try {
-            await this.plugin.api.updateConfig({ [key]: trimmed === "" ? null : trimmed });
+            await applyConfig(this.plugin, { [key]: trimmed === "" ? null : trimmed });
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
         }
@@ -2081,7 +2082,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     if (!(key in this.configDefaults)) return;
                     const def = this.configDefaults[key];
                     try {
-                        await this.plugin.api.updateConfig({ [key]: def });
+                        await applyConfig(this.plugin, { [key]: def });
                         new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
                         this.refresh();
                     } catch {
@@ -2186,7 +2187,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dd.setValue(CHAT_MODE.SEARCH);
                 dd.onChange(async (value) => {
                     try {
-                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_MODE]: value });
+                        await applyConfig(this.plugin, { [CONFIG_KEY.CHAT_MODE]: value });
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CHAT_MODE));
                     }
@@ -2636,16 +2637,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const confirmed = await confirmModal.result;
             if (!confirmed) return;
         }
-        try {
-            const result = await this.plugin.api.updateConfig({ [key]: num });
-            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-            if (opts.reindex && result.reindex_required) {
-                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                void this.plugin.triggerSync();
-            }
-        } catch {
-            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
-        }
+        await this.pushConfig(key, num, name);
     }
 
     private loadEmbeddingDropdown(container: HTMLElement): void {
@@ -2680,15 +2672,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             confirmModal.open();
                             const confirmed = await confirmModal.result;
                             if (!confirmed) return;
-                            const result = await this.plugin.api.setEmbeddingModel(value);
+                            const result = await applyEmbeddingModel(this.plugin, value);
                             if (result.isErr()) {
                                 new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
                                 return;
                             }
                             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                            if (!result.value.reindex_required) return;
-                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                            void this.plugin.triggerSync();
                         });
                     })
                     .addButton((btn) =>
@@ -3022,15 +3011,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         confirmModal.open();
                         const confirmed = await confirmModal.result;
                         if (!confirmed) return;
-                        const result = await this.plugin.api.setEmbeddingModel(trimmed);
+                        const result = await applyEmbeddingModel(this.plugin, trimmed);
                         if (result.isErr()) {
                             new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
                             return;
                         }
                         new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                        if (!result.value.reindex_required) return;
-                        new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                        void this.plugin.triggerSync();
                     });
                 this.serverConfigInputs.set("embedding_model", text.inputEl);
             });
@@ -3477,7 +3463,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .setValue("auto")
                     .onChange(async (value) => {
                         try {
-                            await this.plugin.api.updateConfig({ [spec.key]: value });
+                            await applyConfig(this.plugin, { [spec.key]: value });
                             new Notice(MESSAGES.NOTICE_LLM_UPDATED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_LLM);
@@ -3500,7 +3486,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const trimmed = text.inputEl.value.trim();
                     if (trimmed === "") return;
                     try {
-                        await this.plugin.api.updateConfig({ [field.key]: trimmed });
+                        await applyConfig(this.plugin, { [field.key]: trimmed });
                         this.plugin.api.invalidateCapability(CAPABILITY.API_KEYS);
                         new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
                     } catch {
@@ -3529,7 +3515,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     edited = false;
                     const trimmed = text.inputEl.value.trim();
                     try {
-                        await this.plugin.api.updateConfig({ hf_token: trimmed });
+                        await applyConfig(this.plugin, { hf_token: trimmed });
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
                         // Still unsaved; the next blur retries.
@@ -3556,7 +3542,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         const trimmed = value.trim();
                         if (trimmed === "") return;
                         try {
-                            await this.plugin.api.updateConfig({ [field.key]: trimmed });
+                            await applyConfig(this.plugin, { [field.key]: trimmed });
                             new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_LOCAL_SERVER_URL);
@@ -3585,7 +3571,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         for (const k of CREDENTIAL_FIELDS) delete payload[k];
                         if (Object.keys(payload).length === 0) return;
                         try {
-                            await this.plugin.api.updateConfig(payload);
+                            await applyConfig(this.plugin, payload);
                             new Notice(MESSAGES.NOTICE_SETTINGS_RESET);
                             this.refresh();
                         } catch {
@@ -3876,7 +3862,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async patchRerankCandidates(num: number): Promise<void> {
         try {
-            await this.plugin.api.updateConfig({ rerank_candidates: num });
+            await applyConfig(this.plugin, { rerank_candidates: num });
             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_RERANKER_CANDIDATES));
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_RERANKER_CANDIDATES));

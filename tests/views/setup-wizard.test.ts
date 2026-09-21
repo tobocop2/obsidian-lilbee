@@ -5,7 +5,7 @@ import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/v
 import { getSystemMemoryGB } from "../../src/utils";
 import * as utils from "../../src/utils";
 import { LilbeeClient, SessionTokenError } from "../../src/api";
-import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
+import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL, MODEL_TASK } from "../../src/types";
 import { ok, err } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
 import type { CatalogEntry, CatalogResponse } from "../../src/types";
@@ -15,6 +15,7 @@ vi.mock("../../src/views/catalog-modal", () => ({
         return {
             open: vi.fn(),
             close: vi.fn(),
+            openCatalog: vi.fn().mockResolvedValue(undefined),
         };
     }),
 }));
@@ -85,6 +86,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
         resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
+        isDownloadingServer: vi.fn(() => false),
+        cancelServerDownload: vi.fn(),
         setupWizardOpen: false,
         ...overrides,
     };
@@ -92,8 +95,12 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
     // progress mocks still drive the wizard panel) and report a managed start.
     // Tests exercising the external / cancel branches override this.
     if (!("ensureManagedConsentThenStart" in overrides)) {
-        plugin.ensureManagedConsentThenStart = vi.fn(async (onProgress?: unknown) => {
-            await (plugin.startManagedServer as (p?: unknown) => Promise<void>)(onProgress);
+        plugin.ensureManagedConsentThenStart = vi.fn(async (onProgress?: unknown, signal?: AbortSignal) => {
+            await (plugin.startManagedServer as (p?: unknown, t?: boolean, s?: AbortSignal) => Promise<void>)(
+                onProgress,
+                true,
+                signal,
+            );
             return { kind: "started", mode: "managed" };
         });
     }
@@ -119,6 +126,34 @@ function findButtons(el: MockElement): MockElement[] {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/** A managed start that reports the given phases and then never settles. */
+function pendingStartEmitting(...phases: string[]) {
+    return vi.fn(
+        async (
+            onProgress?: (e: { phase: string; message: string }) => void,
+            _allowTakeOver?: boolean,
+            _signal?: AbortSignal,
+        ) => {
+            for (const phase of phases) onProgress?.({ phase, message: "" });
+            await new Promise(() => {});
+        },
+    );
+}
+
+/** Opens the wizard, moves it to the server step, and presses Next in managed mode. */
+async function startManagedFromServerStep(plugin: Record<string, unknown>): Promise<SetupWizard> {
+    const wizard = new SetupWizard(plugin.app as any, plugin as any);
+    wizard.open();
+    wizard.next();
+    const el = wizard.contentEl as unknown as MockElement;
+    findButtons(el)
+        .find((b) => b.textContent === "Next")!
+        .trigger("click");
+    await tick();
+    await tick();
+    return wizard;
+}
 
 describe("SetupWizard", () => {
     beforeEach(() => {
@@ -1493,6 +1528,31 @@ describe("SetupWizard", () => {
             expect(CatalogModal).toHaveBeenCalled();
         });
 
+        it("Browse full catalog keeps the wizard open and re-reads the model step when the catalog closes", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const closeSpy = vi.spyOn(wizard, "close");
+            wizard.open();
+            wizard.next();
+            await tick();
+            const readsBeforeBrowsing = (plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length;
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Browse full catalog")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(closeSpy).not.toHaveBeenCalled();
+            expect((plugin.api.catalog as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
+                readsBeforeBrowsing,
+            );
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+        });
+
         it("Back cancels ongoing pull", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
@@ -1613,7 +1673,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).selectedEmbedding?.hf_repo).toBe("bge/bge-small");
         });
     });
@@ -1641,6 +1702,78 @@ describe("SetupWizard", () => {
             // Should have advanced to wiki step
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
+        });
+
+        it("stops on the sync step when the index was built by another embedding model", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 1300,
+                            failed: [],
+                            index_mismatch: {
+                                message: "This index was built with embedding model 'nomic', but lilbee uses 'minilm'.",
+                            },
+                        },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.SYNC;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(
+                Notice.instances.some((n) => n.message.includes("This index was built with embedding model 'nomic'")),
+            ).toBe(true);
+            expect(texts.some((t) => t.includes("This index was built with embedding model 'nomic'"))).toBe(true);
+            expect(texts.some((t) => t === MESSAGES.STATUS_DONE)).toBe(false);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(false);
+        });
+
+        it("offers a rebuild that runs the sync step again over a mismatched index", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const calls: (Record<string, unknown> | undefined)[] = [];
+            plugin.api.syncStream = vi.fn().mockImplementation((_signal?: AbortSignal, options?: any) => {
+                calls.push(options);
+                return (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 1300,
+                            failed: [],
+                            index_mismatch: { message: "Built with 'nomic'; lilbee uses 'minilm'." },
+                        },
+                    };
+                })();
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.SYNC;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const rebuildBtn = findButtons(el).find((b) => b.textContent === MESSAGES.BUTTON_REBUILD_INDEX)!;
+            expect(rebuildBtn).toBeDefined();
+            rebuildBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(calls).toEqual([undefined, { forceRebuild: true }]);
         });
 
         it("renders BATCH_PROGRESS percent and per-file status during initial sync", async () => {
@@ -2336,6 +2469,181 @@ describe("SetupWizard", () => {
             wizard.close();
             expect(capturedSignal?.aborted).toBe(true);
         });
+
+        it("cancels the server download it started when the wizard closes mid-download", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            // The wizard's own download is reported and still running when the wizard closes.
+            const start = pendingStartEmitting("downloading");
+            plugin.startManagedServer = start;
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(start.mock.calls[0]?.[2]?.aborted).toBe(true);
+        });
+
+        it("does not claim there is no server after cancelling the download it started", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            // The plugin reports the cancelled download itself, so the wizard stays silent here.
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+            expect(messages).toEqual([]);
+        });
+
+        it("leaves a download it did not start running when the wizard closes", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            // Settings started this download, so the wizard holds no controller over it.
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
+
+        it("never claims there is no server while a managed download is in flight", async () => {
+            const closePaths: Array<[string, (plugin: Record<string, unknown>) => Promise<void>]> = [
+                [
+                    "closed at welcome",
+                    async (plugin) => {
+                        const wizard = new SetupWizard(plugin.app as any, plugin as any);
+                        wizard.open();
+                        wizard.close();
+                    },
+                ],
+                [
+                    "closed while the consent modal waits",
+                    async (plugin) => {
+                        const wizard = await startManagedFromServerStep(plugin);
+                        wizard.close();
+                    },
+                ],
+                [
+                    "skipped at welcome",
+                    async (plugin) => {
+                        const wizard = new SetupWizard(plugin.app as any, plugin as any);
+                        wizard.open();
+                        wizard.skip();
+                    },
+                ],
+            ];
+
+            const offenders: string[] = [];
+            for (const [path, close] of closePaths) {
+                Notice.clear();
+                const plugin = makePlugin({
+                    serverManager: null,
+                    settings: { serverMode: "managed", setupCompleted: false },
+                    // The settings tab started this one, so the wizard never owns it.
+                    ensureManagedConsentThenStart: vi.fn(() => new Promise(() => {})),
+                    isDownloadingServer: vi.fn(() => true),
+                });
+
+                await close(plugin);
+
+                const messages = Notice.instances.map((n) => n.message);
+                if (messages.includes(MESSAGES.NOTICE_SETUP_INCOMPLETE)) offenders.push(path);
+            }
+            expect(offenders).toEqual([]);
+        });
+
+        it("still reports unfinished setup when no download is running", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => false),
+            });
+            plugin.startManagedServer = pendingStartEmitting("downloading");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(messages).toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
+
+        it("leaves a settings-started download running when the wizard closes at the consent modal", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                // The consent modal is still waiting on the user, so no download of the wizard's own has begun.
+                ensureManagedConsentThenStart: vi.fn(() => new Promise(() => {})),
+                isDownloadingServer: vi.fn(() => true),
+            });
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(messages).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
+
+        it("leaves a later download running once its own download phase has ended", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            // The starting phase ends the wizard's download; whatever runs now belongs to someone else.
+            plugin.startManagedServer = pendingStartEmitting("downloading", "starting");
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+        });
+
+        it("leaves a later download running once its managed start has returned", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            plugin.startManagedServer = vi.fn(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+                onProgress?.({ phase: "downloading", message: "" });
+            });
+            const wizard = await startManagedFromServerStep(plugin);
+
+            wizard.close();
+
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+        });
+
+        it("leaves a download started outside the wizard running", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+                isDownloadingServer: vi.fn(() => true),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.close();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(plugin.cancelServerDownload).not.toHaveBeenCalled();
+            expect(messages).not.toContain(MESSAGES.NOTICE_SETUP_INCOMPLETE);
+        });
     });
 
     describe("System memory detection", () => {
@@ -2816,13 +3124,82 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
                 .trigger("click");
             await tick();
 
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-ai/nomic-embed-text-v1.5-GGUF");
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("installed embedding that invalidates the index rebuilds in the sync step", async () => {
+            Notice.clear();
+            const entries = [
+                makeEntry({
+                    hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                    display_name: "All MiniLM L6 v2",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.setEmbeddingModel = vi
+                .fn()
+                .mockResolvedValue(
+                    ok({ model: "second-state/All-MiniLM-L6-v2-Embedding-GGUF", reindex_required: true }),
+                );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.api.syncStream).toHaveBeenCalledWith(expect.anything(), { forceRebuild: true });
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
+        });
+
+        it("installed embedding the index already uses runs a plain sync", async () => {
+            const entries = [
+                makeEntry({
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "nomic-embed-text",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.api.syncStream).toHaveBeenCalledWith(expect.anything(), undefined);
         });
 
         it("installed-embedding click surfaces notice when setEmbeddingModel returns err", async () => {
@@ -2851,7 +3228,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
-                .find((b) => b.textContent === "Download & continue")!
+                .find((b) => b.textContent === MESSAGES.BUTTON_USE_CONTINUE)!
                 .trigger("click");
             await tick();
             await tick();
@@ -2961,6 +3338,38 @@ describe("SetupWizard", () => {
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic/nomic-embed-text");
+        });
+
+        it("downloaded embedding that invalidates the index rebuilds in the sync step", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+                })(),
+            );
+            plugin.api.setEmbeddingModel = vi
+                .fn()
+                .mockResolvedValue(ok({ model: "nomic/nomic-embed-text", reindex_required: true }));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
+
+            expect(plugin.api.syncStream).toHaveBeenCalledWith(expect.anything(), { forceRebuild: true });
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
         });
 
         it("pullEmbeddingModel surfaces notice and keeps step when setEmbeddingModel returns err", async () => {
@@ -3130,7 +3539,8 @@ describe("SetupWizard", () => {
             other.dataset.repo = "bge/bge-small";
             other.classList.add("is-selected");
             const model = makeEntry({ hf_repo: "nomic/nomic-embed-text", task: "embedding" });
-            (wizard as any).selectEmbedding(grid, model);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            (wizard as any).selectEmbedding(grid, model, downloadBtn);
             expect((wizard as any).selectedEmbedding).toBe(model);
             expect(child.classList.contains("is-selected")).toBe(true);
             expect(other.classList.contains("is-selected")).toBe(false);
@@ -3143,7 +3553,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((statusEl as unknown as MockElement).textContent).toContain("offered no models");
 
             const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
@@ -3173,7 +3584,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).embeddingModels.map((m: CatalogEntry) => m.hf_repo)).toEqual([
                 "nomic-ai/nomic-embed-text-v1.5-GGUF",
             ]);
@@ -3186,7 +3598,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((statusEl as unknown as MockElement).textContent).toContain("gateway timeout");
 
             const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
@@ -3206,7 +3619,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).embeddingModels).toEqual([]);
             // The server's own reason reaches the step, not a generic string.
             expect((statusEl as unknown as MockElement).textContent).toContain("fail");
@@ -3228,7 +3642,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).embeddingModels).toEqual([]);
         });
 
@@ -3253,7 +3668,8 @@ describe("SetupWizard", () => {
                     return origRenderModelCard(container, entry, opts);
                 },
             );
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
 
             // Exercise the onClick
             expect(onClicks.length).toBe(2);
@@ -3272,7 +3688,8 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).selectedEmbedding?.name).toBe("nomic-embed-text");
             expect((wizard as any).embeddingModels.length).toBe(2);
         });
@@ -3296,8 +3713,130 @@ describe("SetupWizard", () => {
             wizard.open();
             const container = new MockElement("div") as unknown as HTMLElement;
             const statusEl = new MockElement("div") as unknown as HTMLElement;
-            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            const downloadBtn = new MockElement("button") as unknown as HTMLButtonElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl, downloadBtn);
             expect((wizard as any).selectedEmbedding?.hf_repo).toBe("nomic/nomic-embed-text-v1.5");
+        });
+    });
+
+    describe("Embed step primary action", () => {
+        /** Renders the embedding step over the given rows and returns its primary button. */
+        async function embedStepPrimary(entries: CatalogEntry[]): Promise<MockElement> {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+            const el = wizard.contentEl as unknown as MockElement;
+            return el.find("mod-cta")!;
+        }
+
+        it("offers to use an embedding model that is already installed", async () => {
+            const primary = await embedStepPrimary([
+                makeEntry({
+                    hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                    display_name: "All MiniLM L6 v2",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ]);
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_USE_CONTINUE);
+        });
+
+        it("offers to download an embedding model that is not installed", async () => {
+            const primary = await embedStepPrimary([
+                makeEntry({
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "Nomic Embed v1.5",
+                    task: "embedding",
+                    installed: false,
+                }),
+            ]);
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+        });
+
+        it("renames the action when the user picks an installed row over the default", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({
+                            hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                            display_name: "Nomic Embed v1.5",
+                            task: "embedding",
+                            installed: false,
+                        }),
+                        makeEntry({
+                            hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                            display_name: "All MiniLM L6 v2",
+                            task: "embedding",
+                            installed: true,
+                        }),
+                    ]),
+                ),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const primary = el.find("mod-cta")!;
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+
+            const installedCard = el
+                .findAll("lilbee-model-card")
+                .find((c) => c.dataset.repo === "second-state/All-MiniLM-L6-v2-Embedding-GGUF")!;
+            installedCard.trigger("click", {});
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_USE_CONTINUE);
+        });
+
+        it("does not rename the Model step action when an embedding response lands after Back", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            let releaseEmbeddings!: () => void;
+            const embeddingsInFlight = new Promise<void>((resolve) => {
+                releaseEmbeddings = resolve;
+            });
+            plugin.api.catalog = vi.fn(async (params: { task: string }) => {
+                if (params.task !== MODEL_TASK.EMBEDDING) {
+                    return ok(makeCatalogResponse([makeEntry({ installed: false })]));
+                }
+                await embeddingsInFlight;
+                return ok(
+                    makeCatalogResponse([
+                        makeEntry({
+                            hf_repo: "second-state/All-MiniLM-L6-v2-Embedding-GGUF",
+                            display_name: "All MiniLM L6 v2",
+                            task: "embedding",
+                            installed: true,
+                        }),
+                    ]),
+                );
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            // Leave the Embed step while its catalog request is still open. The
+            // Model step now owns the on-screen primary action.
+            wizard.back();
+            await tick();
+            const el = wizard.contentEl as unknown as MockElement;
+            const primary = el.find("mod-cta")!;
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
+
+            releaseEmbeddings();
+            await tick();
+
+            expect(primary.textContent).toBe(MESSAGES.BUTTON_DOWNLOAD_CONTINUE);
         });
     });
 
@@ -3863,6 +4402,32 @@ describe("SetupWizard", () => {
             expect(plugin.settings.setupCompleted).toBe(false);
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETUP_INCOMPLETE)).toBe(true);
         });
+
+        it("skipping records the wizard as finished without claiming a server", () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                settings: { serverMode: "managed", setupCompleted: false },
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            wizard.skip();
+
+            expect(plugin.settings.wizardCompleted).toBe(true);
+            expect(plugin.settings.setupCompleted).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("completing the wizard records it as finished and keeps the server recorded", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            await wizard.complete();
+
+            expect(plugin.settings.wizardCompleted).toBe(true);
+            expect(plugin.settings.setupCompleted).toBe(true);
+        });
     });
 
     describe("External mode is checked before it is persisted", () => {
@@ -4038,12 +4603,14 @@ describe("SetupWizard", () => {
             });
         }
 
-        async function openPicksStep(catalog: ReturnType<typeof vi.fn>) {
-            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+        async function openPicksStep(catalog: ReturnType<typeof vi.fn>, serverMode = "external") {
+            const plugin = makePlugin({ settings: { serverMode, setupCompleted: true } });
             plugin.api.catalog = catalog;
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            wizard.next();
+            // Managed setup reaches the picks step through the server step, which these rows do not exercise.
+            (wizard as any).step = WIZARD_STEP.MODEL_PICKER;
+            (wizard as any).renderStep();
             await tick();
             return { plugin, el: wizard.contentEl as unknown as MockElement };
         }
@@ -4207,6 +4774,99 @@ describe("SetupWizard", () => {
             const { el } = await openPicksStep(splitCatalog(featured, wider));
 
             expect(renderedRepos(el)).toEqual(["f/0", "f/1", "f/huge"]);
+        });
+
+        function vendorQuant(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+            return makeEntry({
+                hf_repo: "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF",
+                display_name: "Flash Next ROCmFP4 FAST Imatrix",
+                gguf_filename: "Flash-Next-ROCmFP4-FAST-Imatrix-Q4_K_M.gguf",
+                ...overrides,
+            });
+        }
+
+        function onPlatform(name: NodeJS.Platform) {
+            return vi.spyOn(process, "platform", "get").mockReturnValue(name);
+        }
+
+        it("replaces a vendor quant macOS cannot run", async () => {
+            const platform = onPlatform("darwin");
+            try {
+                const featured = featuredRow(2).concat(
+                    vendorQuant(),
+                    vendorQuant({
+                        hf_repo: "bartowski/Flash-Next-CUDA12-GGUF",
+                        display_name: "Flash Next CUDA12",
+                        gguf_filename: "Flash-Next-CUDA12-Q4_K_M.gguf",
+                    }),
+                );
+                const wider = [...featured, catalogRow(0), catalogRow(1)];
+
+                const { el } = await openPicksStep(splitCatalog(featured, wider), "managed");
+
+                // A Mac has neither the AMD nor the NVIDIA runtime these quants are built for.
+                expect(renderedRepos(el)).toEqual(["f/0", "f/1", "org/Other-0-GGUF", "org/Other-1-GGUF"]);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("keeps a vendor quant on Linux, where a card can serve it", async () => {
+            const platform = onPlatform("linux");
+            try {
+                const featured = featuredRow(1).concat(vendorQuant());
+
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]), "managed");
+
+                expect(renderedRepos(el)).toEqual(["f/0", "bartowski/Flash-Next-ROCmFP4-FAST-Imatrix-GGUF"]);
+                expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("keeps a hosted row on macOS whose name carries a vendor marker", async () => {
+            const platform = onPlatform("darwin");
+            try {
+                const featured = featuredRow(1).concat(
+                    makeEntry({
+                        hf_repo: "ollama/rocm6-tuned:7b",
+                        display_name: "ROCm6 tuned 7B",
+                        source: "ollama",
+                        provider: "ollama",
+                        key_status: null,
+                        installed: true,
+                    }),
+                );
+
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]), "managed");
+
+                // A hosted row runs on the provider's hardware, so this host decides nothing about it.
+                expect(renderedRepos(el)).toEqual(["f/0", "ollama/rocm6-tuned:7b"]);
+                expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            } finally {
+                platform.mockRestore();
+            }
+        });
+
+        it("keeps a row on macOS whose name holds a vendor marker only inside a word", async () => {
+            const platform = onPlatform("darwin");
+            try {
+                const featured = featuredRow(1).concat(
+                    vendorQuant({
+                        hf_repo: "org/Barracuda7B-GGUF",
+                        display_name: "Barracuda 7B",
+                        gguf_filename: "Barracuda7B-Q4_K_M.gguf",
+                    }),
+                );
+
+                const { plugin, el } = await openPicksStep(splitCatalog(featured, [catalogRow(0)]), "managed");
+
+                expect(renderedRepos(el)).toEqual(["f/0", "org/Barracuda7B-GGUF"]);
+                expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            } finally {
+                platform.mockRestore();
+            }
         });
     });
 

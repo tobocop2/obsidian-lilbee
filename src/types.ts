@@ -337,6 +337,12 @@ export interface SkippedSource {
     reason: string;
 }
 
+/** The index holds vectors from an embedding model other than the configured one. */
+export interface IndexMismatch {
+    /** Server text naming the persisted and the configured model. */
+    message: string;
+}
+
 export interface SyncDone {
     added: string[];
     updated: string[];
@@ -345,6 +351,8 @@ export interface SyncDone {
     failed: string[];
     skipped: string[];
     held_out: SkippedSource[];
+    /** Absent on servers that do not report it; only a rebuild clears it. */
+    index_mismatch?: IndexMismatch | null;
 }
 
 /** An add stream's terminal summary: the sync it ran, plus the add-only outcomes. */
@@ -673,7 +681,10 @@ export interface LilbeeSettings {
     serverMode: ServerMode;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
+    /** A server has answered, so the plugin may start itself on the next launch. */
     setupCompleted: boolean;
+    /** The wizard reached an end, by finishing or by an explicit skip. While false, the next launch reopens it. */
+    wizardCompleted: boolean;
     wikiEnabled: boolean;
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
@@ -716,6 +727,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     ragSystemPrompt: "",
     generalSystemPrompt: "",
     setupCompleted: false,
+    wizardCompleted: false,
     wikiEnabled: false,
     searchChunkType: SEARCH_CHUNK_TYPE.ALL,
     // On, but only reached once the wiki itself is enabled (which is opt-in).

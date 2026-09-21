@@ -3,6 +3,7 @@ import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
 import { CAPABILITY, CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlRenderMode } from "../types";
+import { applyConfig } from "../utils/reindex";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -223,7 +224,7 @@ export class CrawlModal extends Modal {
                 ? CRAWL_RENDER_MODE.BROWSER
                 : CRAWL_RENDER_MODE.HTTP;
             // Persist the sticky default; non-fatal since runCrawl below drives this crawl explicitly.
-            void this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: renderMode }).catch(() => {});
+            void applyConfig(this.plugin, { [CONFIG_KEY.CRAWL_RENDER_MODE]: renderMode }).catch(() => {});
 
             // Subdomain scope only applies to link discovery, so a single-page crawl omits it.
             const includeSubdomains = recursive ? asInput(subdomainsInput).checked : undefined;

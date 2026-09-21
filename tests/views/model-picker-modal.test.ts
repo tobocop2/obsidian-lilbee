@@ -58,6 +58,7 @@ function makePlugin(catalogModels: CatalogEntry[] = [localRow()]) {
         settings: {},
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
+        triggerSync: vi.fn(),
         taskQueue: new TaskQueue(),
     } as any;
 }
@@ -183,6 +184,18 @@ describe("ModelPickerModal", () => {
         await tick();
         await tick();
         expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("h/L1");
+    });
+
+    it("rebuilds the index when the embedding swap leaves the old vectors behind", async () => {
+        const plugin = makePlugin([localRow({ display_name: "L1", hf_repo: "h/L1", task: "embedding" })]);
+        plugin.api.setEmbeddingModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: true })));
+        const modal = await openPicker(plugin, "embedding");
+        vi.spyOn(modal, "close").mockImplementation(() => {});
+        const row = contentEl(modal).find("lilbee-model-picker-row")!;
+        row.trigger("click");
+        await tick();
+        await tick();
+        expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
     });
 
     it("clicking a Needs-key frontier row opens settings (deep-link) and does not set the model", async () => {

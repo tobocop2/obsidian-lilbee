@@ -1218,6 +1218,7 @@ export const MESSAGES = {
     MANAGED_CONSENT_PROV_FAILED: "(release info unavailable)",
     MANAGED_CONSENT_PROV_RELEASE_NOTES: "View release notes ↗",
     MANAGED_CONSENT_PROV_ONE_TIME: "one-time",
+    MANAGED_CONSENT_INSTALL_LABEL: "Installs to",
     MANAGED_CONSENT_BTN_CANCEL: "Cancel",
     MANAGED_CONSENT_BTN_DOWNLOAD: "↓ Download & manage server",
     NOTICE_SERVER_DOWNLOAD_CANCELED: "Server download canceled.",

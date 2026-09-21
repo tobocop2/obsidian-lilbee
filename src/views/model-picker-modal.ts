@@ -13,6 +13,7 @@ import {
     renderKeyStatusPill,
     renderProviderPill,
 } from "./catalog-helpers";
+import { applyEmbeddingModel } from "../utils/reindex";
 import { renderPill, PILL_CLS } from "../components/pill";
 import { renderFitChip } from "../components/fit-chip";
 import { tagModalChrome } from "../utils";
@@ -239,7 +240,7 @@ export class ModelPickerModal extends Modal {
         const set = (m: string): Promise<Result<SetModelResponse, Error>> =>
             this.pickerScope === MODEL_TASK.CHAT
                 ? this.plugin.api.setChatModel(m)
-                : this.plugin.api.setEmbeddingModel(m);
+                : applyEmbeddingModel(this.plugin, m);
         let result = await set(repo);
         for (let attempt = 0; attempt < SET_MODEL_RETRIES && result.isErr(); attempt++) {
             await new Promise((resolve) => window.setTimeout(resolve, SET_MODEL_RETRY_MS));
