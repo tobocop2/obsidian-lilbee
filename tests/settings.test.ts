@@ -4631,7 +4631,21 @@ describe("managed mode settings", () => {
             expect(plugin.getSharedHfToken()).toBe("hf_stored");
         });
 
-        it("sends again after a rejected save without another edit", async () => {
+        it("keeps a refused token in the field over the stored one", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            await saveToken(captured, "hf_rejected");
+            expect(field.inputEl.value).toBe("hf_rejected");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
+            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_FAILED_HF_TOKEN)).toBe(true);
+        });
+
+        it("retries the refused token on the next blur", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
@@ -4645,7 +4659,143 @@ describe("managed mode settings", () => {
             await blurField(field);
             expect(plugin.api.updateConfig).toHaveBeenCalledTimes(2);
             expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ hf_token: "hf_retry" });
-            expect(Notice.instances.some((n: any) => n.message === MESSAGES.NOTICE_FAILED_HF_TOKEN)).toBe(true);
+        });
+
+        it("keeps an accepted token when an earlier save of the same value is rejected", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            const settle: Array<{ accept: () => void; refuse: () => void }> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () =>
+                    new Promise((resolve, reject) => {
+                        settle.push({
+                            accept: () => resolve({ updated: [], reindex_required: false }),
+                            refuse: () => reject(new Error("fail")),
+                        });
+                    }),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            field.edit("hf_same");
+            void field.handler();
+            field.edit("hf_same");
+            void field.handler();
+            expect(settle).toHaveLength(2);
+
+            settle[0]!.refuse();
+            await new Promise((r) => setTimeout(r, 0));
+            settle[1]!.accept();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(field.inputEl.value).toBe("hf_same");
+            expect(plugin.getSharedHfToken()).toBe("hf_same");
+        });
+
+        it("leaves the stored token alone when the last save of a repeated value is refused", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            const settle: Array<{ accept: () => void; refuse: () => void }> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () =>
+                    new Promise((resolve, reject) => {
+                        settle.push({
+                            accept: () => resolve({ updated: [], reindex_required: false }),
+                            refuse: () => reject(new Error("fail")),
+                        });
+                    }),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+            Notice.clear();
+
+            field.edit("hf_same");
+            void field.handler();
+            field.edit("hf_same");
+            void field.handler();
+            expect(settle).toHaveLength(2);
+
+            settle[0]!.accept();
+            await new Promise((r) => setTimeout(r, 0));
+            settle[1]!.refuse();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(field.inputEl.value).toBe("hf_same");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
+            expect(Notice.instances.filter((n: any) => n.message === MESSAGES.NOTICE_HF_TOKEN_SAVED)).toHaveLength(0);
+        });
+
+        it("raises one saved notice when both saves of a repeated value are accepted", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            const accept: Array<() => void> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () => new Promise((resolve) => accept.push(() => resolve({ updated: [], reindex_required: false }))),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+            Notice.clear();
+
+            field.edit("hf_same");
+            void field.handler();
+            field.edit("hf_same");
+            void field.handler();
+            expect(accept).toHaveLength(2);
+
+            accept[0]!();
+            await new Promise((r) => setTimeout(r, 0));
+            accept[1]!();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.getSharedHfToken()).toBe("hf_same");
+            expect(Notice.instances.filter((n: any) => n.message === MESSAGES.NOTICE_HF_TOKEN_SAVED)).toHaveLength(1);
+        });
+
+        it("keeps a newer edit in the field when an earlier save is rejected", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            const refuse: Array<() => void> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () => new Promise<void>((_resolve, reject) => refuse.push(() => reject(new Error("fail")))),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            field.edit("hf_refused");
+            void field.handler();
+            expect(refuse).toHaveLength(1);
+            field.edit("hf_newer");
+            refuse[0]!();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(field.inputEl.value).toBe("hf_newer");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
+        });
+
+        it("does not store an accepted token once a newer edit is in the field", async () => {
+            const plugin = makePlugin({ hfToken: "hf_stored" });
+            const accept: Array<() => void> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () => new Promise((resolve) => accept.push(() => resolve({ updated: [], reindex_required: false }))),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            field.edit("hf_sent");
+            void field.handler();
+            expect(accept).toHaveLength(1);
+            field.edit("hf_typing");
+            accept[0]!();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(field.inputEl.value).toBe("hf_typing");
+            expect(plugin.getSharedHfToken()).toBe("hf_stored");
         });
 
         it("keeps the newer token when an earlier save answers last", async () => {
@@ -4671,6 +4821,39 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.getSharedHfToken()).toBe("hf_abcdef");
+        });
+
+        it("does not resend when a refused save was already replaced by a newer one", async () => {
+            const plugin = makePlugin();
+            const settle: Array<{ accept: () => void; refuse: () => void }> = [];
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockImplementation(
+                () =>
+                    new Promise((resolve, reject) => {
+                        settle.push({
+                            accept: () => resolve({ updated: [], reindex_required: false }),
+                            refuse: () => reject(new Error("fail")),
+                        });
+                    }),
+            );
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            const field = tokenField(captured);
+
+            field.edit("hf_old");
+            void field.handler();
+            field.edit("hf_new");
+            void field.handler();
+            expect(settle).toHaveLength(2);
+
+            settle[1]!.accept();
+            await new Promise((r) => setTimeout(r, 0));
+            settle[0]!.refuse();
+            await new Promise((r) => setTimeout(r, 0));
+
+            await blurField(field);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(2);
+            expect(plugin.getSharedHfToken()).toBe("hf_new");
         });
 
         it("never puts the token value in a notice", async () => {

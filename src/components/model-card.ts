@@ -121,16 +121,29 @@ function isEffectivelyInstalled(entry: CatalogEntry): boolean {
     return entry.installed && !hostedMissingKey;
 }
 
+/** Hosted models live on the provider, so only a usable native install sits on disk. */
+function readsAsLocalInstall(entry: CatalogEntry): boolean {
+    return isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source);
+}
+
 function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
-    const tone = statusTone(entry, options);
-    status.createSpan({ cls: `lilbee-model-card-status-dot ${tone.dotCls}` });
-    const label = status.createSpan({
-        text: tone.label,
-        cls: `lilbee-model-card-status-label ${tone.labelCls}`,
-    });
-    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
-        label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
+    const { tone, label } = statusTone(entry, options);
+    status.createSpan({ cls: `lilbee-model-card-status-dot ${tone}`.trim() });
+    if (label) {
+        const labelEl = status.createSpan({
+            text: label,
+            cls: `lilbee-model-card-status-label ${tone}`,
+        });
+        if (readsAsLocalInstall(entry)) {
+            labelEl.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
+        }
+    }
+    if (entry.downloads > 0) {
+        status.createSpan({
+            text: MESSAGES.LABEL_DOWNLOADS_COUNT(formatAbbreviatedCount(entry.downloads)),
+            cls: "lilbee-model-card-downloads",
+        });
     }
     if (entry.fit && FIT_LABEL[entry.fit]) {
         status.createSpan({
@@ -140,26 +153,17 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
     }
 }
 
-function statusTone(
-    entry: CatalogEntry,
-    options: ModelCardOptions,
-): { dotCls: string; labelCls: string; label: string } {
+type StatusTone = "is-active" | "is-installed" | "";
+
+function statusTone(entry: CatalogEntry, options: ModelCardOptions): { tone: StatusTone; label: string } {
     if (options.isActive) {
-        return { dotCls: "is-active", labelCls: "is-active", label: MESSAGES.LABEL_ACTIVE };
+        return { tone: "is-active", label: MESSAGES.LABEL_ACTIVE };
     }
-    // Hosted models are usable without being downloaded, so they must not
-    // read "Installed (shared)" or offer Delete: they live on the provider.
-    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
-        return { dotCls: "is-installed", labelCls: "is-installed", label: MESSAGES.LABEL_INSTALLED };
+    if (readsAsLocalInstall(entry)) {
+        return { tone: "is-installed", label: MESSAGES.LABEL_INSTALLED };
     }
-    if (entry.downloads > 0) {
-        return {
-            dotCls: "is-muted",
-            labelCls: "is-muted",
-            label: MESSAGES.LABEL_DOWNLOADS_COUNT(formatAbbreviatedCount(entry.downloads)),
-        };
-    }
-    return { dotCls: "is-muted", labelCls: "is-muted", label: "" };
+    // The bare dot already carries the neutral tone, so an unlabelled state needs no modifier.
+    return { tone: "", label: "" };
 }
 
 function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
@@ -178,9 +182,8 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
         return;
     }
 
-    // Hosted models are usable without being downloaded, so they get a Use
-    // button but never a Remove: they live on the provider, not on disk.
-    if (isEffectivelyInstalled(entry) && !HOSTED_SOURCES.has(entry.source)) {
+    // Only a model on disk can be removed, so a hosted one gets Use without Remove.
+    if (readsAsLocalInstall(entry)) {
         const useBtn = actions.createEl("button", {
             text: MESSAGES.BUTTON_USE,
             cls: "lilbee-btn lilbee-btn-primary lilbee-catalog-use",

@@ -997,11 +997,13 @@
     display: inline-block;
 }
 
-/* Status row: dot+label on the left, fit text aligned right in rail color. */
+/* Status row: dot, state label and download count on the left, fit text aligned right in rail color. */
 .lilbee-model-card-status {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+    row-gap: 4px;
     font-size: 11px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
@@ -1032,14 +1034,16 @@
     letter-spacing: 0.06em;
     font-size: 10px;
     color: var(--text-normal);
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.lilbee-model-card-status-label.is-muted {
+.lilbee-model-card-downloads {
     color: var(--text-muted);
-    text-transform: none;
-    letter-spacing: 0;
     font-weight: 500;
-    font-size: 11px;
+    flex: 0 0 auto;
 }
 
 .lilbee-model-card-fit-text {
