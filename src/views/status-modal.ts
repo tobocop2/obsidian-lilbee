@@ -4,6 +4,7 @@ import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, noticeForResultError, revealInFileExplorer } from "../utils";
+import { modelShowRows } from "../utils/model-show-rows";
 import { remedyForWarning } from "../utils/warning-remedies";
 
 export class StatusModal extends Modal {
@@ -179,14 +180,11 @@ export class StatusModal extends Modal {
     private async renderModelDetails(table: HTMLTableElement, model: string): Promise<void> {
         try {
             const info: ModelShowResponse = await this.plugin.api.showModel(model);
-            if (info.architecture) {
-                this.addRow(table, MESSAGES.LABEL_STATUS_ARCHITECTURE, info.architecture);
-            }
-            if (info.context_length) {
-                this.addRow(table, MESSAGES.LABEL_STATUS_CONTEXT_LENGTH, info.context_length);
+            for (const row of modelShowRows(info)) {
+                this.addRow(table, row.label, row.value);
             }
         } catch {
-            // Model details not available — not critical
+            // Model details are optional here.
         }
     }
 

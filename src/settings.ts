@@ -534,6 +534,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     // from a plain string like every other input, and both element types carry
     // the value and placeholder this map is read for.
     private serverConfigInputs: Map<string, HTMLInputElement | HTMLTextAreaElement> = new Map();
+    // The placeholder a row was built with, captured the first time the server fills that row.
+    // An empty server value restores it instead of leaving the previous value on display.
+    private builtPlaceholders: Map<string, string> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
@@ -715,6 +718,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         containerEl.empty();
         this.settingsFilterQuery = "";
         this.serverConfigInputs.clear();
+        this.builtPlaceholders.clear();
         this.serverConfigToggles.clear();
         this.serverConfigTextAreas.clear();
         this.serverConfigDropdowns.clear();
@@ -1920,7 +1924,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private adoptServerConfig(cfg: ConfigResponse): void {
         this.fillConfigInputs(cfg);
         this.fillConfigComponents(cfg);
-        this.applyPromptPlaceholders(cfg);
         const first = this.serverConfig === null;
         this.serverConfig = cfg;
         this.applyChatModeFromConfig(cfg);
@@ -1931,7 +1934,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         else this.refreshVisibility();
     }
 
-    /** The server value fills the box and stays as the placeholder a cleared override falls back to. */
+    /** The server value fills the box and stays as the placeholder a cleared override falls back to.
+     *  The only config-driven placeholder write: an empty server value restores the row's own Default. */
     private fillConfigInputs(cfg: ConfigResponse): void {
         for (const [key, inputEl] of this.serverConfigInputs) {
             const v = cfg[key];
@@ -1939,9 +1943,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const formatted =
                 typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "";
             inputEl.value = formatted;
-            if (formatted !== "") {
-                inputEl.placeholder = formatted;
-            }
+            const built = this.builtPlaceholders.get(key) ?? inputEl.placeholder;
+            this.builtPlaceholders.set(key, built);
+            inputEl.placeholder = formatted !== "" ? formatted : built;
         }
     }
 
@@ -1964,16 +1968,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const v = cfg[key];
             if (typeof v === "string") {
                 dropdown.setValue(v);
-            }
-        }
-    }
-
-    private applyPromptPlaceholders(cfg: ConfigResponse): void {
-        for (const key of [CONFIG_KEY.RAG_SYSTEM_PROMPT, CONFIG_KEY.GENERAL_SYSTEM_PROMPT]) {
-            const value = cfg[key];
-            const input = this.serverConfigInputs.get(key);
-            if (typeof value === "string" && input) {
-                input.placeholder = value;
             }
         }
     }

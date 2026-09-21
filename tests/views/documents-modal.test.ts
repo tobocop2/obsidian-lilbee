@@ -41,7 +41,7 @@ function makePlugin() {
     return {
         api: {
             listDocuments: vi.fn().mockResolvedValue(makeDocsResponse()),
-            removeDocuments: vi.fn().mockResolvedValue({ removed: 0, not_found: [] }),
+            removeDocuments: vi.fn().mockResolvedValue({ removed: [], not_found: [] }),
         },
     };
 }
@@ -216,7 +216,7 @@ describe("DocumentsModal", () => {
         vi.useRealTimers();
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md" })]));
-        plugin.api.removeDocuments.mockResolvedValue({ removed: 1, not_found: [] });
+        plugin.api.removeDocuments.mockResolvedValue({ removed: ["a.md"], not_found: [] });
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
@@ -236,13 +236,69 @@ describe("DocumentsModal", () => {
         expect(Notice.instances.some((n) => n.message.includes("removed 1"))).toBe(true);
     });
 
+    it.each([
+        {
+            case: "one name",
+            listed: ["a.md"],
+            removed: ["a.md"],
+            notFound: [],
+            notices: ["lilbee: removed 1 document"],
+        },
+        {
+            case: "many names",
+            listed: ["a.md", "b.md"],
+            removed: ["a.md", "b.md"],
+            notFound: [],
+            notices: ["lilbee: removed 2 documents"],
+        },
+        {
+            case: "no names",
+            listed: ["a.md"],
+            removed: [],
+            notFound: ["a.md"],
+            notices: ["lilbee: removed 0 documents", "lilbee: 1 document is no longer on the server"],
+        },
+        {
+            case: "several names the server no longer has",
+            listed: ["a.md", "b.md"],
+            removed: [],
+            notFound: ["a.md", "b.md"],
+            notices: ["lilbee: removed 0 documents", "lilbee: 2 documents are no longer on the server"],
+        },
+    ])("notice counts the names the server removed: $case", async ({ listed, removed, notFound, notices }) => {
+        vi.useRealTimers();
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(listed.map((filename) => makeDoc({ filename }))));
+        plugin.api.removeDocuments.mockResolvedValue({ removed, not_found: notFound });
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        for (const checkbox of el.findAll("lilbee-documents-checkbox")) {
+            (checkbox as unknown as { checked: boolean }).checked = true;
+            checkbox.trigger("change");
+        }
+
+        el.find("lilbee-documents-remove")!.trigger("click");
+        await tick();
+        await tick();
+
+        const messages = Notice.instances.map((n) => n.message);
+        for (const notice of notices) expect(messages).toContain(notice);
+        if (notFound.length === 0) {
+            expect(messages.some((m) => m.includes("no longer on the server"))).toBe(false);
+        }
+    });
+
     it("notice prints the server removed count, not the selected count", async () => {
         vi.useRealTimers();
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(
             makeDocsResponse([makeDoc({ filename: "a.md" }), makeDoc({ filename: "b.md" })]),
         );
-        plugin.api.removeDocuments.mockResolvedValue({ removed: 1, not_found: [] });
+        plugin.api.removeDocuments.mockResolvedValue({ removed: ["a.md"], not_found: ["b.md"] });
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
@@ -268,7 +324,7 @@ describe("DocumentsModal", () => {
         vi.mocked(ConfirmModal).mockClear();
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md" })]));
-        plugin.api.removeDocuments.mockResolvedValue({ removed: 1, not_found: [] });
+        plugin.api.removeDocuments.mockResolvedValue({ removed: ["a.md"], not_found: [] });
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();

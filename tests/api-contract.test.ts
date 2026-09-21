@@ -13,19 +13,86 @@
  *
  *     python3 scripts/dump-server-contract.py --lilbee ~/projects/lilbee
  *
- * It checks two things the drifts actually turned on: the path/method exists,
- * and the client streams exactly those routes the server streams. The second
- * matters because a route can flip from a JSON body to SSE without changing its
- * path at all -- which is precisely how `PATCH /api/wiki/update` broke.
+ * It checks three things the drifts actually turned on: the path/method exists,
+ * the client streams exactly those routes the server streams, and the client's
+ * declared response type agrees with the server's response model. The stream
+ * check matters because a route can flip from a JSON body to SSE without
+ * changing its path at all -- which is precisely how `PATCH /api/wiki/update`
+ * broke. The shape check matters because a path can stay put while a field
+ * changes type -- `removeDocuments` declared `removed` a count for as long as
+ * the server had been answering with a list of names.
  */
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, beforeAll } from "vitest";
+import ts from "typescript";
+import { fileURLToPath } from "node:url";
 import { LilbeeClient } from "../src/api";
 import contract from "./fixtures/server-contract.json";
 
 const BASE_URL = "http://localhost:7433";
 
-type Operation = { streams: boolean };
+/** The JSON shape a response field lands in: only `array` is asserted across languages. */
+type FieldKind = string;
+type Operation = { streams: boolean; fields?: Record<string, FieldKind> };
 const OPERATIONS = contract.operations as Record<string, Record<string, Operation>>;
+const API_PATH = fileURLToPath(new URL("../src/api.ts", import.meta.url));
+const TSCONFIG_PATH = fileURLToPath(new URL("../tsconfig.json", import.meta.url));
+
+/**
+ * Every field of a client method's declared response type, and whether it is an
+ * array. `null` for a method whose response type is not a plain object, so the
+ * shape check has nothing to compare and skips it.
+ */
+type DeclaredShape = Map<string, boolean> | null;
+
+/** Wrappers between the declared return type and the response body it carries. */
+const RETURN_WRAPPERS = new Set(["Promise", "Result", "AsyncGenerator"]);
+
+/** True when a type prints as an array, ignoring an optional `undefined` arm. */
+function isArrayText(text: string): boolean {
+    const arms = text.split(" | ").filter((arm) => arm !== "undefined" && arm !== "null");
+    return arms.length === 1 && (/\[\]$/.test(arms[0]) || /^(Readonly)?Array</.test(arms[0]));
+}
+
+/** Read `src/api.ts` with the compiler and record what each method says it returns. */
+function declaredShapes(): Map<string, DeclaredShape> {
+    const config = ts.readConfigFile(TSCONFIG_PATH, ts.sys.readFile);
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, fileURLToPath(new URL("..", import.meta.url)));
+    const program = ts.createProgram([API_PATH], { ...parsed.options, noEmit: true });
+    const checker = program.getTypeChecker();
+    const source = program.getSourceFile(API_PATH);
+    if (source === undefined) throw new Error(`the compiler did not load ${API_PATH}`);
+
+    const shapes = new Map<string, DeclaredShape>();
+    for (const statement of source.statements) {
+        if (!ts.isClassDeclaration(statement) || statement.name?.text !== "LilbeeClient") continue;
+        for (const member of statement.members) {
+            if (!ts.isMethodDeclaration(member) || !ts.isIdentifier(member.name)) continue;
+            const signature = checker.getSignatureFromDeclaration(member);
+            if (signature === undefined) continue;
+            shapes.set(member.name.text, bodyShape(checker, signature.getReturnType()));
+        }
+    }
+    return shapes;
+}
+
+/** Unwrap the promise, result and generator layers, then list the body's fields. */
+function bodyShape(checker: ts.TypeChecker, type: ts.Type): DeclaredShape {
+    let body = type;
+    while (RETURN_WRAPPERS.has(body.getSymbol()?.getName() ?? "")) {
+        const args = checker.getTypeArguments(body as ts.TypeReference);
+        if (args.length === 0) return null;
+        body = args[0];
+    }
+    if (isArrayText(checker.typeToString(body))) return null;
+    const properties = body.getProperties();
+    if (properties.length === 0) return null;
+    return new Map(
+        properties.map((property) => [
+            property.getName(),
+            isArrayText(checker.typeToString(checker.getTypeOfSymbol(property))),
+        ]),
+    );
+}
 
 /** A single outbound request the client made. */
 interface Recorded {
@@ -192,6 +259,11 @@ const NON_NETWORK = new Set([
 
 let client: LilbeeClient;
 let recorded: Recorded[];
+let SHAPES: Map<string, DeclaredShape>;
+
+beforeAll(() => {
+    SHAPES = declaredShapes();
+});
 
 /** Drive one client method and return the requests it made. */
 async function record(name: string, args: unknown[]): Promise<Recorded[]> {
@@ -255,6 +327,37 @@ describe("api.ts route contract", () => {
                     ? `${name}: ${call.method} ${route} is an SSE stream, but the client reads it as a body`
                     : `${name}: ${call.method} ${route} returns a JSON body, but the client reads it as a stream`,
             ).toBe(operation.streams);
+        }
+    });
+
+    // Without this the shape check degrades silently: a reader that resolves nothing
+    // skips every method and the suite still reports green.
+    it("reads the declared response shape out of the client source", () => {
+        expect(SHAPES.get("removeDocuments")).toEqual(
+            new Map([
+                ["removed", true],
+                ["not_found", true],
+            ]),
+        );
+    });
+
+    it.each(Object.entries(INVOCATIONS))("%s declares the shape the server answers with", async (name, args) => {
+        const declared = SHAPES.get(name);
+        if (declared === null || declared === undefined) return; // no object response to compare
+        const calls = await record(name, args);
+        for (const call of calls) {
+            const route = matchRoute(call.path);
+            if (route === null) continue; // reported by the route test above
+            const fields = OPERATIONS[route]?.[call.method]?.fields;
+            if (fields === undefined) continue; // an open-ended body the server does not model
+            for (const [field, isArray] of declared) {
+                const served = fields[field];
+                if (served === undefined) continue; // the client reads a subset, which is fine
+                expect(
+                    isArray,
+                    `${name}: ${call.method} ${route} answers with ${field} as ${served === "array" ? "a list" : "a single value"}`,
+                ).toBe(served === "array");
+            }
         }
     });
 

@@ -95,24 +95,32 @@ function makeLeaf(): WorkspaceLeaf {
 }
 
 /**
- * Creates a chatStream mock that yields the given events and returns a
- * promise that resolves when the generator is fully consumed.
+ * Creates a chatStream mock that yields the given events, a promise that
+ * resolves when the consumer stops reading, and the number of events it read.
  */
 function makeStream(events: SSEEvent[]): {
     mockFn: ReturnType<typeof vi.fn>;
     done: Promise<void>;
+    consumed: () => number;
 } {
+    let count = 0;
     let resolveStream!: () => void;
     const done = new Promise<void>((r) => {
         resolveStream = r;
     });
     const mockFn = vi.fn().mockReturnValue(
         (async function* () {
-            for (const e of events) yield e;
-            resolveStream();
+            try {
+                for (const e of events) {
+                    count += 1;
+                    yield e;
+                }
+            } finally {
+                resolveStream();
+            }
         })(),
     );
-    return { mockFn, done };
+    return { mockFn, done, consumed: () => count };
 }
 
 /** Flush one macrotask tick so async chains settle. */
@@ -4013,7 +4021,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         expect(openRailMenu(container, "lilbee-embed-model-select")).toBeNull();
-        expect(triggerText(container, "lilbee-embed-model-select")).toBe("");
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe(MESSAGES.LABEL_NO_MODEL_SELECTED);
     });
 
     it("shows confirmation modal when embedding model is changed", async () => {
@@ -5193,6 +5201,72 @@ describe("ChatView.sendMessage — memory_extracted", () => {
         expect(
             (plugin as unknown as { refreshMemoryViews: ReturnType<typeof vi.fn> }).refreshMemoryViews,
         ).not.toHaveBeenCalled();
+    });
+});
+
+describe("ChatView.sendMessage — frames after the stream ended", () => {
+    async function sendAfterDone(events: SSEEvent[]): Promise<{
+        messagesEl: MockElement;
+        consumed: () => number;
+    }> {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done, consumed } = makeStream(events);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "after done";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        return { messagesEl: container.find("lilbee-chat-messages")!, consumed };
+    }
+
+    it("keeps the finished answer when an error frame arrives after done", async () => {
+        const { messagesEl } = await sendAfterDone([
+            { event: SSE_EVENT.TOKEN, data: "Hello" },
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.ERROR, data: "late failure" },
+        ]);
+
+        const assistantBubble = messagesEl.children[1];
+        expect(assistantBubble.classList.contains("lilbee-chat-message-error")).toBe(false);
+        expect(assistantBubble.find("lilbee-chat-content")!.textContent).toBe("Hello");
+        expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.ERROR_STREAM("late failure"));
+    });
+
+    it("keeps the finished answer when a reasoning frame arrives after done", async () => {
+        const { messagesEl } = await sendAfterDone([
+            { event: SSE_EVENT.TOKEN, data: "Hello" },
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.REASONING, data: { token: "late thought" } },
+        ]);
+
+        const assistantBubble = messagesEl.children[1];
+        expect(assistantBubble.find("lilbee-reasoning")).toBeNull();
+        expect(assistantBubble.find("lilbee-chat-content")!.textContent).toBe("Hello");
+    });
+
+    it("stops reading the stream once a frame follows done", async () => {
+        const { consumed } = await sendAfterDone([
+            { event: SSE_EVENT.TOKEN, data: "Hello" },
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.ERROR, data: "late failure" },
+            { event: SSE_EVENT.TOKEN, data: " never" },
+        ]);
+
+        expect(consumed()).toBe(3);
+    });
+
+    it("still reads the memory frame the server sends after done", async () => {
+        const { consumed } = await sendAfterDone([
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.MEMORY_EXTRACTED, data: { count: 2, items: [] } },
+        ]);
+
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.MEMORY_EXTRACTED_NOTICE(2));
+        expect(consumed()).toBe(2);
     });
 });
 
@@ -6417,5 +6491,86 @@ describe("ChatView chat rail activates by concrete ref", () => {
         (view as any).activeEmbeddingModel = "org/mystery-embed.gguf";
         const options = (view as any).chatOtherOptions();
         expect(options.map((o: { value: string }) => o.value)).not.toContain("org/mystery-embed.gguf");
+    });
+});
+
+describe("ChatView rail chip when no option matches the active model", () => {
+    beforeEach(() => {
+        Notice.clear();
+        vi.clearAllMocks();
+    });
+
+    it("names the server's active chat model instead of the first menu option", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "XHToken/Spark-X2.5-1.7B-GGUF/Spark-X2.5-1.7B-Q4_K_M.gguf",
+            embedding_model: "nomic-embed-text",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        expect(menuTitles(menu)).toEqual(["llama3", "phi3"]);
+        expect(menu.menuItems.some((i) => i.checked)).toBe(false);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("Spark X2.5 1.7B");
+
+        await view.onClose();
+    });
+
+    it("shows the no-model placeholder when the server reports no chat model", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({ embedding_model: "nomic-embed-text" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(menuTitles(openRailMenu(container, "lilbee-chat-model-select"))).toEqual(["llama3", "phi3"]);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe(MESSAGES.LABEL_NO_MODEL_SELECTED);
+
+        await view.onClose();
+    });
+
+    it("names an active vision model that is absent from the role catalog", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            const models =
+                p?.task === "vision"
+                    ? [
+                          {
+                              hf_repo: "llava-7b",
+                              gguf_filename: "",
+                              display_name: "llava-7b",
+                              size_gb: 1,
+                              min_ram_gb: 1,
+                              description: "",
+                              quality_tier: "good",
+                              installed: true,
+                              source: "native",
+                              task: "vision",
+                              featured: true,
+                              downloads: 1,
+                              param_count: "",
+                          },
+                      ]
+                    : [];
+            return Promise.resolve(ok({ total: models.length, limit: 50, offset: 0, models, has_more: false }));
+        });
+        (plugin.api as any).config = vi.fn().mockResolvedValue({ chat_model: "llama3", vision_model: "moondream2" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(menuTitles(openRailMenu(container, "lilbee-vision-model-select"))).toEqual([
+            "(disabled)",
+            "llava-7b",
+            "Browse catalog…",
+        ]);
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe("moondream2");
+
+        await view.onClose();
     });
 });

@@ -1603,6 +1603,18 @@ export interface ModelShowResponse {
     [key: string]: string | undefined;
 }
 
+export type ModelInfoSourceKind = "catalog" | "server";
+
+export const MODEL_INFO_SOURCE = {
+    CATALOG: "catalog",
+    SERVER: "server",
+} as const satisfies Record<string, ModelInfoSourceKind>;
+
+/** Where the model info modal gets its facts: a catalog row, or the server's own answer. */
+export type ModelInfoSource =
+    | { kind: typeof MODEL_INFO_SOURCE.CATALOG; entry: CatalogEntry }
+    | { kind: typeof MODEL_INFO_SOURCE.SERVER; ref: string; task: ModelTask; details: ModelShowResponse };
+
 export interface ModelCardOptions {
     onClick?: (entry: CatalogEntry) => void;
     onPull?: (entry: CatalogEntry, btn: HTMLElement) => void;
