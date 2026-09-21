@@ -130,6 +130,9 @@ interface ConfigRowSpec {
     desc: string;
 }
 
+/** The plugin settings that mirror a server-side system prompt. */
+type PromptSettingKey = "ragSystemPrompt" | "generalSystemPrompt";
+
 /** Slider bounds for a server-config number. */
 interface SliderLimits {
     min: number;
@@ -544,7 +547,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigSliders: Map<string, { setValue: (v: number) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
-    private configDefaults: Record<string, unknown> = {};
+    // Null until /api/config/defaults answers; an empty map is a server that cannot report defaults.
+    private configDefaults: Record<string, unknown> | null = null;
+    // Newest write started for a server-config key; the next write to that key waits for it.
+    private configWrites: Map<string, Promise<unknown>> = new Map();
     // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
     private suppressChangeEvents = false;
     private chatModeSettingEl: HTMLElement | null = null;
@@ -1972,15 +1978,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** Send a system prompt to the server. An empty box means "use the default",
-     *  so it clears the override rather than setting an empty prompt. */
+    /** Send a system prompt to the server. An empty box writes nothing: the saved prompt stays in force. */
     private async pushSystemPrompt(key: string, value: string, name: string): Promise<void> {
         const trimmed = value.trim();
+        if (trimmed === "") return;
         try {
-            await applyConfig(this.plugin, { [key]: trimmed === "" ? null : trimmed });
+            await this.writeConfigKey(key, trimmed);
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
         }
+    }
+
+    /** PATCH one server-config key. Writes to the same key are sent in the order they started. */
+    private writeConfigKey(key: string, value: unknown): Promise<unknown> {
+        const pending = this.configWrites.get(key) ?? Promise.resolve();
+        const next = pending.then(() => applyConfig(this.plugin, { [key]: value }));
+        this.configWrites.set(
+            key,
+            next.catch(() => undefined),
+        );
+        return next;
     }
 
     /** Runs a programmatic setValue with the control's onChange muted, so nothing echoes to the server. */
@@ -2073,15 +2090,43 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
                 .onClick(async () => {
                     // Silent no-op until defaults have loaded (old servers or racing first click).
-                    if (!(key in this.configDefaults)) return;
-                    const def = this.configDefaults[key];
-                    try {
-                        await applyConfig(this.plugin, { [key]: def });
-                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.refresh();
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+                    const defaults = this.configDefaults;
+                    if (defaults === null || !(key in defaults)) return;
+                    if (await this.pushConfigDefault(key, label, defaults[key])) this.refresh();
+                }),
+        );
+    }
+
+    /** Write the server's default for one key. False means the write failed and said so. */
+    private async pushConfigDefault(key: string, label: string, value: unknown): Promise<boolean> {
+        try {
+            await this.writeConfigKey(key, value);
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+            return false;
+        }
+        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
+        return true;
+    }
+
+    /** Reset a system prompt in both places it lives: the server's value, then the plugin's mirror. */
+    private appendPromptResetAffordance(setting: Setting, spec: ConfigRowSpec, settingsKey: PromptSettingKey): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon(ICON_RESET)
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    const defaults = this.configDefaults;
+                    // Still loading: nothing to reset to yet, and nothing has gone wrong.
+                    if (defaults === null) return;
+                    if (!(spec.key in defaults)) {
+                        new Notice(MESSAGES.NOTICE_FAILED_RESET(spec.name));
+                        return;
                     }
+                    if (!(await this.pushConfigDefault(spec.key, spec.name, defaults[spec.key]))) return;
+                    this.plugin.settings[settingsKey] = DEFAULT_SETTINGS[settingsKey];
+                    await this.plugin.saveSettings();
+                    this.refresh();
                 }),
         );
     }
@@ -2152,7 +2197,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private applySystemPromptRow(
         setting: Setting,
         spec: ConfigRowSpec,
-        settingsKey: "ragSystemPrompt" | "generalSystemPrompt",
+        settingsKey: PromptSettingKey,
         initial: string,
     ): void {
         setting
@@ -2168,7 +2213,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
-        this.appendLocalResetAffordance(setting, settingsKey, spec.name);
+        this.appendPromptResetAffordance(setting, spec, settingsKey);
     }
 
     private applyChatModeRow(setting: Setting): void {

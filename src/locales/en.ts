@@ -568,9 +568,9 @@ export const MESSAGES = {
         "How closely results must match your query. Lower = only very close matches, higher = broader results",
     DESC_ADAPTIVE_THRESHOLD: "Automatically broaden the search if too few results are found",
     DESC_RAG_SYSTEM_PROMPT:
-        "System prompt sent to the chat model when the answer is grounded in retrieved documents (Search mode with at least one match). Leave blank for the default.",
+        "System prompt sent to the chat model when the answer is grounded in retrieved documents (Search mode with at least one match). Use the reset button to restore the default.",
     DESC_GENERAL_SYSTEM_PROMPT:
-        "System prompt sent to the chat model in Chat mode and when Search returns zero results. Leave blank for the default.",
+        "System prompt sent to the chat model in Chat mode and when Search returns zero results. Use the reset button to restore the default.",
     DESC_GEN_TEMPERATURE: "Higher = more creative and varied responses, lower = more focused and predictable",
     DESC_GEN_TOP_P: "Controls response diversity. Most users should leave this at the default.",
     DESC_GEN_TOP_K: "Limits which words the AI considers. Most users should leave this at the default.",

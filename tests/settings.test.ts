@@ -936,6 +936,11 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("system prompt settings", () => {
+        // Reset-button order: 0=serverMode 1=topK 2=max_distance 3=adaptive_threshold
+        // 4=ragSystemPrompt 5=generalSystemPrompt.
+        const RAG_PROMPT_RESET = 4;
+        const GENERAL_PROMPT_RESET = 5;
+
         it("saves ragSystemPrompt when the cited-answer textarea changes", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
@@ -960,14 +965,162 @@ describe("LilbeeSettingTab", () => {
             });
         });
 
-        it("an empty prompt clears the override rather than setting an empty one", async () => {
+        it("an emptied prompt box writes nothing and reports no failure", async () => {
+            Notice.clear();
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
 
             await textAreaByName.get(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)!("   ");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ general_system_prompt: null });
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some((n) =>
+                    n.message.includes(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)),
+                ),
+            ).toBe(false);
+        });
+
+        it("an emptied prompt box keeps the saved prompt until an explicit reset", async () => {
+            const plugin = makePlugin({ generalSystemPrompt: "You are a friendly tutor." });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textAreaByName, extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+            await textAreaByName.get(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)!("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalledWith(
+                expect.objectContaining({ general_system_prompt: expect.anything() }),
+            );
+
+            (tab as any).configDefaults = { general_system_prompt: "You are lilbee." };
+            await extraButtonOnClicks[GENERAL_PROMPT_RESET]();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ general_system_prompt: "You are lilbee." });
+        });
+
+        it("resetting a prompt clears the mirrored plugin setting", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = { rag_system_prompt: "Answer from the cited documents." };
+
+            await extraButtonOnClicks[RAG_PROMPT_RESET]();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                rag_system_prompt: "Answer from the cited documents.",
+            });
+            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+            expect(
+                Notice.instances.some((n) =>
+                    n.message.includes(MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
+                ),
+            ).toBe(true);
+        });
+
+        it("reports a failure when the server serves no defaults to reset to", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            mockChatPicker(plugin);
+            // A server without /api/config/defaults: the fetch settles, with nothing in it.
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).toEqual({});
+            });
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await extraButtonOnClicks[RAG_PROMPT_RESET]();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
+            expect(
+                Notice.instances.some((n) =>
+                    n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
+                ),
+            ).toBe(true);
+        });
+
+        it("reports nothing when the reset is clicked before the defaults arrive", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            // The defaults fetch is still in flight, so the click has nothing to reset to yet.
+            expect((tab as any).configDefaults).toBeNull();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await extraButtonOnClicks[RAG_PROMPT_RESET]();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)) ||
+                        n.message.includes(MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
+                ),
+            ).toBe(false);
+        });
+
+        it("a reset clicked after a keystroke lands last on the server", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "Answer from the cited documents.",
+            });
+            const tab = makeTab(plugin);
+            const { textAreaByName, extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).not.toBeNull();
+            });
+
+            let releaseKeystroke: () => void = () => {};
+            const updateConfig = plugin.api.updateConfig as ReturnType<typeof vi.fn>;
+            updateConfig.mockClear();
+            updateConfig.mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        releaseKeystroke = () => resolve({ updated: [], reindex_required: false });
+                    }),
+            );
+
+            const typed = textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
+            await vi.waitFor(() => {
+                expect(updateConfig).toHaveBeenCalledTimes(1);
+            });
+            const reset = extraButtonOnClicks[RAG_PROMPT_RESET]();
+            await new Promise((r) => setTimeout(r, 0));
+            // The reset waits for the typed write rather than racing it.
+            expect(updateConfig).toHaveBeenCalledTimes(1);
+            releaseKeystroke();
+            await typed;
+            await reset;
+
+            expect(updateConfig.mock.calls.map((c) => c[0])).toEqual([
+                { rag_system_prompt: "You are a pirate." },
+                { rag_system_prompt: "Answer from the cited documents." },
+            ]);
+            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
+        });
+
+        it("keeps the mirrored setting when the server refuses the reset", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            mockChatPicker(plugin);
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("read-only config"));
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = { rag_system_prompt: "Answer from the cited documents." };
+
+            await extraButtonOnClicks[RAG_PROMPT_RESET]();
+            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
+            expect(
+                Notice.instances.some((n) =>
+                    n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
+                ),
+            ).toBe(true);
         });
 
         it("reports a prompt the server refused", async () => {
@@ -4297,7 +4450,7 @@ describe("managed mode settings", () => {
     describe("per-row reset-to-default affordance", () => {
         // Reset button order:
         // 0=serverMode(local) 1=topK 2=max_distance 3=adaptive_threshold
-        // 4=ragSystemPrompt(local) 5=generalSystemPrompt(local) 6=temperature 7=top_p
+        // 4=ragSystemPrompt 5=generalSystemPrompt 6=temperature 7=top_p
         // 8=top_k_sampling 9=repeat_penalty 10=num_ctx 11=seed ...
         const TEMPERATURE_RESET = 6;
 

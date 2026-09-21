@@ -776,8 +776,10 @@ export default class LilbeePlugin extends Plugin {
             dataDir: registry.resolveDataDir(this.vaultId),
             sharedRoot,
             modelsDir: sharedModelsDir(sharedRoot),
-            ragSystemPrompt: this.settings.ragSystemPrompt,
-            generalSystemPrompt: this.settings.generalSystemPrompt,
+            systemPrompts: () => ({
+                rag: this.settings.ragSystemPrompt,
+                general: this.settings.generalSystemPrompt,
+            }),
             installedVersion: this.getSharedLilbeeVersion(),
             onStateChange: (state) => this.handleServerStateChange(state),
             onRestartsExhausted: (output: string) => {
