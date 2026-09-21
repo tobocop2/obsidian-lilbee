@@ -2109,7 +2109,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (this.configChoices !== null) return;
         const choices = new Map<string, string[]>();
         for (const field of schema.fields) {
-            if (field.choices !== null && field.choices.length > 0) choices.set(field.key, field.choices);
+            if (field.choices !== null) choices.set(field.key, field.choices);
         }
         this.configChoices = choices;
         this.refresh();

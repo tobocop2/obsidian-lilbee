@@ -15,6 +15,7 @@ import {
 } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import configSchema from "./fixtures/config-schema.json";
+import configRefusal from "./fixtures/config-refusal.json";
 import { ServerStartingError } from "../src/api";
 import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
@@ -9173,12 +9174,8 @@ describe("new server config fields", () => {
         /** Recorded from GET /api/config/schema on a live server, so the row is built from real choices. */
         const FTS_CHOICES = configSchema.fields.find((field) => field.key === "fts_language")!.choices!;
 
-        /** Recorded from PATCH /api/config with a half-typed value, verbatim. */
-        const REFUSAL =
-            'Server responded 400: {"status_code":400,"detail":"1 validation error for Config\\nfts_language\\n  ' +
-            "Value error, fts_language must be one of: Arabic, Danish, Dutch, English, Finnish, French, German, " +
-            "Greek, Hungarian, Italian, Norwegian, Portuguese, Romanian, Russian, Spanish, Swedish, Tamil, Turkish " +
-            "[type=value_error, input_value='Germ', input_type=str]\"}";
+        /** The error the client raises for the recorded refusal of a half-typed language. */
+        const REFUSAL = `Server responded 400: ${JSON.stringify(configRefusal)}`;
 
         /** Render once so the schema arrives, then capture the render it triggers. */
         async function displayWithSchema(plugin: ReturnType<typeof makePlugin>): Promise<Captured> {
@@ -9256,7 +9253,11 @@ describe("new server config fields", () => {
             row.press("Escape");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
 
+            // Asserted before the blur runs, so this write can only be Enter's.
             row.press("Enter");
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
+
             await new Promise((r) => setTimeout(r, 0));
             await row.handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
@@ -9289,7 +9290,7 @@ describe("new server config fields", () => {
             await new Promise((r) => setTimeout(r, 0));
             const message = Notice.instances.map((n) => n.message).join("\n");
             expect(message).toContain("failed to update");
-            expect(message).toContain("must be one of: Arabic");
+            expect(message).toContain(configRefusal.detail);
 
             // A failure the server did not explain still reports the field that failed.
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue("offline");
