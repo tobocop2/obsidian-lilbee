@@ -43,7 +43,7 @@ jobs:
             exit 0
           fi
           prev=$(git tag -l '[0-9]*' --sort=-v:refname | grep -A1 -x "$tag" | tail -n +2 | head -1 || true)
-          min_version=$(node scripts/print-min-server-version.mjs) \
+          min_version=$(jq -er '.minServerVersion' min-server-version.json) \
             || { echo "release-store: could not read the plugin's minimum lilbee server version" >&2; exit 1; }
           [ -n "$min_version" ] || { echo "release-store: minimum lilbee server version was empty" >&2; exit 1; }
           # lilbee's own release tags are v-prefixed; the plugin's constant is not (it is

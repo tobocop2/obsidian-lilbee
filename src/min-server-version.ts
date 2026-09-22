@@ -1,7 +1,6 @@
 /**
- * The plugin's minimum lilbee server version. Kept free of imports so a
- * release script can read MIN_SERVER_VERSION by transforming just this file,
- * without pulling in the Obsidian API or anything else the plugin bundles.
+ * The plugin's minimum lilbee server version. The release workflow reads the
+ * same floor from min-server-version.json; a test asserts the two agree.
  */
 
 /**
