@@ -4,7 +4,14 @@ import { buildZip, collectDiagnostics, LOG_TAIL_MAX_BYTES, renderSummary, resolv
 import { node } from "../src/node";
 import { MESSAGES } from "../src/locales/en";
 import { REDACTED } from "../src/redact";
-import { DEFAULT_SETTINGS, NVIDIA_PROBE_STATUS, SERVER_STATE, SERVER_VARIANT, SHARED_PATH } from "../src/types";
+import {
+    DEFAULT_SETTINGS,
+    ENGINE_BACKEND,
+    NVIDIA_PROBE_STATUS,
+    SERVER_STATE,
+    SERVER_VARIANT,
+    SHARED_PATH,
+} from "../src/types";
 import type { DiagnosticsContext, GpuDetection } from "../src/types";
 
 const DETECTION: GpuDetection = {
@@ -37,11 +44,18 @@ function makeContext(overrides: Partial<DiagnosticsContext> = {}): DiagnosticsCo
         serverVersion: "v0.4.0",
         serverVariant: SERVER_VARIANT.CU124,
         gpuDetection: DETECTION,
+        engineBackend: ENGINE_BACKEND.CUDA,
         serverState: SERVER_STATE.ERROR,
         serverUrl: "http://127.0.0.1:1234",
+        serverBinaryPath: "/shared/bin/v0.4.0/lilbee-macos-arm64",
         lastOutput: "Traceback: boom",
         ...overrides,
     };
+}
+
+/** The one summary line naming the engine backend. */
+function backendLine(summary: string): string {
+    return summary.split("\n").find((line) => line.startsWith("- Engine backend:")) ?? "";
 }
 
 function fileText(ctx: DiagnosticsContext, name: string): string {
@@ -162,6 +176,22 @@ describe("collectDiagnostics", () => {
         expect(bundle.summaryMarkdown).toContain("Traceback: boom");
     });
 
+    it("blanks a credential in every summary field, not only the two that ask for it", () => {
+        const ctx = makeContext({
+            settings: { ...DEFAULT_SETTINGS, manualToken: "sk-settings-9f2c" },
+            serverUrl: "http://127.0.0.1:1234/?api_key=sk-url-4b7a",
+            lastOutput: "authorization: Bearer sk-output-11de",
+            journalEntries: [{ timestamp: "t", label: "chat", message: "hf_token=sk-journal-77aa", stack: null }],
+        });
+        const summary = collectDiagnostics(ctx).summaryMarkdown;
+        expect(summary).toContain(`- Server URL: http://127.0.0.1:1234/?api_key=${REDACTED}`);
+        expect(summary).not.toContain("sk-url-4b7a");
+        expect(summary).not.toContain("sk-output-11de");
+        expect(summary).not.toContain("sk-journal-77aa");
+        expect(summary).not.toContain("sk-settings-9f2c");
+        expect(fileText(ctx, "settings.json")).not.toContain("sk-settings-9f2c");
+    });
+
     it("renders placeholders for empty stderr, journal, url, shared root, and server version", () => {
         const bundle = collectDiagnostics(
             makeContext({ lastOutput: "", serverUrl: "", sharedRoot: null, serverVersion: "" }),
@@ -180,6 +210,35 @@ describe("collectDiagnostics", () => {
         const bundle = collectDiagnostics(makeContext());
         expect(bundle.summaryMarkdown).toContain("- Server build: CUDA 12.4");
         expect(bundle.summaryMarkdown).toContain("- GPU detection: The NVIDIA driver reports CUDA 12.4.");
+    });
+
+    it("names the engine backend and the binary the server launches", () => {
+        const bundle = collectDiagnostics(makeContext({ engineBackend: ENGINE_BACKEND.METAL }));
+        expect(backendLine(bundle.summaryMarkdown)).toBe("- Engine backend: metal");
+        expect(bundle.summaryMarkdown).toContain("- Server binary: /shared/bin/v0.4.0/lilbee-macos-arm64");
+    });
+
+    it("separates a CPU host from an engine that reported no backend", () => {
+        const onCpuHost = collectDiagnostics(makeContext({ engineBackend: ENGINE_BACKEND.CPU }));
+        const onFailedProbe = collectDiagnostics(makeContext({ engineBackend: ENGINE_BACKEND.UNKNOWN }));
+        expect(backendLine(onCpuHost.summaryMarkdown)).toBe("- Engine backend: cpu");
+        expect(backendLine(onFailedProbe.summaryMarkdown)).toBe(
+            "- Engine backend: unknown (the engine did not report a backend)",
+        );
+        expect(backendLine(onFailedProbe.summaryMarkdown)).not.toBe(backendLine(onCpuHost.summaryMarkdown));
+        expect(backendLine(onFailedProbe.summaryMarkdown)).not.toContain("cpu");
+    });
+
+    it("says no server reported a backend when none answered", () => {
+        const bundle = collectDiagnostics(makeContext({ engineBackend: null }));
+        expect(backendLine(bundle.summaryMarkdown)).toBe("- Engine backend: (no server has reported one)");
+        expect(bundle.summaryMarkdown).not.toContain("- Engine backend: undefined");
+    });
+
+    it("says there is no server binary when none is resolved", () => {
+        const bundle = collectDiagnostics(makeContext({ serverBinaryPath: null }));
+        expect(bundle.summaryMarkdown).toContain("- Server binary: (none)");
+        expect(bundle.summaryMarkdown).not.toContain("- Server binary: undefined");
     });
 
     it("says so when no build and no detection were ever recorded", () => {

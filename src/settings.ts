@@ -1757,7 +1757,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_EXPORT_DIAGNOSTICS)
             .addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_EXPORT_DIAGNOSTICS).onClick(() => {
-                    void exportDiagnostics(this.plugin.diagnosticsContext());
+                    void this.plugin.diagnosticsContext().then(exportDiagnostics);
                 }),
             );
     }

@@ -313,7 +313,9 @@ export class LilbeeClient {
         const path = isRelative ? (url.startsWith("/") ? url : `/${url}`) : null;
         if (!this.baseUrl) {
             const deadline = Date.now() + STARTUP_WAIT_MS;
-            while (!this.baseUrl && Date.now() < deadline) {
+            // A caller's signal bounds the whole call, this wait included. Without
+            // that, a 12 s wait for a host runs before the signal is ever consulted.
+            while (!this.baseUrl && Date.now() < deadline && !opts?.signal?.aborted) {
                 await new Promise((r) => window.setTimeout(r, STARTUP_POLL_INTERVAL_MS));
             }
             if (!this.baseUrl) {
@@ -885,8 +887,12 @@ export class LilbeeClient {
     }
 
     /** The current effective placement (auto plan or active manual spec). */
-    async placement(): Promise<Result<PlacementResponse, Error>> {
-        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, { headers: this.authHeaders() });
+    async placement(opts?: { signal?: AbortSignal }): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(
+            `${this.baseUrl}/api/placement`,
+            { headers: this.authHeaders() },
+            opts,
+        );
     }
 
     /** Dry-run a candidate spec (or auto when null); reports fit without persisting. */

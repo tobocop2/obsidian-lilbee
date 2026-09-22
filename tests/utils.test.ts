@@ -18,7 +18,6 @@ import {
     isModelUnavailableError,
     isRoleMismatchDetail,
     isStreamInterruptedError,
-    isVersionOlder,
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
     percentFromSse,
@@ -33,6 +32,7 @@ import {
     supportsSessions,
     withIdleTimeout,
 } from "../src/utils";
+import { isVersionOlder } from "../src/min-server-version";
 import { ServerStartingError, SessionTokenError } from "../src/api";
 import { SERVER_MODE } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
@@ -182,6 +182,15 @@ describe("isVersionOlder", () => {
 
     it("treats a dev build past the newest release as not older", () => {
         expect(isVersionOlder("0.6.90b420.dev722", "0.6.66b507")).toBe(false);
+    });
+
+    it("treats a dev build on the right side as newer than its base release", () => {
+        expect(isVersionOlder("0.6.90b420", "0.6.90b420.dev722")).toBe(true);
+    });
+
+    it("orders by the earliest differing run, so a higher build number on a lower release line still loses", () => {
+        expect(isVersionOlder("0.6.66b999", "0.6.90b1")).toBe(true);
+        expect(isVersionOlder("0.6.90b1", "0.6.66b999")).toBe(false);
     });
 
     it("orders beta builds of the same release by their beta number", () => {

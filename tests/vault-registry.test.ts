@@ -9,7 +9,7 @@ import {
     sharedModelsDir,
     vaultsRootDir,
 } from "../src/vault-registry";
-import { type VaultRegistryEntry } from "../src/types";
+import { DEFAULT_SHARED_CONFIG, type VaultRegistryEntry } from "../src/types";
 
 /* ------------------------------------------------------------------ */
 /*  In-memory fs                                                      */
@@ -139,16 +139,7 @@ describe("VaultRegistry.loadConfig", () => {
     it("returns defaults when config file is missing", () => {
         mountFs(makeFs());
         const reg = new VaultRegistry("/r");
-        expect(reg.loadConfig()).toEqual({
-            lilbeeVersion: "",
-            lilbeeVariant: "",
-            lilbeeDetection: null,
-            hfToken: "",
-            lastUpdateCheckPluginVersion: "",
-            serverAutoUpdate: true,
-            serverUninstalled: false,
-            serverUpdateReminder: true,
-        });
+        expect(reg.loadConfig()).toEqual(DEFAULT_SHARED_CONFIG);
     });
 
     it("merges defaults with persisted partial config", () => {
@@ -156,14 +147,8 @@ describe("VaultRegistry.loadConfig", () => {
         fs.write("/r/config.json", JSON.stringify({ lilbeeVersion: "v0.5.0" }));
         mountFs(fs);
         expect(new VaultRegistry("/r").loadConfig()).toEqual({
+            ...DEFAULT_SHARED_CONFIG,
             lilbeeVersion: "v0.5.0",
-            lilbeeVariant: "",
-            lilbeeDetection: null,
-            hfToken: "",
-            lastUpdateCheckPluginVersion: "",
-            serverAutoUpdate: true,
-            serverUninstalled: false,
-            serverUpdateReminder: true,
         });
     });
 
@@ -171,16 +156,7 @@ describe("VaultRegistry.loadConfig", () => {
         const fs = makeFs();
         fs.write("/r/config.json", "{not json");
         mountFs(fs);
-        expect(new VaultRegistry("/r").loadConfig()).toEqual({
-            lilbeeVersion: "",
-            lilbeeVariant: "",
-            lilbeeDetection: null,
-            hfToken: "",
-            lastUpdateCheckPluginVersion: "",
-            serverAutoUpdate: true,
-            serverUninstalled: false,
-            serverUpdateReminder: true,
-        });
+        expect(new VaultRegistry("/r").loadConfig()).toEqual(DEFAULT_SHARED_CONFIG);
     });
 });
 

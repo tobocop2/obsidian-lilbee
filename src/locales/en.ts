@@ -3,6 +3,8 @@ import {
     AMD_PROBE_STATUS,
     type AmdProbe,
     CUDA_MIN_CEILING,
+    ENGINE_BACKEND,
+    type EngineBackend,
     type GpuDetection,
     MODEL_TASK,
     NVIDIA_PROBE_STATUS,
@@ -494,6 +496,13 @@ export const MESSAGES = {
         return `The NVIDIA driver reports CUDA ${cudaVersionLabel(nvidia.cudaCeiling)}.${floor} ${amd}`;
     },
     DESC_GPU_DETECTION_NONE: "(none recorded)",
+    /** The engine backend in the diagnostics export. `unknown` is the server's own
+     *  answer and reads as neither CPU nor a blank; null is the plugin's own state. */
+    DESC_ENGINE_BACKEND: (backend: EngineBackend | null): string => {
+        if (backend === null) return "(no server has reported one)";
+        if (backend === ENGINE_BACKEND.UNKNOWN) return "unknown (the engine did not report a backend)";
+        return backend;
+    },
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
         `${tag} installed. The release list could not be read from GitHub: ${reason}`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>
@@ -787,6 +796,11 @@ export const MESSAGES = {
     BUTTON_OPEN_UPDATE_SETTINGS: "Open update settings",
     BUTTON_NOT_NOW: "Not now",
     BUTTON_STOP_REMINDING: "Stop reminding me",
+    /** The installed build does not match the devices the running server reports. */
+    NOTICE_CUDA_BUILD_AVAILABLE: (build: string): string =>
+        `lilbee runs the ${build} build, but the server reports an NVIDIA device. The plugin does not know this ` +
+        `driver's CUDA version, so it installed the build that runs anywhere. Make nvidia-smi reachable from ` +
+        `Obsidian, then reinstall the server to get the CUDA build.`,
     NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
         `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
@@ -1280,6 +1294,9 @@ export const MESSAGES = {
     PLACEMENT_UTIL_NA: "N/A",
     PLACEMENT_METER_UTIL: "util",
     PLACEMENT_METER_VRAM: "vram",
+    PLACEMENT_TEMP: (celsius: number): string => `${celsius}°C`,
+    PLACEMENT_TEMP_NA: "N/A",
+    PLACEMENT_METER_TEMP: "temp",
     PLACEMENT_HINT_SPLIT: "split",
     PLACEMENT_HINT_MIRROR: "mirror",
     PLACEMENT_HINT_SINGLE: "one card",

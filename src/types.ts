@@ -766,6 +766,8 @@ export interface SharedConfig {
     serverUninstalled: boolean;
     /** Show a reminder on launch while a newer server release exists and automatic updates are off. */
     serverUpdateReminder: boolean;
+    /** The CUDA build was already offered for the build now installed. */
+    cudaBuildOffered: boolean;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
@@ -777,6 +779,7 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     serverAutoUpdate: true,
     serverUninstalled: false,
     serverUpdateReminder: true,
+    cudaBuildOffered: false,
 };
 
 /** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
@@ -877,8 +880,12 @@ export interface DiagnosticsContext {
     serverVariant: ServerVariant | "";
     /** The GPU probe that chose the installed build, or null when none was recorded. */
     gpuDetection: GpuDetection | null;
+    /** The backend the server's fleet is running on, or null when no server has reported one. */
+    engineBackend: EngineBackend | null;
     serverState: ServerState;
     serverUrl: string;
+    /** The binary the managed server launches, or null in external mode. */
+    serverBinaryPath: string | null;
     lastOutput: string;
 }
 
@@ -1348,6 +1355,26 @@ export const PLACEMENT_MODE = {
     MANUAL: "manual",
 } as const satisfies Record<string, PlacementMode>;
 
+/** The compute backend the engine selected, as the server reports it. Lower case,
+ *  and a different vocabulary from the upper-case per-device `GpuInfo.backend` that
+ *  arrives in the same payload; neither substitutes for the other. `cpu` and
+ *  `unknown` are separate answers: an empty device list is a host with no usable GPU
+ *  only when the server says `cpu`. */
+export type EngineBackend = "cuda" | "rocm" | "metal" | "sycl" | "vulkan" | "cpu" | "unknown";
+
+export const ENGINE_BACKEND = {
+    CUDA: "cuda",
+    ROCM: "rocm",
+    METAL: "metal",
+    SYCL: "sycl",
+    VULKAN: "vulkan",
+    CPU: "cpu",
+    UNKNOWN: "unknown",
+} as const satisfies Record<string, EngineBackend>;
+
+/** Lower-case substring an NVIDIA device carries in the name the server reports. */
+export const NVIDIA_DEVICE_MARKER = "nvidia";
+
 /** One detected GPU. Mirrors the server's GpuInfoResponse. */
 export interface GpuInfo {
     index: number;
@@ -1360,12 +1387,16 @@ export interface GpuInfo {
 
 /** A live per-GPU activity snapshot from the GET /api/gpus/stream SSE stream.
  * `utilization_pct` is compute load (0-100), or null for backends that can't
- * report it; `free_bytes` moves as models load and ingest runs. */
+ * report it; `free_bytes` moves as models load and ingest runs.
+ * `temperature_c` is null on backends that don't report it (e.g. NVIDIA's
+ * four-column query), not just on backends that lack it entirely. */
 export interface GpuStat {
     index: number;
     utilization_pct: number | null;
     free_bytes: number;
     total_bytes: number;
+    /** Absent on servers before 0.6.90b437; null on backends that do not report it. */
+    temperature_c?: number | null;
 }
 
 /** Server-issued hint when GPU monitoring is degraded (e.g. Intel hosts without intel_gpu_top). */
@@ -1391,6 +1422,8 @@ export interface RolePlacement {
 /** `GET /api/placement`, `POST /api/placement/preview`, and the apply response. */
 export interface PlacementResponse {
     gpus: GpuInfo[];
+    /** The backend the engine selected. Absent on servers before 0.6.90b443. */
+    engine_backend?: EngineBackend;
     roles: RolePlacement[];
     /** Roles that cannot fit the current hardware under this plan. */
     unplaceable: string[];
@@ -1571,6 +1604,20 @@ export interface GpuDetection {
     amd: AmdProbe;
     /** When the probe ran, ISO 8601. */
     detectedAt: string;
+}
+
+/** Probe outcomes that leave the driver's CUDA version unknown. */
+const CUDA_VERSION_UNREAD: ReadonlySet<NvidiaProbeStatus> = new Set([
+    NVIDIA_PROBE_STATUS.MISSING,
+    NVIDIA_PROBE_STATUS.SANDBOXED,
+    NVIDIA_PROBE_STATUS.UNREADABLE,
+]);
+
+/** Whether the probe that chose the installed build read no CUDA version. A probe that
+ *  read one chose the build with it, so the build it chose is the deliberate answer.
+ *  A null detection predates detection tracking and knows nothing either. */
+export function cudaVersionUnknown(detection: GpuDetection | null): boolean {
+    return detection === null || CUDA_VERSION_UNREAD.has(detection.nvidia.status);
 }
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */

@@ -280,6 +280,11 @@ export class ServerManager {
         return this.opts.dataDir;
     }
 
+    /** The resolved binary this supervisor spawns. */
+    get binaryPath(): string {
+        return this.opts.binaryPath;
+    }
+
     /** Version the spawned child reported on its ready probe; empty when adopted or unknown. */
     get spawnedVersion(): string {
         return this._spawnedVersion;

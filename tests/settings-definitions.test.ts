@@ -115,7 +115,7 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, overrides: Record<st
         runWikiPrune: vi.fn().mockResolvedValue(undefined),
         persistAgentIntegration: vi.fn().mockResolvedValue(undefined),
         applyAgentWiring: vi.fn().mockResolvedValue(undefined),
-        diagnosticsContext: () => ({}),
+        diagnosticsContext: () => Promise.resolve({}),
         triggerSync: vi.fn(),
         fetchActiveModel: vi.fn(),
         enqueuePull: vi.fn(() => "task"),

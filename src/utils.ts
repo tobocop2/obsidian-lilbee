@@ -1,6 +1,7 @@
 import { Notice, type App, type Modal, type TFile } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
+import { isVersionOlder, SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION } from "./min-server-version";
 import { SERVER_MODE, WARM_PHASE } from "./types";
 import type { HealthWarning, ServerMode, WarmProgress } from "./types";
 
@@ -169,29 +170,6 @@ export function relativeTime(timestamp: number): string {
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
 }
-
-/**
- * True when `current` orders strictly before `latest` under the release scheme
- * ("0.6.66b507", "0.6.90b420.dev722"): every numeric run compares in sequence,
- * missing runs count as zero. A dev build ahead of the newest release is not older.
- */
-export function isVersionOlder(current: string, latest: string): boolean {
-    const runs = (v: string): number[] => (v.match(/\d+/g) ?? []).map(Number);
-    const a = runs(current);
-    const b = runs(latest);
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-        const x = a[i] ?? 0;
-        const y = b[i] ?? 0;
-        if (x !== y) return x < y;
-    }
-    return false;
-}
-
-/** Oldest server with the /api/sessions routes; the 0.6.66 stable line predates them. */
-const SESSIONS_MIN_SERVER_VERSION = "0.6.90b420";
-
-/** Oldest server with the /api/placement routes; also new in the 0.6.90 line. */
-const PLACEMENT_MIN_SERVER_VERSION = "0.6.90b420";
 
 /** Unknown versions fail open: the chat path already degrades gracefully on a 404. */
 export function supportsSessions(version: string): boolean {

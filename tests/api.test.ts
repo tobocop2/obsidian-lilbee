@@ -2318,6 +2318,24 @@ describe("ServerStartingError", () => {
         }
     });
 
+    it("gives up the startup wait as soon as the caller's signal aborts", async () => {
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            const controller = new AbortController();
+            const promise = c.placement({ signal: controller.signal });
+            await vi.advanceTimersByTimeAsync(500);
+            controller.abort();
+            await vi.advanceTimersByTimeAsync(500);
+            const result = await promise;
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr()).toBeInstanceOf(ServerStartingError);
+            expect(fetchMock).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("recovers when setBaseUrl lands during the wait window", async () => {
         vi.useFakeTimers();
         try {

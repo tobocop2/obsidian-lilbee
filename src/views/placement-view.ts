@@ -79,11 +79,17 @@ export class PlacementView extends ItemView {
     private statsController: AbortController | null = null;
     private gpuNotice: string | null = null;
     private gpuNoticeEl: HTMLElement | null = null;
-    /** Live util + vram bars and their text per device index, updated in place by the stats stream. */
+    /** Live util + vram + temp bars/text per device index, updated in place by the stats stream. */
     // vramFill/memText are absent on unified-memory rows, which render a static capacity label.
     private gpuBars: Map<
         number,
-        { utilFill: HTMLElement; utilText: HTMLElement; vramFill?: HTMLElement; memText?: HTMLElement }
+        {
+            utilFill: HTMLElement;
+            utilText: HTMLElement;
+            vramFill?: HTMLElement;
+            memText?: HTMLElement;
+            tempText: HTMLElement;
+        }
     > = new Map();
     private bodyEl: HTMLElement | null = null;
 
@@ -297,16 +303,22 @@ export class PlacementView extends ItemView {
         const meters = row.createDiv({ cls: "lilbee-gpu-meters" });
         const util = this.renderMeter(meters, "util", MESSAGES.PLACEMENT_METER_UTIL);
         util.val.setText(MESSAGES.PLACEMENT_UTIL_NA);
+        const tempText = this.renderLabelValueMeter(
+            meters,
+            "temp",
+            MESSAGES.PLACEMENT_METER_TEMP,
+            MESSAGES.PLACEMENT_TEMP_NA,
+        );
         if (isUnifiedMemory(gpu)) {
             // Apple reports no live GPU-memory usage, so a free/total gauge would
             // sit at "all free" forever. Show the unified capacity as a plain label.
-            const meter = meters.createDiv({ cls: "lilbee-meter lilbee-meter-vram" });
-            meter.createSpan({ cls: "lilbee-meter-label", text: MESSAGES.PLACEMENT_METER_VRAM });
-            meter.createSpan({
-                cls: "lilbee-meter-val",
-                text: MESSAGES.PLACEMENT_MEM_UNIFIED(formatGb(gpu.total_bytes)),
-            });
-            this.gpuBars.set(gpu.index, { utilFill: util.fill, utilText: util.val });
+            this.renderLabelValueMeter(
+                meters,
+                "vram",
+                MESSAGES.PLACEMENT_METER_VRAM,
+                MESSAGES.PLACEMENT_MEM_UNIFIED(formatGb(gpu.total_bytes)),
+            );
+            this.gpuBars.set(gpu.index, { utilFill: util.fill, utilText: util.val, tempText });
             return;
         }
         const vram = this.renderMeter(meters, "vram", MESSAGES.PLACEMENT_METER_VRAM);
@@ -317,7 +329,17 @@ export class PlacementView extends ItemView {
             utilText: util.val,
             vramFill: vram.fill,
             memText: vram.val,
+            tempText,
         });
+    }
+
+    /** A meter with a label and a value only, no bar: for a reading with no natural
+     *  full-scale (temperature) or a static capacity rather than a live gauge
+     *  (unified memory). Returns the value span so a caller can update it later. */
+    private renderLabelValueMeter(container: HTMLElement, variant: string, label: string, value: string): HTMLElement {
+        const meter = container.createDiv({ cls: `lilbee-meter lilbee-meter-${variant}` });
+        meter.createSpan({ cls: "lilbee-meter-label", text: label });
+        return meter.createSpan({ cls: "lilbee-meter-val", text: value });
     }
 
     /** A labelled mini-bar ("util" / "vram"): label, track+fill, value text. */
@@ -498,8 +520,9 @@ export class PlacementView extends ItemView {
         this.gpuNoticeEl = el;
     }
 
-    /** Move each card's utilization bar and util/memory text from a live snapshot.
-     * Skips devices not currently rendered (a reload rebuilds the cards). */
+    /** Move each card's utilization bar, util/memory text and temperature text
+     * from a live snapshot. Skips devices not currently rendered (a reload
+     * rebuilds the cards). */
     private applyStats(gpus: GpuStat[]): void {
         for (const gpu of gpus) {
             const refs = this.gpuBars.get(gpu.index);
@@ -513,6 +536,10 @@ export class PlacementView extends ItemView {
             if (refs.vramFill && refs.memText) {
                 this.setVram({ fill: refs.vramFill, val: refs.memText }, gpu.free_bytes, gpu.total_bytes);
             }
+            // `??` also covers a stale payload that omits the field entirely: an
+            // absent temperature must read the same as an explicit null, never as 0.
+            const temp = gpu.temperature_c ?? null;
+            refs.tempText.setText(temp === null ? MESSAGES.PLACEMENT_TEMP_NA : MESSAGES.PLACEMENT_TEMP(temp));
         }
     }
 

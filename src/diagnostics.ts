@@ -88,16 +88,18 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         `- Plugin version: ${ctx.pluginVersion}`,
         `- Server version: ${ctx.serverVersion || "(unknown)"}`,
         `- Server build: ${ctx.serverVariant ? MESSAGES.LABEL_SERVER_BUILD(ctx.serverVariant) : "(unknown)"}`,
+        `- Engine backend: ${MESSAGES.DESC_ENGINE_BACKEND(ctx.engineBackend)}`,
         `- GPU detection: ${ctx.gpuDetection ? MESSAGES.DESC_GPU_DETECTION(ctx.gpuDetection) : MESSAGES.DESC_GPU_DETECTION_NONE}`,
         `- Platform: ${process.platform} ${process.arch}`,
         `- Server state: ${ctx.serverState}`,
         `- Server URL: ${ctx.serverUrl || "(none)"}`,
+        `- Server binary: ${ctx.serverBinaryPath ?? "(none)"}`,
         `- Data dir: ${ctx.dataDir ?? `(not local) ${MESSAGES.DIAG_REMOTE_SERVER_NOTE}`}`,
         `- Shared root: ${ctx.sharedRoot ?? "(none)"}`,
         "",
         "## Last server output",
         "```",
-        redactSecrets(ctx.lastOutput) || "(empty)",
+        ctx.lastOutput || "(empty)",
         "```",
         "",
         "## Collected files",
@@ -105,10 +107,11 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         "",
         "## Plugin journal (errors and lifecycle events)",
         "```",
-        redactSecrets(journalText(ctx)) || "(none)",
+        journalText(ctx) || "(none)",
         "```",
     ];
-    return lines.join("\n");
+    // Every field passes one redactor on the way out, so a new field cannot skip it.
+    return redactSecrets(lines.join("\n"));
 }
 
 /** Gathers logs, config, settings, and the journal into a redacted bundle. */

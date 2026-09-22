@@ -4524,7 +4524,7 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-gpu-meters {
     grid-column: 2;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 12px;
 }
 .lilbee-meter {
