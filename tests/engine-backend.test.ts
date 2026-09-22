@@ -18,8 +18,8 @@ function gpu(overrides: Partial<GpuInfo> = {}): GpuInfo {
 }
 
 /** The device a Metal host reports beside `engine_backend: "metal"`, measured on
- *  lilbee 0.6.90b442. The upper-case `backend` token is the trap: it names the
- *  same host in a different vocabulary. */
+ *  the build that shipped as lilbee 0.6.90b443. The upper-case `backend` token is
+ *  the trap: it names the same host in a different vocabulary. */
 const APPLE_GPU: GpuInfo = {
     index: 0,
     backend: "MTL",
@@ -30,7 +30,7 @@ const APPLE_GPU: GpuInfo = {
 };
 
 /** The measured shape of `GET /api/placement`. Omit `engine_backend` for a server
- *  older than 0.6.90b442, which does not send the field. */
+ *  older than 0.6.90b443, which does not send the field. */
 function placement(gpus: GpuInfo[], engine_backend?: EngineBackend): PlacementResponse {
     return {
         gpus,

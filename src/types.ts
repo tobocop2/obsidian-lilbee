@@ -1406,7 +1406,7 @@ export interface RolePlacement {
 /** `GET /api/placement`, `POST /api/placement/preview`, and the apply response. */
 export interface PlacementResponse {
     gpus: GpuInfo[];
-    /** The backend the engine selected. Absent on servers before 0.6.90b442. */
+    /** The backend the engine selected. Absent on servers before 0.6.90b443. */
     engine_backend?: EngineBackend;
     roles: RolePlacement[];
     /** Roles that cannot fit the current hardware under this plan. */
