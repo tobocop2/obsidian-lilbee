@@ -45,6 +45,7 @@ import type {
     AgentSelection,
     CatalogEntry,
     ConfigResponse,
+    ConfigSchemaResponse,
     InstalledModel,
     LilbeeSettings,
     SearchChunkType,
@@ -70,6 +71,7 @@ import {
     DEBOUNCE_MS,
     percentFromSse,
     errorMessage,
+    extractServerErrorDetail,
     extractSseErrorMessage,
     formatDiskSize,
     noticeForResultError,
@@ -91,6 +93,7 @@ const RERANK_CANDIDATES_MAX = 100;
 const SEPARATOR_KEY = "__separator__";
 const SEPARATOR_LABEL = "\u2500\u2500 Other... \u2500\u2500";
 const ICON_RESET = "rotate-ccw";
+const KEY_ENTER = "Enter";
 
 // Credential-like fields that must never be clobbered by the global "Reset all" button,
 // even if the server endpoint returns a default for them. Resetting a user's API key to the
@@ -549,6 +552,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     // Null until /api/config/defaults answers; an empty map is a server that cannot report defaults.
     private configDefaults: Record<string, unknown> | null = null;
+    // The values the server accepts per config key, from /api/config/schema. Stays null on a
+    // server without that route, which leaves the closed-set rows as free text.
+    private configChoices: Map<string, string[]> | null = null;
     // Newest write started for a server-config key; the next write to that key waits for it.
     private configWrites: Map<string, Promise<unknown>> = new Map();
     // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
@@ -685,13 +691,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return this.localRow(spec.name, spec.desc, (setting) => this.applyConfigList(setting, spec));
     }
 
-    /** Write one server-config value and report the outcome. */
+    /** Write one server-config value and report the outcome, including why the server refused. */
     private async pushConfig(key: string, value: unknown, name: string): Promise<void> {
         try {
             await applyConfig(this.plugin, { [key]: value });
             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
-        } catch {
-            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+        } catch (err) {
+            const detail = err instanceof Error ? extractServerErrorDetail(err.message) : null;
+            new Notice(
+                detail === null
+                    ? MESSAGES.NOTICE_FAILED_UPDATE(name)
+                    : MESSAGES.NOTICE_FAILED_UPDATE_REASON(name, detail),
+            );
         }
     }
 
@@ -817,6 +828,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private loadTabState(): void {
         this.loadServerDefaults();
         this.loadConfigDefaults();
+        this.loadConfigChoices();
         void this.applyCapabilityGating();
     }
 
@@ -2083,6 +2095,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
+    private loadConfigChoices(): void {
+        this.plugin.api
+            .configSchema()
+            .then((schema: ConfigSchemaResponse) => this.adoptConfigChoices(schema))
+            .catch(() => {
+                // Older servers without /api/config/schema: the closed-set rows stay free text.
+            });
+    }
+
+    /** The first schema rebuilds the tab, so a row with a closed set becomes a picker. */
+    private adoptConfigChoices(schema: ConfigSchemaResponse): void {
+        if (this.configChoices !== null) return;
+        const choices = new Map<string, string[]>();
+        for (const field of schema.fields) {
+            if (field.choices !== null) choices.set(field.key, field.choices);
+        }
+        this.configChoices = choices;
+        this.refresh();
+    }
+
     private appendResetAffordance(setting: Setting, key: string, label: string): Setting {
         return setting.addExtraButton((btn) =>
             btn
@@ -2564,8 +2596,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private retrievalRow(field: RetrievalField): RowSpec {
         const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
         if (field.kind === "toggle") return this.toggleRow(spec);
-        if (field.kind === "language")
-            return this.localRow(spec.name, spec.desc, (setting) => this.applyFtsLanguageRow(setting, spec));
+        if (field.kind === "language") return this.languageRow(spec);
         return this.numberRow(spec, { integer: field.integer, min: field.min });
     }
 
@@ -2579,16 +2610,55 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderRows(details, this.rowsRetrievalAdvanced());
     }
 
-    /** A blank box means "leave the server's language alone", so it sends nothing. */
-    private applyFtsLanguageRow(setting: Setting, spec: ConfigRowSpec): void {
+    /** A picker over the languages the server published, or free text on a server that published none. */
+    private languageRow(spec: ConfigRowSpec): RowSpec {
+        const choices = this.configChoices?.get(spec.key) ?? null;
+        if (choices !== null)
+            return this.localRow(spec.name, spec.desc, (setting) =>
+                this.applyLanguageChoiceRow(setting, spec, choices),
+            );
+        const free: ConfigRowSpec = { ...spec, desc: MESSAGES.DESC_FTS_LANGUAGE_FREE_TEXT };
+        return this.localRow(free.name, free.desc, (setting) => this.applyLanguageTextRow(setting, free));
+    }
+
+    private applyLanguageChoiceRow(setting: Setting, spec: ConfigRowSpec, choices: string[]): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addDropdown((dropdown) => {
+                for (const choice of choices) dropdown.addOption(choice, choice);
+                const current = this.serverConfig?.[spec.key];
+                if (typeof current === "string") dropdown.setValue(current);
+                dropdown.onChange(async (value) => {
+                    await this.pushConfig(spec.key, value, spec.name);
+                });
+                this.serverConfigDropdowns.set(spec.key, dropdown);
+            });
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
+
+    /** Free text is sent on blur or Enter, never per keystroke: every prefix of a valid value is refused. */
+    private applyLanguageTextRow(setting: Setting, spec: ConfigRowSpec): void {
         setting
             .setName(spec.name)
             .setDesc(spec.desc)
             .addText((text) => {
-                text.onChange(async (value) => {
-                    const trimmed = value.trim();
+                // Tracks input events, so filling the box from the server does not send it back.
+                let edited = false;
+                text.inputEl.addEventListener("input", () => {
+                    edited = true;
+                });
+                const commit = async (): Promise<void> => {
+                    if (!edited) return;
+                    edited = false;
+                    const trimmed = text.inputEl.value.trim();
+                    // A blank box means "leave the server's language alone".
                     if (trimmed === "") return;
                     await this.pushConfig(spec.key, trimmed, spec.name);
+                };
+                text.inputEl.addEventListener("blur", () => void commit());
+                text.inputEl.addEventListener("keydown", (event: KeyboardEvent) => {
+                    if (event.key === KEY_ENTER) void commit();
                 });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });

@@ -1078,6 +1078,22 @@ export interface ConfigUpdateResponse {
     reindex_required: boolean;
 }
 
+/** One public setting as the server describes it. `choices` is null for an open value. */
+export interface ConfigFieldSchema {
+    key: string;
+    type: string;
+    nullable: boolean;
+    writable: boolean;
+    reindex_required: boolean;
+    group: string;
+    help: string;
+    choices: string[] | null;
+}
+
+export interface ConfigSchemaResponse {
+    fields: ConfigFieldSchema[];
+}
+
 export interface EmbeddingModelResponse {
     model: string;
 }
