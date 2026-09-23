@@ -6365,11 +6365,11 @@ describe("ChatView — resume interactions with live state", () => {
         await tick();
 
         await (view as any).resumeSession("s5");
+        expect((view as any).sending).toBe(false);
         await tick();
         await tick();
 
         expect((view as any).conversation.history).toEqual([{ role: "user", content: "old question" }]);
-        expect((view as any).sending).toBe(false);
     });
 
     it("moves the search-scope highlight when a session restores a different scope", async () => {
