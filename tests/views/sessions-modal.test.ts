@@ -39,14 +39,23 @@ function makePlugin(sessions: SessionMeta[] = []) {
             renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "Renamed" }),
             deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
             updateConfig: vi.fn().mockResolvedValue({}),
+            getSessionMarkdown: vi.fn().mockResolvedValue("# exported"),
         },
         settings: { serverMode: "managed" },
         serverSupportsSessionFork: vi.fn().mockReturnValue(true),
+        serverSupportsSessionExport: vi.fn().mockReturnValue(true),
     };
 }
 
 function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHooks {
-    return { activeId: null, resume: vi.fn(), startNew: vi.fn(), fork: vi.fn(), ...overrides };
+    return {
+        activeId: null,
+        resume: vi.fn(),
+        startNew: vi.fn(),
+        fork: vi.fn(),
+        saveActive: vi.fn(),
+        ...overrides,
+    };
 }
 
 function collectTexts(el: MockElement): string[] {
@@ -179,6 +188,74 @@ describe("SessionsModal", () => {
         const { el } = await openModal(plugin, makeHooks());
 
         expect(el.find("lilbee-session-fork")).toBeNull();
+        expect(el.find("lilbee-session-delete")).not.toBeNull();
+    });
+
+    it("saves the row's session to the vault from the server's export and stays open", async () => {
+        const plugin = makePlugin([makeSession({ id: "s7" })]);
+        const { modal, el } = await openModal(plugin, makeHooks());
+        const closeSpy = vi.spyOn(modal, "close");
+        const create = (modal.app as any).vault.create as ReturnType<typeof vi.fn>;
+        const saveBtn = el.find("lilbee-session-save")!;
+
+        saveBtn.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(saveBtn.getAttribute("aria-label")).toBe(MESSAGES.LABEL_SAVE_VAULT);
+        expect(saveBtn.getAttribute("data-icon")).toBe("save");
+        expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s7");
+        expect(create).toHaveBeenCalledWith(expect.stringMatching(/^lilbee\/chat-.*\.md$/), "# exported");
+        expect(Notice.instances.some((n) => n.message.startsWith("Saved to lilbee/"))).toBe(true);
+        expect(closeSpy).not.toHaveBeenCalled();
+    });
+
+    it("hands the open chat's save to the chat view instead of exporting it", async () => {
+        const saveActive = vi.fn();
+        const plugin = makePlugin([makeSession({ id: "s7" }), makeSession({ id: "s8" })]);
+        const { el } = await openModal(plugin, makeHooks({ activeId: "s7", saveActive }));
+        const [openRow, otherRow] = el.findAll("lilbee-session-save");
+
+        openRow.trigger("click");
+        await vi.runAllTimersAsync();
+        expect(saveActive).toHaveBeenCalledTimes(1);
+        expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+
+        otherRow.trigger("click");
+        await vi.runAllTimersAsync();
+        expect(saveActive).toHaveBeenCalledTimes(1);
+        expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s8");
+    });
+
+    it("says the server has no such conversation when the export answers 404", async () => {
+        const plugin = makePlugin([makeSession()]);
+        plugin.api.getSessionMarkdown.mockRejectedValue(new Error('Server responded 404: {"detail":"no"}'));
+        const { modal, el } = await openModal(plugin, makeHooks());
+
+        el.find("lilbee-session-save")!.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_NOT_FOUND]);
+        expect((modal.app as any).vault.create).not.toHaveBeenCalled();
+    });
+
+    it("reports any other export failure with its reason", async () => {
+        const plugin = makePlugin([makeSession()]);
+        plugin.api.getSessionMarkdown.mockRejectedValue(new Error("disk on fire"));
+        const { modal, el } = await openModal(plugin, makeHooks());
+
+        el.find("lilbee-session-save")!.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_FAILED("disk on fire")]);
+        expect((modal.app as any).vault.create).not.toHaveBeenCalled();
+    });
+
+    it("offers no save action on a server without the export route", async () => {
+        const plugin = makePlugin([makeSession()]);
+        plugin.serverSupportsSessionExport.mockReturnValue(false);
+        const { el } = await openModal(plugin, makeHooks());
+
+        expect(el.find("lilbee-session-save")).toBeNull();
         expect(el.find("lilbee-session-delete")).not.toBeNull();
     });
 

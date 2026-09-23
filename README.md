@@ -192,6 +192,8 @@ Every chat is written to disk as you go, titled from your first question. The hi
 
 To try a different question from any point in a chat, fork it. The fork button on a question starts a new chat with every message before that question and puts the question in the input box, ready to edit. The fork button in the history list, or the **Fork current chat** command, copies the whole chat. The original chat does not change. You can fork only when no answer is in progress.
 
+The save button in the chat toolbar writes the chat to a note in the `lilbee` folder of your vault. The note starts with the chat's title, model and dates, and each answer ends with its numbered sources. The save button in the history list does the same for any saved chat, without opening it.
+
 The lilbee server stores the chats on your machine, not in the cloud.
 
 <!-- demo: sessions | tutorial/#sessions | asking a cited question, opening the citation to the manual, listing saved chats from the history button, starting a new chat, then reopening the first one -->

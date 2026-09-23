@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
     MIN_SERVER_VERSION,
     PLACEMENT_MIN_SERVER_VERSION,
+    SESSION_EXPORT_MIN_SERVER_VERSION,
     SESSION_FORK_MIN_SERVER_VERSION,
     SESSIONS_MIN_SERVER_VERSION,
     higherVersion,
@@ -33,6 +34,10 @@ describe("MIN_SERVER_VERSION", () => {
 
     it("stays below the fork floor, so an older server keeps every other feature", () => {
         expect(isVersionOlder(MIN_SERVER_VERSION, SESSION_FORK_MIN_SERVER_VERSION)).toBe(true);
+    });
+
+    it("stays below the export floor, so an older server keeps every other feature", () => {
+        expect(isVersionOlder(MIN_SERVER_VERSION, SESSION_EXPORT_MIN_SERVER_VERSION)).toBe(true);
     });
 
     // The release notes quote min-server-version.json. Nothing else keeps that file in
