@@ -41,11 +41,12 @@ function makePlugin(sessions: SessionMeta[] = []) {
             updateConfig: vi.fn().mockResolvedValue({}),
         },
         settings: { serverMode: "managed" },
+        serverSupportsSessionFork: vi.fn().mockReturnValue(true),
     };
 }
 
 function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHooks {
-    return { activeId: null, resume: vi.fn(), startNew: vi.fn(), ...overrides };
+    return { activeId: null, resume: vi.fn(), startNew: vi.fn(), fork: vi.fn(), ...overrides };
 }
 
 function collectTexts(el: MockElement): string[] {
@@ -153,6 +154,32 @@ describe("SessionsModal", () => {
         const texts = collectTexts(el);
         expect(texts).toContain(MESSAGES.SESSIONS_NO_MATCH);
         expect(texts).not.toContain(MESSAGES.SESSIONS_EMPTY);
+    });
+
+    it("forks the row's session through the hook and closes", async () => {
+        const fork = vi.fn();
+        const resume = vi.fn();
+        const plugin = makePlugin([makeSession({ id: "s7" })]);
+        const { modal, el } = await openModal(plugin, makeHooks({ fork, resume }));
+        const closeSpy = vi.spyOn(modal, "close");
+        const forkBtn = el.find("lilbee-session-fork")!;
+
+        forkBtn.trigger("click");
+
+        expect(forkBtn.getAttribute("aria-label")).toBe(MESSAGES.LABEL_FORK_SESSION);
+        expect(forkBtn.getAttribute("data-icon")).toBe("git-fork");
+        expect(fork).toHaveBeenCalledWith("s7");
+        expect(resume).not.toHaveBeenCalled();
+        expect(closeSpy).toHaveBeenCalled();
+    });
+
+    it("offers no fork action on a server without the fork route", async () => {
+        const plugin = makePlugin([makeSession()]);
+        plugin.serverSupportsSessionFork.mockReturnValue(false);
+        const { el } = await openModal(plugin, makeHooks());
+
+        expect(el.find("lilbee-session-fork")).toBeNull();
+        expect(el.find("lilbee-session-delete")).not.toBeNull();
     });
 
     it("resumes the clicked session and closes", async () => {

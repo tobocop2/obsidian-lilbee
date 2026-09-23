@@ -18,6 +18,7 @@ import {
     MODEL_TASK,
     SEARCH_CHUNK_TYPE,
     SESSION_ROLE,
+    HTTP_STATUS,
     SSE_EVENT,
     ERROR_NAME,
 } from "../types";
@@ -36,7 +37,7 @@ import type {
     Source,
     SSEEvent,
 } from "../types";
-import { RateLimitedError, isHttpStatus } from "../api";
+import { RateLimitedError, hasStatusLine, isHttpStatus } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
 import { displayLabelForRef, extractHfRepo, nativeModelRef } from "../utils/model-ref";
@@ -61,9 +62,10 @@ import {
     configString,
     isStreamInterruptedError,
     streamInterruptedMessage,
+    extractServerErrorDetail,
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
-import { chunkTypeFromScope, deriveSessionTitle, scopeFromChunkType } from "../utils/session";
+import { FORK_ICON, chunkTypeFromScope, deriveSessionTitle, scopeFromChunkType } from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -133,6 +135,8 @@ interface StreamState {
     spinnerEl: HTMLElement;
     /** Set once the server's `warming` event has been surfaced, so it renders once. */
     warmingShown: boolean;
+    /** Session the turn's question was saved to; the answer is saved there too. */
+    sessionId: string | null;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
@@ -213,6 +217,8 @@ export class ChatView extends ItemView {
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
     private sending = false;
+    /** True while a fork request runs; a send is refused so no turn lands in the chat being replaced. */
+    private forking = false;
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
     private chatCatalogEntries: CatalogEntry[] = [];
@@ -948,7 +954,13 @@ export class ChatView extends ItemView {
             activeId: this.sessionId,
             resume: (id) => void this.resumeSession(id),
             startNew: () => this.startNewConversation(),
+            fork: (id) => void this.forkSession(id),
         }).open();
+    }
+
+    /** Id of the saved conversation this view appends to, or null until the first turn opens one. */
+    currentSessionId(): string | null {
+        return this.sessionId;
     }
 
     /** Drop the transcript and unbind the session. The old one is already persisted. */
@@ -987,7 +999,7 @@ export class ChatView extends ItemView {
                 // goes on in memory. A transient failure (busy server, timeout) drops only
                 // this write; a gap in the transcript beats splitting the conversation.
                 if (epoch !== this.conversationEpoch) return;
-                if (err instanceof Error && isHttpStatus(err, 404)) this.sessionId = null;
+                if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) this.sessionId = null;
             });
     }
 
@@ -1016,20 +1028,100 @@ export class ChatView extends ItemView {
             this.streamController?.abort();
             await this.inFlightSend;
         }
+        this.showSession(detail);
+        new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
+    }
+
+    /**
+     * Copy the first `messageCount` messages of `sourceId` (all when omitted) into a new
+     * conversation and open it, with `prefill` in the input box.
+     */
+    async forkSession(sourceId: string, messageCount?: number, prefill?: string): Promise<void> {
+        if (this.refuseForkWhileBusy()) return;
+        this.forking = true;
+        let detail: SessionDetail;
+        try {
+            // The server copies what it holds, so writes still queued for the source land first.
+            await this.persistQueue;
+            detail = await this.plugin.api.forkSession(sourceId, messageCount);
+        } catch (err) {
+            new Notice(this.forkErrorText(err));
+            return;
+        } finally {
+            this.forking = false;
+        }
+        this.showSession(detail);
+        new Notice(MESSAGES.NOTICE_SESSION_FORKED(detail.meta.title));
+        if (prefill !== undefined) this.prefillInput(prefill);
+    }
+
+    /** Fork before the question saved at `index`, once the server confirms it is still there. */
+    private async forkFromMessage(sessionId: string, index: number, text: string): Promise<void> {
+        if (this.refuseForkWhileBusy()) return;
+        let messages: SessionMessageItem[];
+        try {
+            ({ messages } = await this.plugin.api.getSession(sessionId));
+        } catch (err) {
+            new Notice(this.forkErrorText(err));
+            return;
+        }
+        const saved = messages[index];
+        if (saved?.role !== SESSION_ROLE.USER || saved.content !== text) {
+            new Notice(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
+            return;
+        }
+        await this.forkSession(sessionId, index, saved.content);
+    }
+
+    /** An answer or a fork in progress would land in the chat a fork replaces. */
+    private refuseForkWhileBusy(): boolean {
+        if (!this.sending && !this.forking) return false;
+        new Notice(MESSAGES.ERROR_SESSION_FORK_BUSY);
+        return true;
+    }
+
+    private forkErrorText(err: unknown): string {
+        if (hasStatusLine(err)) {
+            if (isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) return MESSAGES.ERROR_SESSION_FORK_NOT_FOUND;
+            if (isHttpStatus(err, HTTP_STATUS.CONFLICT)) return MESSAGES.ERROR_SESSION_FORK_OWNED;
+            const detail = extractServerErrorDetail(err.message);
+            if (detail) return MESSAGES.ERROR_SESSION_FORK_FAILED(detail);
+        }
+        const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+        return MESSAGES.ERROR_SESSION_FORK_FAILED(reason);
+    }
+
+    /** `index` is the question's position in the saved transcript of `sessionId`. */
+    private addForkAction(bubble: HTMLElement, sessionId: string, index: number, text: string): void {
+        if (!this.plugin.serverSupportsSessionFork()) return;
+        const btn = bubble.createEl("button", { cls: "lilbee-chat-fork" });
+        setIcon(btn, FORK_ICON);
+        btn.setAttribute("aria-label", MESSAGES.LABEL_FORK_FROM_HERE);
+        btn.addEventListener("click", () => void this.forkFromMessage(sessionId, index, text));
+    }
+
+    private prefillInput(text: string): void {
+        if (!this.textareaEl) return;
+        this.textareaEl.value = text;
+        this.textareaEl.focus();
+        this.textareaEl.setSelectionRange(text.length, text.length);
+    }
+
+    /** Replace the transcript with a saved conversation and bind the view to it. */
+    private showSession(detail: SessionDetail): void {
         this.clearChat();
         this.sessionId = detail.meta.id;
         this.summary = detail.summary;
         this.hideEmptyState();
 
         if (detail.summary) this.renderSummaryBoundary(detail.summary);
-        for (const message of detail.messages) {
-            this.renderRestoredMessage(message);
+        detail.messages.forEach((message, index) => {
+            this.renderRestoredMessage(message, detail.meta.id, index);
             this.history.push({ role: message.role, content: message.content });
-        }
+        });
         this.restoreScope(detail.meta.scope);
         this.restoreModel(detail.meta.model_ref);
         if (this.messagesEl) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-        new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
     }
 
     /** Never point chat at a model that isn't installed; keep the current one and say so. */
@@ -1097,11 +1189,12 @@ export class ChatView extends ItemView {
         pill.createSpan({ text: compactionMarkerText(data) });
     }
 
-    private renderRestoredMessage(message: SessionMessageItem): void {
+    private renderRestoredMessage(message: SessionMessageItem, sessionId: string, index: number): void {
         if (!this.messagesEl) return;
         if (message.role === SESSION_ROLE.USER) {
             const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
             bubble.createEl("p", { text: message.content });
+            this.addForkAction(bubble, sessionId, index, message.content);
             return;
         }
         const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
@@ -1129,6 +1222,10 @@ export class ChatView extends ItemView {
 
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
+        if (this.forking) {
+            new Notice(MESSAGES.ERROR_SEND_WHILE_FORKING);
+            return;
+        }
         if (!this.plugin.assertFleetReady()) return;
         // Past the guards: the turn is happening, so the box can be emptied.
         if (this.textareaEl) this.textareaEl.value = "";
@@ -1141,12 +1238,6 @@ export class ChatView extends ItemView {
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
         userBubble.createEl("p", { text });
         this.history.push({ role: "user", content: text });
-        // Queued before the stream so the question is saved even if the answer never lands.
-        this.queuePersist(async () => {
-            const sessionId = await this.ensureSession(text);
-            await this.persistTurn(sessionId, SESSION_ROLE.USER, text);
-        });
-
         const assistantBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const spinner = assistantBubble.createDiv({ cls: "lilbee-thinking-dots" });
         spinner.createDiv({ cls: "lilbee-thinking-dot" });
@@ -1170,7 +1261,15 @@ export class ChatView extends ItemView {
             compaction: null,
             spinnerEl: spinner,
             warmingShown: false,
+            sessionId: null,
         };
+        // Queued before the stream so the question is saved even if the answer never lands.
+        this.queuePersist(async () => {
+            const sessionId = await this.ensureSession(text);
+            state.sessionId = sessionId;
+            const saved = await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.USER, text, []);
+            this.addForkAction(userBubble, sessionId, saved.meta.message_count - 1, text);
+        });
 
         const spinnerCreatedAt = Date.now();
         const revealContent = (): void => {
@@ -1348,7 +1447,7 @@ export class ChatView extends ItemView {
                 // Only a completed answer is persisted; a cancelled one leaves the question alone.
                 if (rendered) {
                     const paths = [...new Set(state.sources.map((s) => s.source))];
-                    this.queuePersist(() => this.persistTurn(this.sessionId, SESSION_ROLE.ASSISTANT, rendered, paths));
+                    this.queuePersist(() => this.persistTurn(state.sessionId, SESSION_ROLE.ASSISTANT, rendered, paths));
                 }
                 break;
             }
