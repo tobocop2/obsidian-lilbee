@@ -114,6 +114,13 @@ interface OptionalRoleSpec {
     failNotice: string;
 }
 
+/** One chat's in-memory context. A clear replaces it, so a turn still streaming writes only to its own. */
+interface Conversation {
+    history: Message[];
+    /** Carry-forward compaction notes; sent with each turn and replaced by `compaction` events. */
+    summary: string;
+}
+
 /** Per-message streaming state: accumulated text and the live reasoning DOM. */
 interface StreamState {
     fullContent: string;
@@ -137,6 +144,8 @@ interface StreamState {
     warmingShown: boolean;
     /** Session the turn's question was saved to; the answer is saved there too. */
     sessionId: string | null;
+    /** The conversation the question was asked in; the answer and any compaction land there. */
+    conversation: Conversation;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
@@ -200,11 +209,9 @@ export function compactionMarkerText(data: CompactionEventData): string {
 
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
-    private history: Message[] = [];
+    private conversation: Conversation = { history: [], summary: "" };
     /** Server-side conversation this view appends to. Null until the first turn opens one. */
     private sessionId: string | null = null;
-    /** Carry-forward compaction notes; sent with each turn and replaced by `compaction` events. */
-    private summary = "";
     /** Bumped when the transcript is replaced or cleared; stale queued writes check it and no-op. */
     private conversationEpoch = 0;
     /** Serializes session writes: the log is append-only, so turns must land in order. */
@@ -942,9 +949,8 @@ export class ChatView extends ItemView {
     }
 
     private clearChat(): void {
-        this.history = [];
+        this.conversation = { history: [], summary: "" };
         this.sessionId = null;
-        this.summary = "";
         this.conversationEpoch++;
         if (this.messagesEl) this.messagesEl.empty();
     }
@@ -1111,13 +1117,13 @@ export class ChatView extends ItemView {
     private showSession(detail: SessionDetail): void {
         this.clearChat();
         this.sessionId = detail.meta.id;
-        this.summary = detail.summary;
+        this.conversation.summary = detail.summary;
         this.hideEmptyState();
 
         if (detail.summary) this.renderSummaryBoundary(detail.summary);
         detail.messages.forEach((message, index) => {
             this.renderRestoredMessage(message, detail.meta.id, index);
-            this.history.push({ role: message.role, content: message.content });
+            this.conversation.history.push({ role: message.role, content: message.content });
         });
         this.restoreScope(detail.meta.scope);
         this.restoreModel(detail.meta.model_ref);
@@ -1237,7 +1243,8 @@ export class ChatView extends ItemView {
 
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
         userBubble.createEl("p", { text });
-        this.history.push({ role: "user", content: text });
+        const conversation = this.conversation;
+        conversation.history.push({ role: "user", content: text });
         const assistantBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const spinner = assistantBubble.createDiv({ cls: "lilbee-thinking-dots" });
         spinner.createDiv({ cls: "lilbee-thinking-dot" });
@@ -1262,6 +1269,7 @@ export class ChatView extends ItemView {
             spinnerEl: spinner,
             warmingShown: false,
             sessionId: null,
+            conversation,
         };
         // Queued before the stream so the question is saved even if the answer never lands.
         this.queuePersist(async () => {
@@ -1303,12 +1311,12 @@ export class ChatView extends ItemView {
         try {
             for await (const event of this.plugin.api.chatStream(
                 text,
-                this.history.slice(0, -1),
+                conversation.history.slice(0, -1),
                 this.plugin.settings.topK,
                 this.streamController.signal,
                 undefined,
                 this.plugin.settings.searchChunkType,
-                { summary: this.summary, sessionId: this.sessionId },
+                { summary: conversation.summary, sessionId: this.sessionId },
             )) {
                 // The server trails memory_extracted after done; at any other frame once the
                 // stream ended the reader stops, which also cancels the socket.
@@ -1321,7 +1329,11 @@ export class ChatView extends ItemView {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
             if (!state.streamEnded && !this.streamController?.signal.aborted) {
-                this.renderInlineError(assistantBubble, streamInterruptedMessage(this.plugin.settings.serverMode));
+                this.renderInlineError(
+                    conversation,
+                    assistantBubble,
+                    streamInterruptedMessage(this.plugin.settings.serverMode),
+                );
             }
         } catch (err) {
             // Trust the signal over the error shape: an aborted fetch reaches
@@ -1337,16 +1349,25 @@ export class ChatView extends ItemView {
                 state.reasoningDetailsEl?.removeAttribute("open");
                 if (state.fullContent) {
                     void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
-                    this.history.push({ role: "assistant", content: state.fullContent });
+                    conversation.history.push({ role: "assistant", content: state.fullContent });
                 } else {
                     textEl.setText(MESSAGES.LABEL_STOPPED);
                 }
             } else if (err instanceof RateLimitedError) {
-                this.renderInlineError(assistantBubble, MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds));
+                this.renderInlineError(
+                    conversation,
+                    assistantBubble,
+                    MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds),
+                );
             } else if (isStreamInterruptedError(err)) {
-                this.renderInlineError(assistantBubble, streamInterruptedMessage(this.plugin.settings.serverMode));
+                this.renderInlineError(
+                    conversation,
+                    assistantBubble,
+                    streamInterruptedMessage(this.plugin.settings.serverMode),
+                );
             } else {
                 this.renderInlineError(
+                    conversation,
                     assistantBubble,
                     MESSAGES.ERROR_CHAT_FAILED(
                         errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode),
@@ -1395,8 +1416,8 @@ export class ChatView extends ItemView {
             }
             case SSE_EVENT.COMPACTION: {
                 const data = event.data as CompactionEventData;
-                this.summary = data.summary;
-                this.history.splice(0, data.condensed + data.stranded);
+                state.conversation.summary = data.summary;
+                state.conversation.history.splice(0, data.condensed + data.stranded);
                 void this.renderFollowing(() => this.settleCompactionMarker(state, data));
                 break;
             }
@@ -1443,7 +1464,7 @@ export class ChatView extends ItemView {
                     await this.renderMarkdown(textEl, rendered);
                     if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
                 });
-                this.history.push({ role: "assistant", content: rendered });
+                state.conversation.history.push({ role: "assistant", content: rendered });
                 // Only a completed answer is persisted; a cancelled one leaves the question alone.
                 if (rendered) {
                     const paths = [...new Set(state.sources.map((s) => s.source))];
@@ -1533,8 +1554,8 @@ export class ChatView extends ItemView {
         el.addClass("markdown-rendered");
     }
 
-    private renderInlineError(assistantBubble: HTMLElement, text: string): void {
-        this.history.pop();
+    private renderInlineError(conversation: Conversation, assistantBubble: HTMLElement, text: string): void {
+        conversation.history.pop();
         assistantBubble.empty();
         assistantBubble.removeClass("assistant");
         assistantBubble.addClass("lilbee-chat-message-error");
@@ -1671,7 +1692,7 @@ export class ChatView extends ItemView {
     }
 
     private async saveToVault(): Promise<void> {
-        if (this.history.length === 0) {
+        if (this.conversation.history.length === 0) {
             new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
             return;
         }
@@ -1683,7 +1704,7 @@ export class ChatView extends ItemView {
         const path = `${folder}/${filename}`;
 
         const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${now.toLocaleDateString()}`, ""];
-        for (const msg of this.history) {
+        for (const msg of this.conversation.history) {
             const label = msg.role === "user" ? "User" : "Assistant";
             lines.push(`**${label}**: ${msg.content}`, "");
         }
