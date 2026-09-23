@@ -9,6 +9,7 @@ import {
     SERVER_STATUS_PREFIX,
     SSE_EVENT,
     ERROR_NAME,
+    HTTP_STATUS,
 } from "./types";
 import { ok, err, Result } from "./result";
 
@@ -514,6 +515,16 @@ export class LilbeeClient {
         return (await res.json()) as SessionDetail;
     }
 
+    /** Copies the first `messageCount` messages (all when omitted) into a new session and returns it. */
+    async forkSession(sessionId: string, messageCount?: number): Promise<SessionDetail> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/fork`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ message_count: messageCount ?? null }),
+        });
+        return (await res.json()) as SessionDetail;
+    }
+
     async renameSession(sessionId: string, title: string): Promise<SessionRenameResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`, {
             method: "PATCH",
@@ -962,7 +973,7 @@ export class LilbeeClient {
             });
             return (await res.json()) as WikiStub[];
         } catch (e) {
-            if (e instanceof Error && isHttpStatus(e, 404)) return [];
+            if (e instanceof Error && isHttpStatus(e, HTTP_STATUS.NOT_FOUND)) return [];
             throw e;
         }
     }

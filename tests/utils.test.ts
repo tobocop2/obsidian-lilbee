@@ -29,6 +29,7 @@ import {
     setDeterminateProgress,
     streamInterruptedMessage,
     supportsPlacement,
+    supportsSessionFork,
     supportsSessions,
     withIdleTimeout,
 } from "../src/utils";
@@ -225,6 +226,24 @@ describe("supportsSessions", () => {
 
     it("fails open when the version is unknown", () => {
         expect(supportsSessions("")).toBe(true);
+    });
+});
+
+describe("supportsSessionFork", () => {
+    it("rejects servers that have sessions but no fork route", () => {
+        expect(supportsSessionFork("0.6.90b420")).toBe(false);
+        expect(supportsSessionFork("v0.6.90b445")).toBe(false);
+        expect(supportsSessionFork("0.6.66b507")).toBe(false);
+    });
+
+    it("accepts the first fork build, its dev builds, and anything newer", () => {
+        expect(supportsSessionFork("0.6.90b446")).toBe(true);
+        expect(supportsSessionFork("v0.6.90b446.dev3")).toBe(true);
+        expect(supportsSessionFork("0.6.91b1")).toBe(true);
+    });
+
+    it("fails open when the version is unknown", () => {
+        expect(supportsSessionFork("")).toBe(true);
     });
 });
 

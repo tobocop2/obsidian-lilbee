@@ -15,6 +15,9 @@ export const SESSION_TITLE_MAX_LEN = 60;
 
 const TITLE_ELLIPSIS = "…";
 
+/** Icon on every fork action: the sessions list rows and the chat's questions. */
+export const FORK_ICON = "git-fork";
+
 /** Translate the plugin's chunk-type selection into a scope the server can parse. */
 export function scopeFromChunkType(chunk: SearchChunkType): SessionScope {
     return chunk === SEARCH_CHUNK_TYPE.ALL ? SESSION_SCOPE.BOTH : chunk;

@@ -292,6 +292,7 @@
       "DELETE": {
         "fields": {
           "co_tenants": "array",
+          "engine_backend": "unknown",
           "gpus": "array",
           "manual": "boolean",
           "notice": "string",
@@ -306,6 +307,7 @@
       "GET": {
         "fields": {
           "co_tenants": "array",
+          "engine_backend": "unknown",
           "gpus": "array",
           "manual": "boolean",
           "notice": "string",
@@ -320,6 +322,7 @@
       "PUT": {
         "fields": {
           "co_tenants": "array",
+          "engine_backend": "unknown",
           "gpus": "array",
           "manual": "boolean",
           "notice": "string",
@@ -336,6 +339,7 @@
       "POST": {
         "fields": {
           "co_tenants": "array",
+          "engine_backend": "unknown",
           "gpus": "array",
           "manual": "boolean",
           "notice": "string",
@@ -394,6 +398,16 @@
       }
     },
     "/api/sessions/{session_id:str}/claim": {
+      "POST": {
+        "fields": {
+          "messages": "array",
+          "meta": "object",
+          "summary": "string"
+        },
+        "streams": false
+      }
+    },
+    "/api/sessions/{session_id:str}/fork": {
       "POST": {
         "fields": {
           "messages": "array",
@@ -606,11 +620,16 @@
         "streams": true
       }
     },
+    "/v1/messages/count_tokens": {
+      "POST": {
+        "streams": false
+      }
+    },
     "/v1/models": {
       "GET": {
         "streams": false
       }
     }
   },
-  "version": "0.6.90b441"
+  "version": "0.6.90b445"
 }

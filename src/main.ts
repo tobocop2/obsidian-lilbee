@@ -115,6 +115,7 @@ import {
     percentOfBytes,
     sessionTokenInvalidMessage,
     supportsPlacement,
+    supportsSessionFork,
     supportsSessions,
     sameWarnings,
     warmStatusText,
@@ -1587,6 +1588,24 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "fork-current-chat",
+            name: MESSAGES.COMMAND_FORK_CHAT,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady() || !this.serverSupportsSessionFork()) return false;
+                const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+                if (!chatLeaf || !(chatLeaf.view instanceof ChatView)) return false;
+                const view = chatLeaf.view;
+                const sessionId = view.currentSessionId();
+                if (!sessionId) return false;
+                if (!checking) {
+                    void this.app.workspace.revealLeaf(chatLeaf);
+                    void view.forkSession(sessionId);
+                }
+                return true;
+            },
+        });
+
+        this.addCommand({
             id: "remember",
             name: MESSAGES.COMMAND_REMEMBER,
             checkCallback: (checking) => {
@@ -2490,6 +2509,11 @@ export default class LilbeePlugin extends Plugin {
     /** Saved conversations need the /api/sessions routes, which pre-0.6.90 servers don't have. */
     serverSupportsSessions(): boolean {
         return supportsSessions(this.runningServerVersion());
+    }
+
+    /** Forking a saved conversation needs the fork route, newer than the other session routes. */
+    serverSupportsSessionFork(): boolean {
+        return supportsSessionFork(this.runningServerVersion());
     }
 
     /** GPU placement needs the /api/placement routes, which pre-0.6.90 servers don't have. */

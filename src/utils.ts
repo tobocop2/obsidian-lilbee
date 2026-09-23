@@ -1,7 +1,12 @@
 import { Notice, type App, type Modal, type TFile } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
-import { isVersionOlder, SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION } from "./min-server-version";
+import {
+    isVersionOlder,
+    SESSIONS_MIN_SERVER_VERSION,
+    PLACEMENT_MIN_SERVER_VERSION,
+    SESSION_FORK_MIN_SERVER_VERSION,
+} from "./min-server-version";
 import { SERVER_MODE, WARM_PHASE } from "./types";
 import type { HealthWarning, ServerMode, WarmProgress } from "./types";
 
@@ -181,6 +186,12 @@ export function supportsSessions(version: string): boolean {
 export function supportsPlacement(version: string): boolean {
     if (!version) return true;
     return !isVersionOlder(version, PLACEMENT_MIN_SERVER_VERSION);
+}
+
+/** Unknown versions fail open: a server without the fork route answers 404, and the chat view says so. */
+export function supportsSessionFork(version: string): boolean {
+    if (!version) return true;
+    return !isVersionOlder(version, SESSION_FORK_MIN_SERVER_VERSION);
 }
 
 /**

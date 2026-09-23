@@ -240,6 +240,51 @@ describe("session methods", () => {
         expect(result).toEqual({ id: "s1", deleted: true });
     });
 
+    it("forkSession() POSTs a null message_count to fork the whole session, and returns the fork", async () => {
+        const fork = { meta: { ...meta, id: "s2", forked_from: "s1" }, messages: [], summary: "" };
+        fetchMock.mockResolvedValue(jsonResponse(fork));
+
+        const result = await client.forkSession("s1");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/sessions/s1/fork`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message_count: null });
+        expect(result).toEqual(fork);
+    });
+
+    it("forkSession() sends the number of leading messages to copy", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ meta, messages: [], summary: "" }));
+
+        await client.forkSession("s1", 0);
+
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message_count: 0 });
+    });
+
+    it("forkSession() percent-encodes the source id", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ meta, messages: [], summary: "" }));
+
+        await client.forkSession("a/../b", 2);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/sessions/a%2F..%2Fb/fork`,
+            expect.objectContaining({ method: "POST" }),
+        );
+    });
+
+    it("forkSession() throws the status line on a refusal", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 422,
+            text: () => Promise.resolve('{"detail":"out of range"}'),
+        });
+
+        const outcome = await client.forkSession("s1", 9).catch((e: unknown) => e);
+
+        expect(isHttpStatus(outcome, 422)).toBe(true);
+    });
+
     it("percent-encodes a session id so an odd id can't forge a path", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ id: "x", deleted: true }));
 

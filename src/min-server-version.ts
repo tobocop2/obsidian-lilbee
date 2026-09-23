@@ -31,5 +31,11 @@ export const SESSIONS_MIN_SERVER_VERSION = "0.6.90b420";
 /** Oldest server with the /api/placement routes; also new in the 0.6.90 line. */
 export const PLACEMENT_MIN_SERVER_VERSION = "0.6.90b420";
 
-/** The plugin's real floor: the later of the two per-feature minimums above. */
+/**
+ * Oldest server with the /api/sessions/{id}/fork route. Pinned to the release that ships
+ * lilbee #890; kept out of MIN_SERVER_VERSION so older servers keep every other feature.
+ */
+export const SESSION_FORK_MIN_SERVER_VERSION = "0.6.90b446";
+
+/** The plugin's real floor: the later of the sessions and placement minimums; the fork floor stays out. */
 export const MIN_SERVER_VERSION = higherVersion(SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION);
