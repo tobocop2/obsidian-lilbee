@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import {
     MIN_SERVER_VERSION,
     PLACEMENT_MIN_SERVER_VERSION,
+    SESSION_FORK_MIN_SERVER_VERSION,
     SESSIONS_MIN_SERVER_VERSION,
     higherVersion,
+    isVersionOlder,
 } from "../src/min-server-version";
 
 const DECLARED_FLOOR_PATH = fileURLToPath(new URL("../min-server-version.json", import.meta.url));
@@ -27,6 +29,10 @@ describe("higherVersion", () => {
 describe("MIN_SERVER_VERSION", () => {
     it("pins the later of the two per-feature floors", () => {
         expect(MIN_SERVER_VERSION).toBe(higherVersion(SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION));
+    });
+
+    it("stays below the fork floor, so an older server keeps every other feature", () => {
+        expect(isVersionOlder(MIN_SERVER_VERSION, SESSION_FORK_MIN_SERVER_VERSION)).toBe(true);
     });
 
     // The release notes quote min-server-version.json. Nothing else keeps that file in

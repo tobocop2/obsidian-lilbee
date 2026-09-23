@@ -1,12 +1,13 @@
 import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { isHttpStatus } from "../api";
-import type { SessionMeta } from "../types";
+import { HTTP_STATUS, type SessionMeta } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, errorMessage, relativeTimeFromIso } from "../utils";
 import { displayLabelForRef } from "../utils/model-ref";
 import { applyConfig } from "../utils/reindex";
+import { FORK_ICON } from "../utils/session";
 
 /** Hooks the chat view supplies so the modal can drive it without importing it. */
 export interface SessionsModalHooks {
@@ -14,6 +15,8 @@ export interface SessionsModalHooks {
     activeId: string | null;
     resume: (id: string) => void;
     startNew: () => void;
+    /** Fork the whole conversation and open the fork. */
+    fork: (id: string) => void;
 }
 
 export class SessionsModal extends Modal {
@@ -75,7 +78,7 @@ export class SessionsModal extends Modal {
         } catch (err) {
             this.loadFailed = true;
             // The server 404s every session route when sessions_enabled is off.
-            if (err instanceof Error && isHttpStatus(err, 404)) {
+            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) {
                 this.disabled = true;
             } else {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
@@ -157,7 +160,10 @@ export class SessionsModal extends Modal {
             text: MESSAGES.SESSIONS_ROW_META(meta.message_count, displayLabelForRef(meta.model_ref)),
         });
         main.addEventListener("click", () => this.resume(meta));
+        this.renderActions(row, meta);
+    }
 
+    private renderActions(row: HTMLElement, meta: SessionMeta): void {
         const actions = row.createDiv({ cls: "lilbee-session-actions" });
         const renameBtn = actions.createEl("button", { cls: "lilbee-session-rename" });
         setIcon(renameBtn, "pencil");
@@ -166,6 +172,16 @@ export class SessionsModal extends Modal {
             this.renamingId = meta.id;
             this.renderList();
         });
+
+        if (this.plugin.serverSupportsSessionFork()) {
+            const forkBtn = actions.createEl("button", { cls: "lilbee-session-fork" });
+            setIcon(forkBtn, FORK_ICON);
+            forkBtn.setAttribute("aria-label", MESSAGES.LABEL_FORK_SESSION);
+            forkBtn.addEventListener("click", () => {
+                this.hooks.fork(meta.id);
+                this.close();
+            });
+        }
 
         const deleteBtn = actions.createEl("button", { cls: "lilbee-session-delete" });
         setIcon(deleteBtn, "trash-2");

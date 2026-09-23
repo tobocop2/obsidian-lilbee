@@ -513,6 +513,12 @@ export const SERVER_MODE = {
 /** How the API client opens the message it throws for a non-ok response. */
 export const SERVER_STATUS_PREFIX = "Server responded";
 
+/** HTTP statuses callers branch on with `isHttpStatus`. */
+export const HTTP_STATUS = {
+    NOT_FOUND: 404,
+    CONFLICT: 409,
+} as const;
+
 /** Three-way result of the managed-mode consent modal. */
 export type ManagedConsentResultKind = "download" | "external" | "cancel";
 

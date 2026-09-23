@@ -568,11 +568,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all thirty commands", async () => {
+        it("adds all thirty-one commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(30);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(31);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -603,6 +603,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("wiki-update");
             expect(ids).toContain("open-placement");
             expect(ids).toContain("open-placement-beside-chat");
+            expect(ids).toContain("fork-current-chat");
         });
 
         it("add-file command returns false when no active file", async () => {
@@ -635,6 +636,75 @@ describe("LilbeePlugin", () => {
             )![0];
             cmd.checkCallback(false);
             expect(addSpy).toHaveBeenCalledWith(file);
+        });
+
+        function forkCommand(plugin: any) {
+            return (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "fork-current-chat",
+            )![0];
+        }
+
+        async function pluginWithChat(sessionId: string | null) {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            vi.spyOn(plugin, "serverSupportsSessionFork").mockReturnValue(true);
+            const forkSession = vi.fn().mockResolvedValue(undefined);
+            const view = Object.assign(Object.create(ChatView.prototype), {
+                currentSessionId: () => sessionId,
+                forkSession,
+            });
+            const chatLeaf = { view };
+            plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
+            plugin.app.workspace.revealLeaf = vi.fn();
+            return { plugin, forkSession, chatLeaf };
+        }
+
+        it("fork-current-chat forks the open conversation and reveals the chat", async () => {
+            const { plugin, forkSession, chatLeaf } = await pluginWithChat("s5");
+            const cmd = forkCommand(plugin);
+
+            expect(cmd.name).toBe(MESSAGES.COMMAND_FORK_CHAT);
+            expect(cmd.checkCallback(true)).toBe(true);
+            expect(forkSession).not.toHaveBeenCalled();
+            cmd.checkCallback(false);
+
+            expect(forkSession).toHaveBeenCalledWith("s5");
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+        });
+
+        it("fork-current-chat is unavailable while the chat has no saved conversation", async () => {
+            const { plugin } = await pluginWithChat(null);
+
+            expect(forkCommand(plugin).checkCallback(true)).toBe(false);
+        });
+
+        it("fork-current-chat is unavailable when the open leaf is not a chat view", async () => {
+            const { plugin } = await pluginWithChat("s5");
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: {} }]);
+
+            expect(forkCommand(plugin).checkCallback(true)).toBe(false);
+        });
+
+        it("fork-current-chat is unavailable with no chat view open", async () => {
+            const { plugin } = await pluginWithChat("s5");
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+
+            expect(forkCommand(plugin).checkCallback(true)).toBe(false);
+        });
+
+        it("fork-current-chat is unavailable on a server without the fork route", async () => {
+            const { plugin } = await pluginWithChat("s5");
+            vi.spyOn(plugin, "serverSupportsSessionFork").mockReturnValue(false);
+
+            expect(forkCommand(plugin).checkCallback(true)).toBe(false);
+        });
+
+        it("fork-current-chat is unavailable while lilbee is not ready", async () => {
+            const { plugin } = await pluginWithChat("s5");
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
+
+            expect(forkCommand(plugin).checkCallback(true)).toBe(false);
         });
 
         it("open-placement-beside-chat returns false when lilbee is not ready", async () => {
@@ -4122,6 +4192,21 @@ describe("LilbeePlugin", () => {
             // Chat is loading: reflectChatStatus paints "warming..." and the
             // probe must not override it with "ready".
             expect((plugin.statusBarEl as any)?.textContent).not.toContain("ready");
+        });
+    });
+
+    describe("serverSupportsSessionFork", () => {
+        it("managed mode gates on the recorded install version", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+                lilbeeVersion: "v0.6.90b445",
+            });
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b446" });
+            expect(plugin.serverSupportsSessionFork()).toBe(true);
+            loadConfig.mockRestore();
         });
     });
 

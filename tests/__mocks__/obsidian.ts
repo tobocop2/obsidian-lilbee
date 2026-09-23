@@ -294,6 +294,12 @@ export class MockElement {
     select(): void {
         /* noop */
     }
+    selectionStart = 0;
+    selectionEnd = 0;
+    setSelectionRange(start: number, end: number): void {
+        this.selectionStart = start;
+        this.selectionEnd = end;
+    }
 
     // Support select element behavior
     get selectedIndex(): number {

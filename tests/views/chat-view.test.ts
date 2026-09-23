@@ -247,6 +247,7 @@ function makePlugin(): LilbeePlugin {
             }),
             renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "t" }),
             deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
+            forkSession: vi.fn(),
         },
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
@@ -259,6 +260,7 @@ function makePlugin(): LilbeePlugin {
         notifyChatEnd: vi.fn(),
         assertFleetReady: vi.fn().mockReturnValue(true),
         serverSupportsSessions: vi.fn().mockReturnValue(true),
+        serverSupportsSessionFork: vi.fn().mockReturnValue(true),
         refreshMemoryViews: vi.fn(),
         taskQueue,
         enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
@@ -6572,5 +6574,445 @@ describe("ChatView rail chip when no option matches the active model", () => {
         expect(triggerText(container, "lilbee-vision-model-select")).toBe("moondream2");
 
         await view.onClose();
+    });
+});
+
+describe("ChatView — forking a session", () => {
+    beforeEach(() => {
+        Notice.clear();
+        sessionsHooks.length = 0;
+    });
+
+    const msg = (role: "user" | "assistant", content: string) => ({ role, content, sources: [], ts: "t" });
+    const SOURCE = [msg("user", "q1"), msg("assistant", "a1"), msg("user", "q2"), msg("assistant", "a2")];
+
+    function detailOf(id: string, messages: ReturnType<typeof msg>[], title = "Bees") {
+        return {
+            meta: {
+                id,
+                title,
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: messages.length,
+                origin: "http",
+                forked_from: "",
+            },
+            messages,
+            summary: "",
+        };
+    }
+
+    async function openView(plugin: LilbeePlugin) {
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        return { view, container, messagesEl: container.find("lilbee-chat-messages")! };
+    }
+
+    async function resumed(plugin: LilbeePlugin, messages = SOURCE) {
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", messages));
+        const opened = await openView(plugin);
+        await (opened.view as any).resumeSession("s5");
+        await tick();
+        return opened;
+    }
+
+    async function send(container: MockElement, text: string, done: Promise<void>) {
+        container.find("lilbee-chat-textarea")!.value = text;
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+    }
+
+    function answer(text: string) {
+        return makeStream([
+            { event: SSE_EVENT.TOKEN, data: text },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+    }
+
+    function refusal(status: number, detail: string): Error {
+        return new Error(`Server responded ${status}: ${JSON.stringify({ detail })}`);
+    }
+
+    async function clickFork(bubble: MockElement) {
+        bubble.find("lilbee-chat-fork")!.trigger("click");
+        await tick();
+        await tick();
+    }
+
+    it("puts a fork action on each restored question and none on answers", async () => {
+        const { messagesEl } = await resumed(makePlugin());
+
+        expect(messagesEl.children.map((b) => b.find("lilbee-chat-fork") !== null)).toEqual([true, false, true, false]);
+        expect(messagesEl.children[0].find("lilbee-chat-fork")!.getAttribute("aria-label")).toBe(
+            MESSAGES.LABEL_FORK_FROM_HERE,
+        );
+        expect(messagesEl.children[0].find("lilbee-chat-fork")!.getAttribute("data-icon")).toBe("git-fork");
+    });
+
+    it("forks before the clicked question, opens the fork, and prefills that question", async () => {
+        const plugin = makePlugin();
+        const { view, container, messagesEl } = await resumed(plugin);
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE.slice(0, 2), "Bees (fork 1)"));
+        const textarea = container.find("lilbee-chat-textarea")!;
+        const focus = vi.spyOn(textarea, "focus");
+
+        await clickFork(messagesEl.children[2]);
+
+        expect(plugin.api.getSession).toHaveBeenLastCalledWith("s5");
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s5", 2);
+        expect(view.currentSessionId()).toBe("s6");
+        expect(messagesEl.children).toHaveLength(2);
+        expect(messagesEl.children[0].textContent).toContain("q1");
+        expect(textarea.value).toBe("q2");
+        expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([2, 2]);
+        expect(focus).toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SESSION_FORKED("Bees (fork 1)"));
+        expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SESSION_RESUMED("Bees (fork 1)"));
+    });
+
+    it("maps a question asked after a resume to its position in the saved transcript", async () => {
+        const plugin = makePlugin();
+        const { container, messagesEl } = await resumed(plugin);
+        const afterQ3 = [...SOURCE, msg("user", "q3")];
+        plugin.api.appendSessionMessage = vi
+            .fn()
+            .mockResolvedValueOnce(detailOf("s5", afterQ3))
+            .mockResolvedValueOnce(detailOf("s5", [...afterQ3, msg("assistant", "a3")]));
+        const { mockFn, done } = answer("a3");
+        plugin.api.chatStream = mockFn;
+        await send(container, "q3", done);
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", [...afterQ3, msg("assistant", "a3")]));
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE));
+
+        await clickFork(messagesEl.children[4]);
+
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s5", 4);
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("q3");
+    });
+
+    it("maps the first question of a new chat to position 0", async () => {
+        const plugin = makePlugin();
+        const { container, messagesEl } = await openView(plugin);
+        const { mockFn, done } = answer("a1");
+        plugin.api.chatStream = mockFn;
+        await send(container, "q1", done);
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s1", SOURCE.slice(0, 2)));
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s2", []));
+
+        await clickFork(messagesEl.children[0]);
+
+        expect(plugin.api.getSession).toHaveBeenCalledWith("s1");
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s1", 0);
+    });
+
+    it("leaves a question without a fork action when its write failed", async () => {
+        const plugin = makePlugin();
+        plugin.api.appendSessionMessage = vi.fn().mockRejectedValue(new Error("busy"));
+        const { container, messagesEl } = await openView(plugin);
+        const { mockFn, done } = answer("a1");
+        plugin.api.chatStream = mockFn;
+
+        await send(container, "q1", done);
+
+        expect(messagesEl.children[0].find("lilbee-chat-fork")).toBeNull();
+    });
+
+    it("shows no fork action on a server without the fork route", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionFork as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const { container, messagesEl } = await resumed(plugin);
+        const { mockFn, done } = answer("a3");
+        plugin.api.chatStream = mockFn;
+
+        await send(container, "q3", done);
+
+        expect(messagesEl.findAll("lilbee-chat-fork")).toHaveLength(0);
+    });
+
+    it("refuses to fork when the saved transcript no longer holds that question there", async () => {
+        const plugin = makePlugin();
+        const { messagesEl } = await resumed(plugin);
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", [msg("user", "q1"), msg("assistant", "a1")]));
+
+        await clickFork(messagesEl.children[2]);
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
+    });
+
+    it("refuses to fork when an answer with the same text sits at that position", async () => {
+        const plugin = makePlugin();
+        const { messagesEl } = await resumed(plugin);
+        plugin.api.getSession = vi
+            .fn()
+            .mockResolvedValue(detailOf("s5", [...SOURCE.slice(0, 2), msg("assistant", "q2")]));
+
+        await clickFork(messagesEl.children[2]);
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
+    });
+
+    it("refuses to fork when a different question sits at that position", async () => {
+        const plugin = makePlugin();
+        const { messagesEl } = await resumed(plugin);
+        plugin.api.getSession = vi
+            .fn()
+            .mockResolvedValue(detailOf("s5", [...SOURCE.slice(0, 2), msg("user", "other")]));
+
+        await clickFork(messagesEl.children[2]);
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
+    });
+
+    it("says the conversation is gone when its transcript answers 404", async () => {
+        const plugin = makePlugin();
+        const { messagesEl } = await resumed(plugin);
+        plugin.api.getSession = vi.fn().mockRejectedValue(refusal(404, "Session 's5' not found"));
+
+        await clickFork(messagesEl.children[0]);
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_NOT_FOUND);
+    });
+
+    it("says so when the saved transcript cannot be read", async () => {
+        const plugin = makePlugin();
+        const { messagesEl } = await resumed(plugin);
+        plugin.api.getSession = vi.fn().mockRejectedValue(new Error("offline"));
+
+        await clickFork(messagesEl.children[0]);
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_FAILED("offline"));
+    });
+
+    it.each([
+        [refusal(404, "Session 's5' not found"), MESSAGES.ERROR_SESSION_FORK_NOT_FOUND],
+        [refusal(409, "owned by mcp"), MESSAGES.ERROR_SESSION_FORK_OWNED],
+        [
+            refusal(422, "Cannot fork session 's5' after 9 messages: it has 4"),
+            MESSAGES.ERROR_SESSION_FORK_FAILED("Cannot fork session 's5' after 9 messages: it has 4"),
+        ],
+        [new Error("Server responded 500: oops"), MESSAGES.ERROR_SESSION_FORK_FAILED("Server responded 500: oops")],
+        [new Error("socket hang up"), MESSAGES.ERROR_SESSION_FORK_FAILED("socket hang up")],
+    ])("keeps the source open and notices a refused fork (%s)", async (error, expected) => {
+        const plugin = makePlugin();
+        const { view, messagesEl } = await resumed(plugin);
+        plugin.api.forkSession = vi.fn().mockRejectedValue(error);
+
+        await view.forkSession("s5", 9);
+
+        expect(Notice.instances.map((n) => n.message)).toContain(expected);
+        expect(view.currentSessionId()).toBe("s5");
+        expect(messagesEl.children).toHaveLength(4);
+    });
+
+    /** A stream that yields one token, then waits for `release` before it finishes. */
+    function gatedAnswer(text: string) {
+        let release!: () => void;
+        const gate = new Promise<void>((r) => {
+            release = r;
+        });
+        let signal: AbortSignal | undefined;
+        const mockFn = vi.fn((...args: unknown[]) => {
+            signal = args[3] as AbortSignal;
+            return (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: text };
+                await gate;
+                yield { event: SSE_EVENT.DONE, data: {} };
+            })();
+        });
+        return { mockFn, release: () => release(), aborted: () => signal?.aborted ?? false };
+    }
+
+    it("refuses to fork while an answer is streaming, and leaves the answer running", async () => {
+        const plugin = makePlugin();
+        const stream = gatedAnswer("part");
+        plugin.api.chatStream = stream.mockFn;
+        plugin.api.forkSession = vi.fn();
+        const { view, container } = await openView(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        await view.forkSession("s1");
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(stream.aborted()).toBe(false);
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_BUSY);
+        stream.release();
+    });
+
+    it("forks only after a queued write for the source has landed", async () => {
+        const plugin = makePlugin();
+        let saveAnswer!: () => void;
+        plugin.api.appendSessionMessage = vi
+            .fn()
+            .mockResolvedValueOnce(detailOf("s1", [msg("user", "q")]))
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        saveAnswer = () => resolve(detailOf("s1", [msg("user", "q"), msg("assistant", "a")]));
+                    }),
+            );
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s2", [msg("user", "q"), msg("assistant", "a")]));
+        const { view, container } = await openView(plugin);
+        const { mockFn, done } = answer("a");
+        plugin.api.chatStream = mockFn;
+        await send(container, "q", done);
+
+        const forked = view.forkSession("s1");
+        await tick();
+
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        saveAnswer();
+        await forked;
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s1", undefined);
+    });
+
+    it("keeps a question typed while a fork is pending in the box, unsent", async () => {
+        const plugin = makePlugin();
+        const { view, container } = await resumed(plugin);
+        let openFork!: () => void;
+        plugin.api.forkSession = vi.fn(
+            () =>
+                new Promise((resolve) => {
+                    openFork = () => resolve(detailOf("s6", SOURCE, "Bees (fork 1)"));
+                }),
+        );
+        const stream = gatedAnswer("a3");
+        plugin.api.chatStream = stream.mockFn;
+        plugin.api.appendSessionMessage = vi.fn();
+
+        const forked = view.forkSession("s5");
+        await tick();
+        container.find("lilbee-chat-textarea")!.value = "q3";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        openFork();
+        await forked;
+        stream.release();
+        await tick();
+
+        expect(plugin.api.chatStream).not.toHaveBeenCalled();
+        expect(plugin.api.appendSessionMessage).not.toHaveBeenCalled();
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("q3");
+        expect(view.currentSessionId()).toBe("s6");
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SEND_WHILE_FORKING);
+    });
+
+    it.each([
+        ["opens", () => Promise.resolve(detailOf("s6", SOURCE))],
+        ["fails", () => Promise.reject(refusal(422, "out of range"))],
+    ])("sends again once a fork %s", async (_outcome, forkResult) => {
+        const plugin = makePlugin();
+        const { view, container } = await resumed(plugin);
+        plugin.api.forkSession = vi.fn(forkResult);
+        await view.forkSession("s5");
+        const { mockFn, done } = answer("a");
+        plugin.api.chatStream = mockFn;
+
+        await send(container, "next", done);
+
+        expect(plugin.api.chatStream).toHaveBeenCalledTimes(1);
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("");
+    });
+
+    it("refuses Fork from here while an answer streams, before reading the transcript", async () => {
+        const plugin = makePlugin();
+        const { container, messagesEl } = await resumed(plugin);
+        plugin.api.getSession = vi.fn();
+        const stream = gatedAnswer("part");
+        plugin.api.chatStream = stream.mockFn;
+        container.find("lilbee-chat-textarea")!.value = "q3";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        await clickFork(messagesEl.children[0]);
+
+        expect(plugin.api.getSession).not.toHaveBeenCalled();
+        expect(plugin.api.forkSession).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_BUSY);
+        stream.release();
+    });
+
+    it("refuses a second fork while the first is pending", async () => {
+        const plugin = makePlugin();
+        const { view } = await resumed(plugin);
+        let openFork!: () => void;
+        plugin.api.forkSession = vi.fn(
+            () =>
+                new Promise((resolve) => {
+                    openFork = () => resolve(detailOf("s6", SOURCE));
+                }),
+        );
+
+        const first = view.forkSession("s5");
+        await tick();
+        await view.forkSession("s5");
+        openFork();
+        await first;
+
+        expect(plugin.api.forkSession).toHaveBeenCalledTimes(1);
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_BUSY);
+    });
+
+    it("saves an answer to the conversation its question went to, even after the chat is cleared", async () => {
+        const plugin = makePlugin();
+        const stream = gatedAnswer("a");
+        plugin.api.chatStream = stream.mockFn;
+        const { container } = await openView(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+
+        container.find("lilbee-chat-clear")!.trigger("click");
+        stream.release();
+        await tick();
+        await tick();
+
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "assistant", "a", []);
+    });
+
+    it("the sessions modal's fork hook forks the whole conversation and opens the fork", async () => {
+        const plugin = makePlugin();
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE, "Bees (fork 1)"));
+        const { view, container, messagesEl } = await openView(plugin);
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        sessionsHooks[0].fork("s5");
+        await tick();
+        await tick();
+
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s5", undefined);
+        expect(view.currentSessionId()).toBe("s6");
+        expect(messagesEl.children).toHaveLength(4);
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("");
+    });
+
+    it("opens the fork without a prefill when the input box is gone", async () => {
+        const plugin = makePlugin();
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE.slice(0, 2)));
+        const { view } = await openView(plugin);
+        (view as any).textareaEl = null;
+
+        await view.forkSession("s5", 2, "q2");
+
+        expect(view.currentSessionId()).toBe("s6");
+    });
+
+    it("reports no current session on a fresh view", async () => {
+        const { view } = await openView(makePlugin());
+
+        expect(view.currentSessionId()).toBeNull();
     });
 });

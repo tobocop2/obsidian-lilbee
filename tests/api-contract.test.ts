@@ -182,6 +182,7 @@ const INVOCATIONS: Record<string, unknown[]> = {
     appendSessionMessage: ["session-id", "user", "text"],
     renameSession: ["session-id", "title"],
     deleteSession: ["session-id"],
+    forkSession: ["session-id", 2],
     listMemories: [],
     remember: ["text", "note"],
     setMemoryShared: ["memory-id", true],
