@@ -48,7 +48,14 @@ function makePlugin(sessions: SessionMeta[] = []) {
 }
 
 function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHooks {
-    return { activeId: null, resume: vi.fn(), startNew: vi.fn(), fork: vi.fn(), ...overrides };
+    return {
+        activeId: null,
+        resume: vi.fn(),
+        startNew: vi.fn(),
+        fork: vi.fn(),
+        saveActive: vi.fn(),
+        ...overrides,
+    };
 }
 
 function collectTexts(el: MockElement): string[] {
@@ -200,6 +207,23 @@ describe("SessionsModal", () => {
         expect(create).toHaveBeenCalledWith(expect.stringMatching(/^lilbee\/chat-.*\.md$/), "# exported");
         expect(Notice.instances.some((n) => n.message.startsWith("Saved to lilbee/"))).toBe(true);
         expect(closeSpy).not.toHaveBeenCalled();
+    });
+
+    it("hands the open chat's save to the chat view instead of exporting it", async () => {
+        const saveActive = vi.fn();
+        const plugin = makePlugin([makeSession({ id: "s7" }), makeSession({ id: "s8" })]);
+        const { el } = await openModal(plugin, makeHooks({ activeId: "s7", saveActive }));
+        const [openRow, otherRow] = el.findAll("lilbee-session-save");
+
+        openRow.trigger("click");
+        await vi.runAllTimersAsync();
+        expect(saveActive).toHaveBeenCalledTimes(1);
+        expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+
+        otherRow.trigger("click");
+        await vi.runAllTimersAsync();
+        expect(saveActive).toHaveBeenCalledTimes(1);
+        expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s8");
     });
 
     it("says the server has no such conversation when the export answers 404", async () => {

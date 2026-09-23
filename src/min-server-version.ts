@@ -38,8 +38,8 @@ export const PLACEMENT_MIN_SERVER_VERSION = "0.6.90b420";
 export const SESSION_FORK_MIN_SERVER_VERSION = "0.6.90b446";
 
 /**
- * Oldest server with the /api/sessions/{id}/markdown route. Pinned to the release that ships
- * lilbee #894; kept out of MIN_SERVER_VERSION so older servers keep every other feature.
+ * Oldest server with the /api/sessions/{id}/markdown route. A placeholder, re-pinned at release to
+ * the build that ships lilbee #894; kept out of MIN_SERVER_VERSION so older servers keep every other feature.
  */
 export const SESSION_EXPORT_MIN_SERVER_VERSION = "0.6.90b446";
 

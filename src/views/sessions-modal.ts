@@ -17,6 +17,8 @@ export interface SessionsModalHooks {
     startNew: () => void;
     /** Fork the whole conversation and open the fork. */
     fork: (id: string) => void;
+    /** Save the open chat to the vault the way the chat toolbar does. */
+    saveActive: () => void;
 }
 
 export class SessionsModal extends Modal {
@@ -187,7 +189,10 @@ export class SessionsModal extends Modal {
             const saveBtn = actions.createEl("button", { cls: "lilbee-session-save" });
             setIcon(saveBtn, SAVE_ICON);
             saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
-            saveBtn.addEventListener("click", () => void this.saveToVault(meta));
+            saveBtn.addEventListener("click", () => {
+                if (meta.id === this.hooks.activeId) this.hooks.saveActive();
+                else void this.saveToVault(meta);
+            });
         }
 
         const deleteBtn = actions.createEl("button", { cls: "lilbee-session-delete" });
