@@ -5700,6 +5700,29 @@ describe("ChatView — chat sessions", () => {
         expect((view as any).conversation.sessionId).toBe("s5");
     });
 
+    it("a 404 on the previous chat's write leaves the new chat's session bound", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const { view, container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        const held = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.appendSessionMessage = vi.fn().mockReturnValue(held.promise);
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q2", []);
+
+        await (view as any).resumeSession("s5");
+        held.reject(new Error('Server responded 404: {"detail":"No session with id \'s1\'"}'));
+        await tick();
+        await tick();
+
+        expect((view as any).conversation.sessionId).toBe("s5");
+    });
+
     it("a transient store failure drops the write but keeps the conversation bound", async () => {
         const plugin = makePlugin();
         const first = streamOf("a1");
