@@ -3341,14 +3341,15 @@ describe("ChatView — save to vault from the server's export", () => {
         expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s1");
     });
 
-    /** A saved chat whose next question's write is held until `release` runs. */
-    async function chatWithHeldWrite(plugin: LilbeePlugin) {
+    /** A saved chat whose next question's write is held until `release` runs; `answer` streams back when given. */
+    async function chatWithHeldWrite(plugin: LilbeePlugin, answer?: string) {
         let release!: () => void;
         const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
         const saved = await savedChat(plugin);
         const detail = await append.getMockImplementation()!();
         append.mockReturnValueOnce(new Promise((r) => (release = () => r(detail))));
-        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        const answerEvents: SSEEvent[] = answer ? [{ event: SSE_EVENT.TOKEN, data: { token: answer } }] : [];
+        const { mockFn, done } = makeStream([...answerEvents, { event: SSE_EVENT.DONE, data: {} }]);
         plugin.api.chatStream = mockFn;
         saved.container.find("lilbee-chat-textarea")!.value = "Second";
         saved.container.find("lilbee-chat-send")!.trigger("click");
@@ -3371,6 +3372,26 @@ describe("ChatView — save to vault from the server's export", () => {
 
         expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s1");
         expect(create).toHaveBeenCalledWith(expect.any(String), EXPORT);
+    });
+
+    it("exports the complete chat when a new chat starts while its answer's write is queued", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const { container, create, release } = await chatWithHeldWrite(plugin, "Second reply");
+
+        await clickSave(container);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        release();
+        await tick();
+        await tick();
+
+        expect(append).toHaveBeenLastCalledWith("s1", "assistant", "Second reply", []);
+        const exportedAt = (plugin.api.getSessionMarkdown as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+        expect(append.mock.invocationCallOrder.at(-1)).toBeLessThan(exportedAt);
+        expect(create).toHaveBeenCalledWith(expect.any(String), EXPORT);
+        expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SESSION_EXPORT_INCOMPLETE);
     });
 
     it("writes the transcript the save was asked for when a new chat starts during the wait", async () => {
@@ -5639,7 +5660,7 @@ describe("ChatView — chat sessions", () => {
         };
     }
 
-    it("a conversation cleared while its create is in flight stays unbound", async () => {
+    it("a conversation cleared while its create is in flight saves its turn and stays unbound", async () => {
         const plugin = makePlugin();
         const create = deferred<ReturnType<typeof createdDetail>>();
         plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
@@ -5654,11 +5675,128 @@ describe("ChatView — chat sessions", () => {
         await tick();
 
         expect((view as any).conversation.sessionId).toBeNull();
-        // The turn still lands in the conversation it belonged to…
-        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q1", []);
-        // …but the answer queued behind it is dropped with the conversation.
-        const roles = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
-        expect(roles).toEqual(["user"]);
+        expect((plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls).toEqual([
+            ["s1", "user", "q1", []],
+            ["s1", "assistant", "a1", []],
+        ]);
+    });
+
+    it("a clear while the question's write is held still saves the answer to the old session", async () => {
+        const plugin = makePlugin();
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const held = deferred<ReturnType<typeof createdDetail>>();
+        append.mockReturnValueOnce(held.promise);
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        held.resolve(createdDetail("s1"));
+        await tick();
+        await tick();
+
+        expect(append.mock.calls).toEqual([
+            ["s1", "user", "q1", []],
+            ["s1", "assistant", "a1", []],
+        ]);
+        expect((view as any).conversation.sessionId).toBeNull();
+    });
+
+    it("a new chat's turn queued behind the cleared chat's writes lands only in the new session", async () => {
+        const plugin = makePlugin();
+        plugin.api.createSession = vi
+            .fn()
+            .mockResolvedValueOnce(createdDetail("s1"))
+            .mockResolvedValueOnce(createdDetail("s2"));
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const held = deferred<ReturnType<typeof createdDetail>>();
+        append.mockReturnValueOnce(held.promise);
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { view, container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        container.find("lilbee-chat-clear")!.trigger("click");
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+        held.resolve(createdDetail("s1"));
+        await tick();
+        await tick();
+
+        expect(append.mock.calls).toEqual([
+            ["s1", "user", "q1", []],
+            ["s1", "assistant", "a1", []],
+            ["s2", "user", "q2", []],
+            ["s2", "assistant", "a2", []],
+        ]);
+        expect((view as any).conversation.sessionId).toBe("s2");
+        expect((view as any).conversation.history.map((m: { content: string }) => m.content)).toEqual(["q2", "a2"]);
+    });
+
+    it("a chat cleared before its first write runs opens its own session, not the next chat's", async () => {
+        const plugin = makePlugin();
+        plugin.api.createSession = vi
+            .fn()
+            .mockResolvedValueOnce(createdDetail("s1"))
+            .mockResolvedValueOnce(createdDetail("s2"));
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const held = deferred<ReturnType<typeof createdDetail>>();
+        append.mockReturnValueOnce(held.promise);
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { view, container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        container.find("lilbee-chat-clear")!.trigger("click");
+        held.resolve(createdDetail("s1"));
+        await tick();
+        await tick();
+
+        expect(append.mock.calls.slice(2)).toEqual([
+            ["s2", "user", "q2", []],
+            ["s2", "assistant", "a2", []],
+        ]);
+        expect((view as any).conversation.sessionId).toBeNull();
+    });
+
+    it("a failed write for an answer that ends after a clear flags the cleared chat, not the new one", async () => {
+        const plugin = makePlugin();
+        let release!: () => void;
+        const gate = new Promise<void>((r) => (release = r));
+        plugin.api.chatStream = vi.fn(() =>
+            (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: "a1" };
+                await gate;
+                yield { event: SSE_EVENT.DONE, data: {} };
+            })(),
+        );
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const saveTurn = append.getMockImplementation()!;
+        append.mockImplementation((...args: unknown[]) =>
+            args[1] === "assistant"
+                ? Promise.reject(new Error('Server responded 503: {"detail":"busy"}'))
+                : saveTurn(...args),
+        );
+        const { view, container } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q1";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        const cleared = (view as any).conversation;
+
+        container.find("lilbee-chat-clear")!.trigger("click");
+        release();
+        await tick();
+        await tick();
+
+        expect(append).toHaveBeenCalledWith("s1", "assistant", "a1", []);
+        expect(cleared.persistFailed).toBe(true);
+        expect((view as any).conversation.persistFailed).toBe(false);
     });
 
     it("a resume that races the first turn's create keeps the resumed session", async () => {

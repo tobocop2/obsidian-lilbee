@@ -236,8 +236,6 @@ export function compactionMarkerText(data: CompactionEventData): string {
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private conversation: Conversation = emptyConversation();
-    /** Bumped when the transcript is replaced or cleared; stale queued writes check it and no-op. */
-    private conversationEpoch = 0;
     /** Serializes session writes: the log is append-only, so turns must land in order. */
     private persistQueue: Promise<void> = Promise.resolve();
     /** The send in progress, so a resume can let it finish unwinding before replacing the transcript. */
@@ -974,7 +972,6 @@ export class ChatView extends ItemView {
 
     private clearChat(): void {
         this.conversation = emptyConversation();
-        this.conversationEpoch++;
         if (this.messagesEl) this.messagesEl.empty();
     }
 
@@ -999,13 +996,11 @@ export class ChatView extends ItemView {
         new Notice(MESSAGES.NOTICE_SESSION_NEW);
     }
 
-    /** Open the session lazily, on the first turn, so an idle view creates nothing. Returns its id. */
-    private async ensureSession(firstText: string): Promise<string> {
-        const conversation = this.conversation;
+    /** Open `conversation`'s session lazily, on its first turn, so an idle view creates nothing. Returns its id. */
+    private async ensureSession(conversation: Conversation, firstText: string): Promise<string> {
         if (conversation.sessionId) return conversation.sessionId;
         const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
         const created = await this.plugin.api.createSession(this.chatActive, scope);
-        // A resume or clear that raced the create replaced the conversation; the id binds only this one.
         conversation.sessionId = created.meta.id;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
         try {
@@ -1016,22 +1011,20 @@ export class ChatView extends ItemView {
         return created.meta.id;
     }
 
-    /** Queue a session write. Never awaited by the chat path: persistence must not stall the answer. */
-    private queuePersist(write: () => Promise<void>): void {
+    /**
+     * Queue a session write for `conversation`; it lands even when a clear or resume has replaced
+     * the chat on screen. Never awaited by the chat path: persistence must not stall the answer.
+     */
+    private queuePersist(conversation: Conversation, write: () => Promise<void>): void {
         // Servers without the session routes keep the conversation in memory only.
         if (!this.plugin.serverSupportsSessions()) return;
-        // Writes queued for one conversation must not touch the one open when they run.
-        const epoch = this.conversationEpoch;
-        const conversation = this.conversation;
-        this.persistQueue = this.persistQueue
-            .then(() => (epoch === this.conversationEpoch ? write() : undefined))
-            .catch((err) => {
-                // Sessions switched off server-side (404) is permanent: unbind so the chat
-                // goes on in memory. A transient failure (busy server, timeout) drops only
-                // this write; a gap in the transcript beats splitting the conversation.
-                if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) conversation.sessionId = null;
-                else conversation.persistFailed = true;
-            });
+        this.persistQueue = this.persistQueue.then(write).catch((err) => {
+            // Sessions switched off server-side (404) is permanent: unbind so the chat
+            // goes on in memory. A transient failure (busy server, timeout) drops only
+            // this write; a gap in the transcript beats splitting the conversation.
+            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) conversation.sessionId = null;
+            else conversation.persistFailed = true;
+        });
     }
 
     private async persistTurn(
@@ -1296,8 +1289,8 @@ export class ChatView extends ItemView {
             conversation,
         };
         // Queued before the stream so the question is saved even if the answer never lands.
-        this.queuePersist(async () => {
-            const sessionId = await this.ensureSession(text);
+        this.queuePersist(conversation, async () => {
+            const sessionId = await this.ensureSession(conversation, text);
             state.sessionId = sessionId;
             const saved = await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.USER, text, []);
             this.addForkAction(userBubble, sessionId, saved.meta.message_count - 1, text);
@@ -1492,7 +1485,9 @@ export class ChatView extends ItemView {
                 // Only a completed answer is persisted; a cancelled one leaves the question alone.
                 if (rendered) {
                     const paths = [...new Set(state.sources.map((s) => s.source))];
-                    this.queuePersist(() => this.persistTurn(state.sessionId, SESSION_ROLE.ASSISTANT, rendered, paths));
+                    this.queuePersist(state.conversation, () =>
+                        this.persistTurn(state.sessionId, SESSION_ROLE.ASSISTANT, rendered, paths),
+                    );
                 }
                 break;
             }
