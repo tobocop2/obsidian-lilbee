@@ -262,6 +262,24 @@ describe("session methods", () => {
         expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message_count: 0 });
     });
 
+    it("getSessionMarkdown() GETs the markdown route and returns the body text", async () => {
+        const markdown = "---\ntitle: Bees\n---\n\n# Bees\n\n## User\n\nq\n";
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve(null),
+            text: () => Promise.resolve(markdown),
+            body: null,
+        } as unknown as Response);
+
+        const result = await client.getSessionMarkdown("a/../b");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/sessions/a%2F..%2Fb/markdown`,
+            expect.objectContaining({}),
+        );
+        expect(result).toBe(markdown);
+    });
+
     it("forkSession() percent-encodes the source id", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ meta, messages: [], summary: "" }));
 

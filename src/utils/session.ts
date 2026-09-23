@@ -1,3 +1,4 @@
+import { Notice, type Vault } from "obsidian";
 import { MESSAGES } from "../locales/en";
 import { SEARCH_CHUNK_TYPE, type SearchChunkType } from "../types";
 
@@ -14,6 +15,27 @@ export const SESSION_SCOPE = {
 export const SESSION_TITLE_MAX_LEN = 60;
 
 const TITLE_ELLIPSIS = "…";
+
+/** Vault folder that "Save to vault" writes chats into. */
+const CHAT_NOTE_FOLDER = "lilbee";
+
+/** Write `content` as a new timestamped note in the chat folder and say where, or say it failed. */
+export async function saveChatNote(vault: Vault, content: string): Promise<void> {
+    const now = new Date();
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const path = `${CHAT_NOTE_FOLDER}/chat-${stamp}.md`;
+    try {
+        if (!vault.getAbstractFileByPath(CHAT_NOTE_FOLDER)) await vault.createFolder(CHAT_NOTE_FOLDER);
+        await vault.create(path, content);
+        new Notice(MESSAGES.NOTICE_SAVED(path));
+    } catch {
+        new Notice(MESSAGES.ERROR_SAVE_CHAT);
+    }
+}
+
+/** Icon on every "Save to vault" action: the chat toolbar and the sessions list rows. */
+export const SAVE_ICON = "save";
 
 /** Icon on every fork action: the sessions list rows and the chat's questions. */
 export const FORK_ICON = "git-fork";

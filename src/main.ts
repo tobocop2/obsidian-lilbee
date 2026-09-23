@@ -115,6 +115,7 @@ import {
     percentOfBytes,
     sessionTokenInvalidMessage,
     supportsPlacement,
+    supportsSessionExport,
     supportsSessionFork,
     supportsSessions,
     sameWarnings,
@@ -2514,6 +2515,11 @@ export default class LilbeePlugin extends Plugin {
     /** Forking a saved conversation needs the fork route, newer than the other session routes. */
     serverSupportsSessionFork(): boolean {
         return supportsSessionFork(this.runningServerVersion());
+    }
+
+    /** Exporting a saved conversation as markdown needs the export route, newer than the other session routes. */
+    serverSupportsSessionExport(): boolean {
+        return supportsSessionExport(this.runningServerVersion());
     }
 
     /** GPU placement needs the /api/placement routes, which pre-0.6.90 servers don't have. */

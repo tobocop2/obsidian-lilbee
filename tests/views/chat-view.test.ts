@@ -248,6 +248,7 @@ function makePlugin(): LilbeePlugin {
             renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "t" }),
             deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
             forkSession: vi.fn(),
+            getSessionMarkdown: vi.fn(),
         },
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
@@ -261,6 +262,7 @@ function makePlugin(): LilbeePlugin {
         assertFleetReady: vi.fn().mockReturnValue(true),
         serverSupportsSessions: vi.fn().mockReturnValue(true),
         serverSupportsSessionFork: vi.fn().mockReturnValue(true),
+        serverSupportsSessionExport: vi.fn().mockReturnValue(false),
         refreshMemoryViews: vi.fn(),
         taskQueue,
         enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
@@ -3266,6 +3268,112 @@ describe("ChatView — save to vault", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message === "Failed to save chat")).toBe(true);
+    });
+});
+
+describe("ChatView — save to vault from the server's export", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    const EXPORT = "---\ntitle: Bees\n---\n\n# Bees\n";
+
+    async function savedChat(plugin: LilbeePlugin) {
+        const leaf = makeLeaf();
+        (leaf.app as any).vault.create = vi.fn().mockResolvedValue(undefined);
+        const view = new ChatView(leaf, plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: { token: "Reply" } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        container.find("lilbee-chat-textarea")!.value = "Hello";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+        return { container, create: (leaf.app as any).vault.create as ReturnType<typeof vi.fn> };
+    }
+
+    async function clickSave(container: MockElement) {
+        container.find("lilbee-chat-save")!.trigger("click");
+        await tick();
+        await tick();
+    }
+
+    it("writes the server's export of the saved chat", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        const { container, create } = await savedChat(plugin);
+
+        await clickSave(container);
+
+        expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s1");
+        expect(create).toHaveBeenCalledWith(expect.stringMatching(/^lilbee\/chat-.*\.md$/), EXPORT);
+        expect(Notice.instances.some((n) => n.message.startsWith("Saved to lilbee/"))).toBe(true);
+    });
+
+    it("waits for the chat's queued session writes before asking for the export", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        let release!: () => void;
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const { container } = await savedChat(plugin);
+        append.mockReturnValueOnce(new Promise((r) => (release = () => r(undefined))));
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.chatStream = mockFn;
+        container.find("lilbee-chat-textarea")!.value = "Second";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        await clickSave(container);
+        expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+
+        release();
+        await tick();
+        await tick();
+        expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s1");
+    });
+
+    it("falls back to the chat transcript when the server answers 404", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi
+            .fn()
+            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
+        const { container, create } = await savedChat(plugin);
+
+        await clickSave(container);
+
+        expect(create).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("**User**: Hello"));
+        expect(Notice.instances.some((n) => n.message.startsWith("Saved to lilbee/"))).toBe(true);
+    });
+
+    it("reports any other export failure and writes nothing", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockRejectedValue(new Error("disk on fire"));
+        const { container, create } = await savedChat(plugin);
+
+        await clickSave(container);
+
+        expect(create).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_EXPORT_FAILED("disk on fire"));
+    });
+
+    it("writes the chat transcript on a server without the export route", async () => {
+        const plugin = makePlugin();
+        const { container, create } = await savedChat(plugin);
+
+        await clickSave(container);
+
+        expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+        expect(create).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("**Assistant**: Reply"));
     });
 });
 

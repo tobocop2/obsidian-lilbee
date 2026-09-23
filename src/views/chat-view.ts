@@ -65,7 +65,14 @@ import {
     extractServerErrorDetail,
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
-import { FORK_ICON, chunkTypeFromScope, deriveSessionTitle, scopeFromChunkType } from "../utils/session";
+import {
+    FORK_ICON,
+    SAVE_ICON,
+    chunkTypeFromScope,
+    deriveSessionTitle,
+    saveChatNote,
+    scopeFromChunkType,
+} from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -376,7 +383,7 @@ export class ChatView extends ItemView {
         }
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
-        setIcon(saveBtn, "save");
+        setIcon(saveBtn, SAVE_ICON);
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => void this.saveToVault());
 
@@ -1675,31 +1682,39 @@ export class ChatView extends ItemView {
             new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
             return;
         }
-        const now = new Date();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-        const filename = `chat-${stamp}.md`;
-        const folder = "lilbee";
-        const path = `${folder}/${filename}`;
+        let content: string;
+        try {
+            content = await this.chatMarkdown();
+        } catch (err) {
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+            new Notice(MESSAGES.ERROR_SESSION_EXPORT_FAILED(reason));
+            return;
+        }
+        await saveChatNote(this.app.vault, content);
+    }
 
-        const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${now.toLocaleDateString()}`, ""];
+    /** The server's export when this chat is saved there, else the transcript this view holds. */
+    private async chatMarkdown(): Promise<string> {
+        // The export reads what the server holds, so queued turns land first.
+        await this.persistQueue;
+        if (this.sessionId && this.plugin.serverSupportsSessionExport()) {
+            try {
+                return await this.plugin.api.getSessionMarkdown(this.sessionId);
+            } catch (err) {
+                // The session is gone, saved conversations are off, or the server predates the export route.
+                if (!(err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND))) throw err;
+            }
+        }
+        return this.transcriptMarkdown();
+    }
+
+    private transcriptMarkdown(): string {
+        const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${new Date().toLocaleDateString()}`, ""];
         for (const msg of this.history) {
-            const label = msg.role === "user" ? "User" : "Assistant";
+            const label = msg.role === SESSION_ROLE.USER ? "User" : "Assistant";
             lines.push(`**${label}**: ${msg.content}`, "");
         }
-        const content = lines.join("\n");
-
-        try {
-            const vault = this.app.vault;
-            const existing = vault.getAbstractFileByPath(folder);
-            if (!existing) {
-                await vault.createFolder(folder);
-            }
-            await vault.create(path, content);
-            new Notice(MESSAGES.NOTICE_SAVED(path));
-        } catch {
-            new Notice(MESSAGES.ERROR_SAVE_CHAT);
-        }
+        return lines.join("\n");
     }
 
     /** The collapsed "Sources" block shared by live and restored answers. Returns the chip container. */

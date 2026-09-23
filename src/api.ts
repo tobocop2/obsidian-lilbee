@@ -488,6 +488,12 @@ export class LilbeeClient {
         return (await res.json()) as SessionDetail;
     }
 
+    /** The session as a markdown document: front matter, one section per turn, numbered sources. */
+    async getSessionMarkdown(sessionId: string): Promise<string> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/markdown`);
+        return res.text();
+    }
+
     /** The server takes no title here; `renameSession` is the only HTTP title write. */
     async createSession(modelRef: string, scope: string): Promise<SessionDetail> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions`, {
