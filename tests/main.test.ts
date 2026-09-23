@@ -4210,6 +4210,21 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("serverSupportsSessionExport", () => {
+        it("managed mode gates on the recorded install version", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+                lilbeeVersion: "v0.6.90b445",
+            });
+            expect(plugin.serverSupportsSessionExport()).toBe(false);
+            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b446" });
+            expect(plugin.serverSupportsSessionExport()).toBe(true);
+            loadConfig.mockRestore();
+        });
+    });
+
     describe("serverSupportsPlacement", () => {
         it("managed mode gates on the recorded install version", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });

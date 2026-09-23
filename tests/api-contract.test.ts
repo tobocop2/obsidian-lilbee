@@ -178,6 +178,7 @@ const INVOCATIONS: Record<string, unknown[]> = {
     chatStream: ["question", []],
     listSessions: [],
     getSession: ["session-id"],
+    getSessionMarkdown: ["session-id"],
     createSession: ["model-ref", "scope"],
     appendSessionMessage: ["session-id", "user", "text"],
     renameSession: ["session-id", "title"],

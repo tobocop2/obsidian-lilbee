@@ -417,6 +417,11 @@
         "streams": false
       }
     },
+    "/api/sessions/{session_id:str}/markdown": {
+      "GET": {
+        "streams": false
+      }
+    },
     "/api/sessions/{session_id:str}/messages": {
       "POST": {
         "fields": {

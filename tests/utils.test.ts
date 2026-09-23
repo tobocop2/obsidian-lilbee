@@ -29,6 +29,7 @@ import {
     setDeterminateProgress,
     streamInterruptedMessage,
     supportsPlacement,
+    supportsSessionExport,
     supportsSessionFork,
     supportsSessions,
     withIdleTimeout,
@@ -244,6 +245,24 @@ describe("supportsSessionFork", () => {
 
     it("fails open when the version is unknown", () => {
         expect(supportsSessionFork("")).toBe(true);
+    });
+});
+
+describe("supportsSessionExport", () => {
+    it("rejects servers that have sessions but no markdown export route", () => {
+        expect(supportsSessionExport("0.6.90b420")).toBe(false);
+        expect(supportsSessionExport("v0.6.90b445")).toBe(false);
+        expect(supportsSessionExport("0.6.66b507")).toBe(false);
+    });
+
+    it("accepts the first export build, its dev builds, and anything newer", () => {
+        expect(supportsSessionExport("0.6.90b446")).toBe(true);
+        expect(supportsSessionExport("v0.6.90b446.dev3")).toBe(true);
+        expect(supportsSessionExport("0.6.91b1")).toBe(true);
+    });
+
+    it("fails open when the version is unknown", () => {
+        expect(supportsSessionExport("")).toBe(true);
     });
 });
 

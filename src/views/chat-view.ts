@@ -65,7 +65,14 @@ import {
     extractServerErrorDetail,
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
-import { FORK_ICON, chunkTypeFromScope, deriveSessionTitle, scopeFromChunkType } from "../utils/session";
+import {
+    FORK_ICON,
+    SAVE_ICON,
+    chunkTypeFromScope,
+    deriveSessionTitle,
+    saveChatNote,
+    scopeFromChunkType,
+} from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -119,6 +126,25 @@ interface Conversation {
     history: Message[];
     /** Carry-forward compaction notes; sent with each turn and replaced by `compaction` events. */
     summary: string;
+    /** Server-side session this chat appends to. Null until the first turn opens one. */
+    sessionId: string | null;
+    /** A session write for this chat failed, so the server's copy is missing a turn. */
+    persistFailed: boolean;
+}
+
+/** A chat with nothing said yet and no saved session. */
+function emptyConversation(): Conversation {
+    return { history: [], summary: "", sessionId: null, persistFailed: false };
+}
+
+/** The chat as shown, in the plain format used when the server's export cannot stand in for it. */
+function transcriptMarkdown(history: readonly Message[]): string {
+    const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${new Date().toLocaleDateString()}`, ""];
+    for (const msg of history) {
+        const label = msg.role === SESSION_ROLE.USER ? "User" : "Assistant";
+        lines.push(`**${label}**: ${msg.content}`, "");
+    }
+    return lines.join("\n");
 }
 
 /** Per-message streaming state: accumulated text and the live reasoning DOM. */
@@ -209,9 +235,7 @@ export function compactionMarkerText(data: CompactionEventData): string {
 
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
-    private conversation: Conversation = { history: [], summary: "" };
-    /** Server-side conversation this view appends to. Null until the first turn opens one. */
-    private sessionId: string | null = null;
+    private conversation: Conversation = emptyConversation();
     /** Bumped when the transcript is replaced or cleared; stale queued writes check it and no-op. */
     private conversationEpoch = 0;
     /** Serializes session writes: the log is append-only, so turns must land in order. */
@@ -383,7 +407,7 @@ export class ChatView extends ItemView {
         }
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
-        setIcon(saveBtn, "save");
+        setIcon(saveBtn, SAVE_ICON);
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => void this.saveToVault());
 
@@ -949,24 +973,24 @@ export class ChatView extends ItemView {
     }
 
     private clearChat(): void {
-        this.conversation = { history: [], summary: "" };
-        this.sessionId = null;
+        this.conversation = emptyConversation();
         this.conversationEpoch++;
         if (this.messagesEl) this.messagesEl.empty();
     }
 
     private openSessions(): void {
         new SessionsModal(this.app, this.plugin, {
-            activeId: this.sessionId,
+            activeId: this.conversation.sessionId,
             resume: (id) => void this.resumeSession(id),
             startNew: () => this.startNewConversation(),
             fork: (id) => void this.forkSession(id),
+            saveActive: () => void this.saveToVault(),
         }).open();
     }
 
     /** Id of the saved conversation this view appends to, or null until the first turn opens one. */
     currentSessionId(): string | null {
-        return this.sessionId;
+        return this.conversation.sessionId;
     }
 
     /** Drop the transcript and unbind the session. The old one is already persisted. */
@@ -977,12 +1001,12 @@ export class ChatView extends ItemView {
 
     /** Open the session lazily, on the first turn, so an idle view creates nothing. Returns its id. */
     private async ensureSession(firstText: string): Promise<string> {
-        if (this.sessionId) return this.sessionId;
-        const epoch = this.conversationEpoch;
+        const conversation = this.conversation;
+        if (conversation.sessionId) return conversation.sessionId;
         const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
         const created = await this.plugin.api.createSession(this.chatActive, scope);
-        // A resume or clear that raced the create wins; this conversation stays unbound from the view.
-        if (epoch === this.conversationEpoch) this.sessionId = created.meta.id;
+        // A resume or clear that raced the create replaced the conversation; the id binds only this one.
+        conversation.sessionId = created.meta.id;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
         try {
             await this.plugin.api.renameSession(created.meta.id, deriveSessionTitle(firstText));
@@ -998,14 +1022,15 @@ export class ChatView extends ItemView {
         if (!this.plugin.serverSupportsSessions()) return;
         // Writes queued for one conversation must not touch the one open when they run.
         const epoch = this.conversationEpoch;
+        const conversation = this.conversation;
         this.persistQueue = this.persistQueue
             .then(() => (epoch === this.conversationEpoch ? write() : undefined))
             .catch((err) => {
                 // Sessions switched off server-side (404) is permanent: unbind so the chat
                 // goes on in memory. A transient failure (busy server, timeout) drops only
                 // this write; a gap in the transcript beats splitting the conversation.
-                if (epoch !== this.conversationEpoch) return;
-                if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) this.sessionId = null;
+                if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) conversation.sessionId = null;
+                else conversation.persistFailed = true;
             });
     }
 
@@ -1115,7 +1140,7 @@ export class ChatView extends ItemView {
     /** Replace the transcript with a saved conversation and bind the view to it. */
     private showSession(detail: SessionDetail): void {
         this.clearChat();
-        this.sessionId = detail.meta.id;
+        this.conversation.sessionId = detail.meta.id;
         this.conversation.summary = detail.summary;
         this.hideEmptyState();
 
@@ -1315,7 +1340,7 @@ export class ChatView extends ItemView {
                 this.streamController.signal,
                 undefined,
                 this.plugin.settings.searchChunkType,
-                { summary: conversation.summary, sessionId: this.sessionId },
+                { summary: conversation.summary, sessionId: conversation.sessionId },
             )) {
                 // The server trails memory_extracted after done; at any other frame once the
                 // stream ended the reader stops, which also cancels the socket.
@@ -1691,35 +1716,40 @@ export class ChatView extends ItemView {
     }
 
     private async saveToVault(): Promise<void> {
-        if (this.conversation.history.length === 0) {
+        const conversation = this.conversation;
+        if (conversation.history.length === 0) {
             new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
             return;
         }
-        const now = new Date();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-        const filename = `chat-${stamp}.md`;
-        const folder = "lilbee";
-        const path = `${folder}/${filename}`;
-
-        const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${now.toLocaleDateString()}`, ""];
-        for (const msg of this.conversation.history) {
-            const label = msg.role === "user" ? "User" : "Assistant";
-            lines.push(`**${label}**: ${msg.content}`, "");
-        }
-        const content = lines.join("\n");
-
+        const transcript = transcriptMarkdown(conversation.history);
+        let content: string;
         try {
-            const vault = this.app.vault;
-            const existing = vault.getAbstractFileByPath(folder);
-            if (!existing) {
-                await vault.createFolder(folder);
-            }
-            await vault.create(path, content);
-            new Notice(MESSAGES.NOTICE_SAVED(path));
-        } catch {
-            new Notice(MESSAGES.ERROR_SAVE_CHAT);
+            content = await this.chatMarkdown(conversation, transcript);
+        } catch (err) {
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+            new Notice(MESSAGES.ERROR_SESSION_EXPORT_FAILED(reason));
+            return;
         }
+        await saveChatNote(this.app.vault, content);
+    }
+
+    /** The server's export of `conversation` when the server holds all of it, else `transcript`. */
+    private async chatMarkdown(conversation: Conversation, transcript: string): Promise<string> {
+        // The export reads what the server holds, so queued turns land first.
+        await this.persistQueue;
+        const sessionId = conversation.sessionId;
+        if (!sessionId || !this.plugin.serverSupportsSessionExport()) return transcript;
+        if (conversation.persistFailed) {
+            new Notice(MESSAGES.NOTICE_SESSION_EXPORT_INCOMPLETE);
+            return transcript;
+        }
+        try {
+            return await this.plugin.api.getSessionMarkdown(sessionId);
+        } catch (err) {
+            // The session is gone, saved conversations are off, or the server predates the export route.
+            if (!(err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND))) throw err;
+        }
+        return transcript;
     }
 
     /** The collapsed "Sources" block shared by live and restored answers. Returns the chip container. */

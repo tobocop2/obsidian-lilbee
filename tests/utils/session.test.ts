@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { Notice, type Vault } from "obsidian";
 import {
     chunkTypeFromScope,
     deriveSessionTitle,
+    saveChatNote,
     scopeFromChunkType,
     SESSION_SCOPE,
     SESSION_TITLE_MAX_LEN,
@@ -61,5 +63,50 @@ describe("deriveSessionTitle", () => {
     it("leaves a line exactly at the limit alone", () => {
         const exact = "y".repeat(SESSION_TITLE_MAX_LEN);
         expect(deriveSessionTitle(exact)).toBe(exact);
+    });
+});
+
+describe("saveChatNote", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    function makeVault(folderExists: boolean, create = vi.fn().mockResolvedValue(undefined)) {
+        return {
+            getAbstractFileByPath: vi.fn().mockReturnValue(folderExists ? { path: "lilbee" } : null),
+            createFolder: vi.fn().mockResolvedValue(undefined),
+            create,
+        };
+    }
+
+    it("creates the lilbee folder and a timestamped note, then says where", async () => {
+        const vault = makeVault(false);
+
+        await saveChatNote(vault as unknown as Vault, "# body");
+
+        expect(vault.createFolder).toHaveBeenCalledWith("lilbee");
+        expect(vault.create).toHaveBeenCalledWith(
+            expect.stringMatching(/^lilbee\/chat-\d{4}-\d{2}-\d{2}-\d{6}\.md$/),
+            "# body",
+        );
+        const path = vault.create.mock.calls[0][0] as string;
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SAVED(path));
+    });
+
+    it("reuses an existing lilbee folder", async () => {
+        const vault = makeVault(true);
+
+        await saveChatNote(vault as unknown as Vault, "# body");
+
+        expect(vault.createFolder).not.toHaveBeenCalled();
+        expect(vault.create).toHaveBeenCalled();
+    });
+
+    it("reports a failed write instead of throwing", async () => {
+        const vault = makeVault(true, vi.fn().mockRejectedValue(new Error("exists")));
+
+        await saveChatNote(vault as unknown as Vault, "# body");
+
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SAVE_CHAT]);
     });
 });
