@@ -1494,7 +1494,7 @@ describe("ChatView.sendMessage — error event", () => {
         await tick();
 
         // History should only have the user message, not the error
-        const history = (view as any).history;
+        const history = (view as any).conversation.history;
         expect(history.length).toBe(1);
         expect(history[0].role).toBe("user");
     });
@@ -1580,7 +1580,7 @@ describe("ChatView.sendMessage — API throws", () => {
         expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(true);
         expect(Notice.instances.some((n) => n.message.includes("server returned 500"))).toBe(true);
         // History popped — assistant message did not finish
-        expect((view as any).history.length).toBe(0);
+        expect((view as any).conversation.history.length).toBe(0);
     });
 
     it.each([
@@ -4632,7 +4632,7 @@ describe("ChatView.sendMessage — RateLimitedError", () => {
         expect(errBubble.find("lilbee-chat-error-text")!.textContent).toContain("Try again in 7 seconds");
         expect(Notice.instances.some((n) => n.message.includes("Try again in 7 seconds"))).toBe(true);
         expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(false);
-        expect((view as any).history.length).toBe(0);
+        expect((view as any).conversation.history.length).toBe(0);
     });
 
     it("falls back to a generic 'try again in a moment' notice when retry-after is null", async () => {
@@ -4947,10 +4947,10 @@ describe("ChatView — null-element guard branches", () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        (view as any).history = [{ role: "user", content: "hi" }];
+        (view as any).conversation.history = [{ role: "user", content: "hi" }];
         (view as any).messagesEl = null;
         (view as any).clearChat();
-        expect((view as any).history).toHaveLength(0);
+        expect((view as any).conversation.history).toHaveLength(0);
     });
 
     it("sendMessage tolerates null sendBtn and textareaEl through start and finally", async () => {
@@ -5566,7 +5566,7 @@ describe("ChatView — chat sessions", () => {
             expect(marker).not.toBeNull();
             // setIcon writes the glyph name into the mock DOM, so match the wording, not the whole node.
             expect(marker!.textContent).toContain(MESSAGES.CHAT_COMPACTED(2));
-            expect((view as any).summary).toBe("the notes");
+            expect((view as any).conversation.summary).toBe("the notes");
         });
 
         it("sends the trimmed history and the summary on the following turn", async () => {
@@ -5674,7 +5674,13 @@ describe("ChatView — chat sessions", () => {
 
             const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
             const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
-            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const state: any = {
+                compaction: null,
+                anchorEl: bubble,
+                spinnerEl: spinner,
+                warmingShown: false,
+                conversation: (view as any).conversation,
+            };
             const fire = (event: any) =>
                 (view as any).handleStreamEvent(
                     event,
@@ -5734,7 +5740,13 @@ describe("ChatView — chat sessions", () => {
 
             const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
             const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
-            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const state: any = {
+                compaction: null,
+                anchorEl: bubble,
+                spinnerEl: spinner,
+                warmingShown: false,
+                conversation: (view as any).conversation,
+            };
             const fire = (event: any) =>
                 (view as any).handleStreamEvent(
                     event,
@@ -5766,7 +5778,13 @@ describe("ChatView — chat sessions", () => {
 
             const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
             const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
-            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const state: any = {
+                compaction: null,
+                anchorEl: bubble,
+                spinnerEl: spinner,
+                warmingShown: false,
+                conversation: (view as any).conversation,
+            };
             const fire = (event: any) =>
                 (view as any).handleStreamEvent(
                     event,
@@ -5789,7 +5807,13 @@ describe("ChatView — chat sessions", () => {
             const plugin = makePlugin();
             const { view } = await openChat(plugin);
             const el = new MockElement() as unknown as HTMLElement;
-            const state: any = { compaction: null, anchorEl: el, spinnerEl: el, warmingShown: false };
+            const state: any = {
+                compaction: null,
+                anchorEl: el,
+                spinnerEl: el,
+                warmingShown: false,
+                conversation: (view as any).conversation,
+            };
 
             (view as any).handleStreamEvent(
                 { event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 1, stranded: 0 } },
@@ -5831,7 +5855,7 @@ describe("ChatView — chat sessions", () => {
             const { view, container, messagesEl } = await openChat(plugin);
             await send(container, "q1", done);
 
-            expect((view as any).summary).toBe("notes");
+            expect((view as any).conversation.summary).toBe("notes");
             expect(messagesEl.find("lilbee-chat-compaction")).toBeNull();
         });
 
@@ -6341,11 +6365,11 @@ describe("ChatView — resume interactions with live state", () => {
         await tick();
 
         await (view as any).resumeSession("s5");
+        expect((view as any).sending).toBe(false);
         await tick();
         await tick();
 
-        expect((view as any).history).toEqual([{ role: "user", content: "old question" }]);
-        expect((view as any).sending).toBe(false);
+        expect((view as any).conversation.history).toEqual([{ role: "user", content: "old question" }]);
     });
 
     it("moves the search-scope highlight when a session restores a different scope", async () => {
@@ -7014,5 +7038,97 @@ describe("ChatView — forking a session", () => {
         const { view } = await openView(makePlugin());
 
         expect(view.currentSessionId()).toBeNull();
+    });
+});
+
+describe("ChatView — clearing the chat mid-answer", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    /** Yields a token, then waits for release (or rejects on abort) before yielding `rest`. */
+    function heldAnswer(rest: SSEEvent[]) {
+        let release!: () => void;
+        const gate = new Promise<void>((r) => {
+            release = r;
+        });
+        const mockFn = vi.fn((...args: unknown[]) => {
+            const signal = args[3] as AbortSignal;
+            const aborted = new Promise<never>((_resolve, reject) => {
+                signal.addEventListener("abort", () => {
+                    const abort = new Error("aborted");
+                    abort.name = "AbortError";
+                    reject(abort);
+                });
+            });
+            return (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: "a-old" };
+                await Promise.race([gate, aborted]);
+                yield* rest;
+            })();
+        });
+        return { mockFn, release: () => release() };
+    }
+
+    async function clearMidAnswer(rest: SSEEvent[]) {
+        const plugin = makePlugin();
+        const stream = heldAnswer(rest);
+        plugin.api.chatStream = stream.mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "q-old";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+        container.find("lilbee-chat-clear")!.trigger("click");
+        return { plugin, container, release: stream.release };
+    }
+
+    /** The history and summary the new chat's first question sends to the model. */
+    async function firstTurnContext(plugin: LilbeePlugin, container: MockElement) {
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "a-new" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        container.find("lilbee-chat-textarea")!.value = "q-new";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+        const call = mockFn.mock.calls[0];
+        return { history: call[1], summary: (call[6] as { summary: string }).summary };
+    }
+
+    it("keeps the old answer out of the new chat's first question", async () => {
+        const { plugin, container, release } = await clearMidAnswer([{ event: SSE_EVENT.DONE, data: {} }]);
+        release();
+        await tick();
+        await tick();
+
+        expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
+    });
+
+    it("keeps an answer stopped after the clear out of the new chat", async () => {
+        const { plugin, container } = await clearMidAnswer([]);
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
+    });
+
+    it("keeps a compaction that lands after the clear out of the new chat", async () => {
+        const { plugin, container, release } = await clearMidAnswer([
+            { event: SSE_EVENT.COMPACTION, data: { summary: "old notes", condensed: 0, stranded: 0 } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        release();
+        await tick();
+        await tick();
+
+        expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
     });
 });
