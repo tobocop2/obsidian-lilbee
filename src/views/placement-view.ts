@@ -4,6 +4,7 @@ import { isHttpStatus } from "../api";
 import { displayLabelForRef } from "../utils/model-ref";
 import {
     ERROR_NAME,
+    HTTP_STATUS,
     PLACEMENT_MODE,
     REPLICA_ROLES,
     SERVER_MODE,
@@ -40,8 +41,6 @@ export async function revealPlacementBeside(app: App, sourceLeaf: WorkspaceLeaf)
 
 const PREVIEW_DEBOUNCE_MS = 350;
 const STARTUP_RETRY_MS = 2000;
-const HTTP_NOT_FOUND = 404;
-const HTTP_CONFLICT = 409;
 const HTTP_UNPROCESSABLE = 422;
 const GB = 1_000_000_000;
 
@@ -134,7 +133,7 @@ export class PlacementView extends ItemView {
             this.waitingForServer = false;
             // No /api/placement route: a pre-0.6.90 server. Point at the server
             // update instead of a raw 404.
-            if (isHttpStatus(result.error, HTTP_NOT_FOUND)) {
+            if (isHttpStatus(result.error, HTTP_STATUS.NOT_FOUND)) {
                 this.renderMessage(MESSAGES.PLACEMENT_NEEDS_NEWER_SERVER);
                 return;
             }
@@ -738,7 +737,7 @@ export class PlacementView extends ItemView {
     }
 
     private handleMutationError(error: Error): void {
-        if (isHttpStatus(error, HTTP_CONFLICT)) {
+        if (isHttpStatus(error, HTTP_STATUS.CONFLICT)) {
             this.applyDisabled = true;
             new Notice(MESSAGES.PLACEMENT_APPLY_NOT_ENABLED);
             return;
