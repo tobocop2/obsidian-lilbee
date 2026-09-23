@@ -6,6 +6,7 @@ import {
     SESSIONS_MIN_SERVER_VERSION,
     PLACEMENT_MIN_SERVER_VERSION,
     SESSION_FORK_MIN_SERVER_VERSION,
+    SESSION_EXPORT_MIN_SERVER_VERSION,
 } from "./min-server-version";
 import { SERVER_MODE, WARM_PHASE } from "./types";
 import type { HealthWarning, ServerMode, WarmProgress } from "./types";
@@ -192,6 +193,12 @@ export function supportsPlacement(version: string): boolean {
 export function supportsSessionFork(version: string): boolean {
     if (!version) return true;
     return !isVersionOlder(version, SESSION_FORK_MIN_SERVER_VERSION);
+}
+
+/** Unknown versions fail open: a server without the export route answers 404, and the caller says so. */
+export function supportsSessionExport(version: string): boolean {
+    if (!version) return true;
+    return !isVersionOlder(version, SESSION_EXPORT_MIN_SERVER_VERSION);
 }
 
 /**

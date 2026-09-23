@@ -705,6 +705,11 @@ export const MESSAGES = {
     ERROR_SEND_WHILE_FORKING: "Wait for the fork to open, then send your question.",
     ERROR_SESSION_FORK_OWNED: "Could not fork conversation: an agent owns it.",
     ERROR_SESSION_FORK_POINT_MOVED: "Could not fork here: the saved conversation has no such message at this point.",
+    ERROR_SESSION_EXPORT_FAILED: (reason: string): string => `Could not save conversation: ${reason}`,
+    NOTICE_SESSION_EXPORT_INCOMPLETE:
+        "The server's copy of this chat is incomplete because a message failed to save. The note uses the chat as shown here.",
+    ERROR_SESSION_EXPORT_NOT_FOUND:
+        "Could not save conversation: the server does not have it, has saved conversations off, or is too old to export.",
     TITLE_CRAWL_WEB_PAGE: "Crawl web page",
     TITLE_DOWNLOAD_MODEL: "Download model?",
     TITLE_WELCOME: "Welcome to lilbee",
