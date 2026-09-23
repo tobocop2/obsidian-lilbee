@@ -1028,8 +1028,7 @@ export class ChatView extends ItemView {
             new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
             return;
         }
-        // Let an in-flight answer finish unwinding first: its abort handler appends to
-        // `history`, which would otherwise land on top of the transcript we restore below.
+        // Stop the in-flight answer and let it unwind, so the restored chat can send at once.
         if (this.sending) {
             this.streamController?.abort();
             await this.inFlightSend;

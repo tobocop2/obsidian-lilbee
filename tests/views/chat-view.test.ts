@@ -7007,84 +7007,6 @@ describe("ChatView — forking a session", () => {
         expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "assistant", "a", []);
     });
 
-    describe("clearing the chat mid-answer", () => {
-        /** Yields a token, then waits for release (or rejects on abort) before yielding `rest`. */
-        function heldAnswer(rest: SSEEvent[]) {
-            let release!: () => void;
-            const gate = new Promise<void>((r) => {
-                release = r;
-            });
-            const mockFn = vi.fn((...args: unknown[]) => {
-                const signal = args[3] as AbortSignal;
-                const aborted = new Promise<never>((_resolve, reject) => {
-                    signal.addEventListener("abort", () => {
-                        const abort = new Error("aborted");
-                        abort.name = "AbortError";
-                        reject(abort);
-                    });
-                });
-                return (async function* () {
-                    yield { event: SSE_EVENT.TOKEN, data: "a-old" };
-                    await Promise.race([gate, aborted]);
-                    yield* rest;
-                })();
-            });
-            return { mockFn, release: () => release() };
-        }
-
-        async function clearMidAnswer(rest: SSEEvent[]) {
-            const plugin = makePlugin();
-            const stream = heldAnswer(rest);
-            plugin.api.chatStream = stream.mockFn;
-            const { container } = await openView(plugin);
-            container.find("lilbee-chat-textarea")!.value = "q-old";
-            container.find("lilbee-chat-send")!.trigger("click");
-            await tick();
-            await tick();
-            container.find("lilbee-chat-clear")!.trigger("click");
-            return { plugin, container, release: stream.release };
-        }
-
-        /** The history and summary the new chat's first question sends to the model. */
-        async function firstTurnContext(plugin: LilbeePlugin, container: MockElement) {
-            const { mockFn, done } = answer("a-new");
-            plugin.api.chatStream = mockFn;
-            await send(container, "q-new", done);
-            const call = mockFn.mock.calls[0];
-            return { history: call[1], summary: (call[6] as { summary: string }).summary };
-        }
-
-        it("keeps the old answer out of the new chat's first question", async () => {
-            const { plugin, container, release } = await clearMidAnswer([{ event: SSE_EVENT.DONE, data: {} }]);
-            release();
-            await tick();
-            await tick();
-
-            expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
-        });
-
-        it("keeps an answer stopped after the clear out of the new chat", async () => {
-            const { plugin, container } = await clearMidAnswer([]);
-            container.find("lilbee-chat-send")!.trigger("click");
-            await tick();
-            await tick();
-
-            expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
-        });
-
-        it("keeps a compaction that lands after the clear out of the new chat", async () => {
-            const { plugin, container, release } = await clearMidAnswer([
-                { event: SSE_EVENT.COMPACTION, data: { summary: "old notes", condensed: 0, stranded: 0 } },
-                { event: SSE_EVENT.DONE, data: {} },
-            ]);
-            release();
-            await tick();
-            await tick();
-
-            expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
-        });
-    });
-
     it("the sessions modal's fork hook forks the whole conversation and opens the fork", async () => {
         const plugin = makePlugin();
         plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE, "Bees (fork 1)"));
@@ -7116,5 +7038,97 @@ describe("ChatView — forking a session", () => {
         const { view } = await openView(makePlugin());
 
         expect(view.currentSessionId()).toBeNull();
+    });
+});
+
+describe("ChatView — clearing the chat mid-answer", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    /** Yields a token, then waits for release (or rejects on abort) before yielding `rest`. */
+    function heldAnswer(rest: SSEEvent[]) {
+        let release!: () => void;
+        const gate = new Promise<void>((r) => {
+            release = r;
+        });
+        const mockFn = vi.fn((...args: unknown[]) => {
+            const signal = args[3] as AbortSignal;
+            const aborted = new Promise<never>((_resolve, reject) => {
+                signal.addEventListener("abort", () => {
+                    const abort = new Error("aborted");
+                    abort.name = "AbortError";
+                    reject(abort);
+                });
+            });
+            return (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: "a-old" };
+                await Promise.race([gate, aborted]);
+                yield* rest;
+            })();
+        });
+        return { mockFn, release: () => release() };
+    }
+
+    async function clearMidAnswer(rest: SSEEvent[]) {
+        const plugin = makePlugin();
+        const stream = heldAnswer(rest);
+        plugin.api.chatStream = stream.mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "q-old";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+        container.find("lilbee-chat-clear")!.trigger("click");
+        return { plugin, container, release: stream.release };
+    }
+
+    /** The history and summary the new chat's first question sends to the model. */
+    async function firstTurnContext(plugin: LilbeePlugin, container: MockElement) {
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "a-new" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        container.find("lilbee-chat-textarea")!.value = "q-new";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+        const call = mockFn.mock.calls[0];
+        return { history: call[1], summary: (call[6] as { summary: string }).summary };
+    }
+
+    it("keeps the old answer out of the new chat's first question", async () => {
+        const { plugin, container, release } = await clearMidAnswer([{ event: SSE_EVENT.DONE, data: {} }]);
+        release();
+        await tick();
+        await tick();
+
+        expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
+    });
+
+    it("keeps an answer stopped after the clear out of the new chat", async () => {
+        const { plugin, container } = await clearMidAnswer([]);
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
+    });
+
+    it("keeps a compaction that lands after the clear out of the new chat", async () => {
+        const { plugin, container, release } = await clearMidAnswer([
+            { event: SSE_EVENT.COMPACTION, data: { summary: "old notes", condensed: 0, stranded: 0 } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        release();
+        await tick();
+        await tick();
+
+        expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
     });
 });
