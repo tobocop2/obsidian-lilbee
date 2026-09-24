@@ -285,6 +285,14 @@
     border-radius: 4px 16px 16px 16px;
 }
 
+.lilbee-chat-message.assistant[tabindex]:focus {
+    outline: none;
+}
+
+.lilbee-chat-message.assistant[tabindex]:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
 .lilbee-chat-message-error {
     align-self: flex-start;
     background-color: color-mix(in srgb, var(--text-error) 10%, transparent);

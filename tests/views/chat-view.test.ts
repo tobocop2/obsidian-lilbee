@@ -7283,10 +7283,28 @@ describe("ChatView — forking a session", () => {
     }
 
     /** Right-click a transcript bubble; the Menu it opened, or null. */
-    function rightClick(bubble: MockElement, preventDefault = vi.fn()): Menu | null {
+    const BUBBLE_RECT = { left: 12, bottom: 34 };
+
+    /** The newest Menu when `act` opened one, else null. */
+    function menuOpenedBy(act: () => void): Menu | null {
         const before = Menu.instances.length;
-        bubble.trigger("contextmenu", { clientX: 0, clientY: 0, preventDefault });
+        act();
         return Menu.instances.length > before ? Menu.instances[Menu.instances.length - 1] : null;
+    }
+
+    /** Right-click a transcript bubble with the fields Chromium sends: detail 0, button 2, the pointer. */
+    function rightClick(bubble: MockElement, preventDefault = vi.fn()): Menu | null {
+        (bubble as unknown as { getBoundingClientRect: () => typeof BUBBLE_RECT }).getBoundingClientRect = () =>
+            BUBBLE_RECT;
+        const event = { detail: 0, button: 2, clientX: 40, clientY: 50, currentTarget: bubble, preventDefault };
+        return menuOpenedBy(() => bubble.trigger("contextmenu", event));
+    }
+
+    /** Press a key on a focused transcript bubble. */
+    function pressKey(bubble: MockElement, key: string, shiftKey = false, preventDefault = vi.fn()): Menu | null {
+        (bubble as unknown as { getBoundingClientRect: () => typeof BUBBLE_RECT }).getBoundingClientRect = () =>
+            BUBBLE_RECT;
+        return menuOpenedBy(() => bubble.trigger("keydown", { key, shiftKey, preventDefault }));
     }
 
     /** Which bubbles open an answer menu on right-click. */
@@ -7317,6 +7335,49 @@ describe("ChatView — forking a session", () => {
         expect(menu.visible).toBe(true);
         expect(menu.position).toBeNull();
         expect(preventDefault).toHaveBeenCalled();
+    });
+
+    it("makes each answer with a menu focusable and labelled, and leaves questions alone", async () => {
+        const { messagesEl } = await resumed(makePlugin());
+
+        expect(messagesEl.children.map((b) => b.getAttribute("tabindex"))).toEqual([null, "0", null, "0"]);
+        expect(messagesEl.children[1].getAttribute("aria-label")).toBe(MESSAGES.LABEL_ANSWER_ACTIONS_HINT);
+        expect(messagesEl.children[1].getAttribute("aria-haspopup")).toBe("menu");
+        expect(messagesEl.children[1].getAttribute("role")).toBe("article");
+        expect(messagesEl.children[0].getAttribute("aria-label")).toBeNull();
+    });
+
+    it("leaves answers unfocusable on a server without the fork route", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionFork as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const { messagesEl } = await resumed(plugin);
+
+        expect(messagesEl.children.map((b) => b.getAttribute("tabindex"))).toEqual([null, null, null, null]);
+    });
+
+    it.each([
+        ["the menu key", "ContextMenu", false],
+        ["Shift+F10", "F10", true],
+    ])("opens the same menu below a focused answer on %s", async (_name, key, shiftKey) => {
+        const { messagesEl } = await resumed(makePlugin());
+        const preventDefault = vi.fn();
+
+        const menu = pressKey(messagesEl.children[1], key, shiftKey, preventDefault)!;
+
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_FORK_FROM_ANSWER]);
+        expect(menu.position).toEqual({ x: BUBBLE_RECT.left, y: BUBBLE_RECT.bottom });
+        expect(preventDefault).toHaveBeenCalled();
+    });
+
+    it.each([
+        ["F10 without Shift", "F10", false],
+        ["another key", "Enter", true],
+    ])("opens no menu on %s", async (_name, key, shiftKey) => {
+        const { messagesEl } = await resumed(makePlugin());
+        const preventDefault = vi.fn();
+
+        expect(pressKey(messagesEl.children[1], key, shiftKey, preventDefault)).toBeNull();
+        expect(preventDefault).not.toHaveBeenCalled();
     });
 
     it("forks through the chosen answer, opens the fork, and leaves the input empty", async () => {

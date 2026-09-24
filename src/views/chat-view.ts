@@ -158,7 +158,6 @@ function nothingToSave(conversation: Conversation): boolean {
     return true;
 }
 
-/** Per-message streaming state: accumulated text and the live reasoning DOM. */
 /** One entry in the menu a right-click on a saved answer opens. */
 interface AnswerAction {
     title: string;
@@ -166,6 +165,15 @@ interface AnswerAction {
     run: () => void;
 }
 
+const CONTEXT_MENU_KEY = "ContextMenu";
+const SHIFT_CONTEXT_MENU_KEY = "F10";
+
+/** Keys that open a focused answer's menu: the menu key, or F10 with Shift. */
+function opensContextMenu(event: KeyboardEvent): boolean {
+    return event.key === CONTEXT_MENU_KEY || (event.shiftKey && event.key === SHIFT_CONTEXT_MENU_KEY);
+}
+
+/** Per-message streaming state: accumulated text and the live reasoning DOM. */
 interface StreamState {
     fullContent: string;
     reasoningContent: string;
@@ -1157,18 +1165,31 @@ export class ChatView extends ItemView {
         return actions;
     }
 
-    /** Right-clicking a saved answer opens its actions menu, when it has any action. */
+    /** A saved answer with actions opens them on right-click, or on the menu key once focused. */
     private addAnswerActions(bubble: HTMLElement, sessionId: string, index: number, text: string): void {
         const actions = this.answerActions(sessionId, index, text);
         if (actions.length === 0) return;
+        bubble.setAttribute("tabindex", "0");
+        bubble.setAttribute("role", "article");
+        bubble.setAttribute("aria-label", MESSAGES.LABEL_ANSWER_ACTIONS_HINT);
+        bubble.setAttribute("aria-haspopup", "menu");
         bubble.addEventListener("contextmenu", (event) => {
             event.preventDefault();
-            const menu = new Menu();
-            for (const action of actions) {
-                menu.addItem((item) => item.setTitle(action.title).setIcon(action.icon).onClick(action.run));
-            }
-            this.showMenu(menu, event);
+            this.prepareMenu(this.answerMenu(actions)).showAtMouseEvent(event);
         });
+        bubble.addEventListener("keydown", (event) => {
+            if (!opensContextMenu(event)) return;
+            event.preventDefault();
+            this.showMenuBelow(this.prepareMenu(this.answerMenu(actions)), bubble);
+        });
+    }
+
+    private answerMenu(actions: AnswerAction[]): Menu {
+        const menu = new Menu();
+        for (const action of actions) {
+            menu.addItem((item) => item.setTitle(action.title).setIcon(action.icon).onClick(action.run));
+        }
+        return menu;
     }
 
     /** Replace the transcript with a saved conversation and bind the view to it. */
@@ -1660,8 +1681,24 @@ export class ChatView extends ItemView {
         return typeof value === "boolean" ? value : Platform.isMacOS;
     }
 
-    /** Show a menu, native when the vault prefers it; the in-window menu gets capture-phase ESC dismissal. */
+    /** Show a menu from a click; a keyboard-synthesized click (detail 0) has no pointer, so it opens below the trigger. */
     private showMenu(menu: Menu, event: MouseEvent): void {
+        this.prepareMenu(menu);
+        const trigger = event.detail === 0 ? (event.currentTarget as HTMLElement | null) : null;
+        if (trigger) {
+            this.showMenuBelow(menu, trigger);
+            return;
+        }
+        menu.showAtMouseEvent(event);
+    }
+
+    private showMenuBelow(menu: Menu, anchor: HTMLElement): void {
+        const rect = anchor.getBoundingClientRect();
+        menu.showAtPosition({ x: rect.left, y: rect.bottom });
+    }
+
+    /** Native when the vault prefers it; the in-window menu gets capture-phase ESC dismissal. */
+    private prepareMenu(menu: Menu): Menu {
         const useNative = this.prefersNativeMenu();
         menu.setUseNativeMenu(useNative);
         if (!useNative) {
@@ -1675,14 +1712,7 @@ export class ChatView extends ItemView {
             activeDocument.addEventListener("keydown", onKey, true);
             menu.onHide(() => activeDocument.removeEventListener("keydown", onKey, true));
         }
-        // Keyboard-synthesized clicks (detail 0) carry no coordinates; anchor to the trigger instead.
-        const trigger = event.detail === 0 ? (event.currentTarget as HTMLElement | null) : null;
-        if (trigger) {
-            const rect = trigger.getBoundingClientRect();
-            menu.showAtPosition({ x: rect.left, y: rect.bottom });
-            return;
-        }
-        menu.showAtMouseEvent(event);
+        return menu;
     }
 
     private openNativeFilePicker(directory: boolean): void {

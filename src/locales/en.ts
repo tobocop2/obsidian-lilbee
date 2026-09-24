@@ -669,6 +669,7 @@ export const MESSAGES = {
     LABEL_DELETE_SESSION: "Delete",
     LABEL_FORK_SESSION: "Fork",
     LABEL_FORK_FROM_ANSWER: "Fork from this answer",
+    LABEL_ANSWER_ACTIONS_HINT: "Answer. Right-click, or press the menu key or Shift+F10, for actions.",
     PLACEHOLDER_FILTER_SESSIONS: "Filter conversations...",
     PLACEHOLDER_RENAME_SESSION: "New name (enter saves, esc cancels)",
     SESSIONS_COUNT: (count: number): string => `${count} saved`,
