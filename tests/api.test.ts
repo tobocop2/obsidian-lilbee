@@ -1664,14 +1664,34 @@ describe("fetchWithRetry()", () => {
 
             const outcome = client.listSessions().then(
                 () => "resolved",
-                (e: Error) => e.name,
+                () => "failed",
             );
-            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(14_999);
+            expect(await Promise.race([outcome, Promise.resolve("still pending")])).toBe("still pending");
+            await vi.advanceTimersByTimeAsync(1);
 
-            expect(await Promise.race([outcome, Promise.resolve("still pending")])).toBe("StreamIdleError");
+            expect(await Promise.race([outcome, Promise.resolve("still pending")])).toBe("failed");
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    // Chromium gives these statuses a non-null empty body, which a rebuilt Response rejects.
+    it.each([204, 205])("returns a %i response as it came, body and all", async (status) => {
+        const res = { ok: true, status, body: new ReadableStream<Uint8Array>(), headers: new Headers() };
+        fetchMock.mockResolvedValue(res as unknown as Response);
+
+        await expect(client.getSourceRaw("a.pdf")).resolves.toBe(res);
+    });
+
+    it("cancelling the body releases the response underneath", async () => {
+        const cancel = vi.fn();
+        fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ cancel }), { status: 200 }));
+
+        const res = await client.getSourceRaw("a.pdf");
+        await res.body!.cancel("closed");
+
+        expect(cancel).toHaveBeenCalledWith("closed");
     });
 
     it("reads a body that keeps flowing for longer than the default timeout", async () => {
