@@ -757,6 +757,8 @@ export default class LilbeePlugin extends Plugin {
         const binDir = sharedBinDir(registry.sharedRoot);
         const binaryPresent = new ServerBinary(binDir).installed() !== null;
         if (binaryPresent && !this.serverUninstalled) {
+            // True up the baseline before starting, the way the branches below do.
+            this.recordServerBaseline();
             await this.startManagedServer(onProgress, true, signal);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
@@ -1948,9 +1950,9 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Mirrors the mode and URL into the `previous*` pair. Call wherever
-     *  `settings.serverMode` is set outside `saveSettings()` itself. */
-    private recordServerBaseline(): void {
+    /** Mirrors the mode and URL into the `previous*` pair. Call after writing
+     *  `settings.serverMode` anywhere outside `saveSettings()` itself. */
+    recordServerBaseline(): void {
         this.previousServerMode = this.settings.serverMode;
         this.previousServerUrl = this.settings.serverUrl;
     }

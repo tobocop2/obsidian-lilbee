@@ -84,6 +84,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         serverManager: overrides.serverManager ?? null,
         startManagedServer: vi.fn().mockResolvedValue(undefined),
         saveSettings: vi.fn().mockResolvedValue(undefined),
+        recordServerBaseline: vi.fn(),
         activateChatView: vi.fn().mockResolvedValue(undefined),
         resumeDeferredAgentPicker: vi.fn().mockResolvedValue(undefined),
         isDownloadingServer: vi.fn(() => false),
@@ -465,7 +466,10 @@ describe("SetupWizard", () => {
             await tick();
 
             // The gate now owns persistence + the server start; the wizard no
-            // longer calls saveSettings directly.
+            // longer calls saveSettings directly. It does record the baseline
+            // right after writing serverMode, so a later unrelated save can't
+            // read a stale mode and start the server again.
+            expect(plugin.recordServerBaseline).toHaveBeenCalled();
             expect(plugin.ensureManagedConsentThenStart).toHaveBeenCalled();
             expect(plugin.startManagedServer).toHaveBeenCalled();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);

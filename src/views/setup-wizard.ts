@@ -517,6 +517,7 @@ export class SetupWizard extends Modal {
         nextBtn.addEventListener("click", () => {
             if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
+                this.plugin.recordServerBaseline();
                 nextBtn.disabled = true;
                 void this.startManagedAndAdvance(step, panel, setPhase, statusEl, nextBtn, selectExternal);
             } else {
