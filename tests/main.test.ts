@@ -1329,6 +1329,140 @@ describe("LilbeePlugin", () => {
             expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
             expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://newserver:8080");
         });
+
+        it("clears a stale cached version and re-reads it for the newly configured server", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            expect(plugin.serverSupportsSessionFork()).toBe(true);
+
+            // Point at a different, older server.
+            plugin.settings.serverUrl = "http://127.0.0.1:9999";
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await plugin.saveSettings();
+            await flush();
+
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
+
+        it("a save that changes neither the URL nor the mode does not re-request the server's health", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            await plugin.saveSettings();
+            await flush();
+            const health = plugin.api.health as ReturnType<typeof vi.fn>;
+            health.mockClear();
+
+            // A later save: still nothing about the server changed.
+            await plugin.saveSettings();
+            await flush();
+
+            expect(health).not.toHaveBeenCalled();
+        });
+
+        it("the very FIRST save after load does not re-request the server's health when nothing changed since load", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            const health = plugin.api.health as ReturnType<typeof vi.fn>;
+            health.mockClear();
+
+            // No baseline save first: this is the first saveSettings() call of the
+            // plugin's life, saving something unrelated to the server (mode/URL
+            // both still exactly what onload/loadSettings recorded).
+            await plugin.saveSettings();
+            await flush();
+
+            expect(health).not.toHaveBeenCalled();
+        });
+
+        it("an earlier switch's health answer cannot overwrite a later switch's, however late it arrives", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+
+            let resolveFirst!: (value: unknown) => void;
+            let resolveSecond!: (value: unknown) => void;
+            const firstResponse = new Promise((resolve) => {
+                resolveFirst = resolve;
+            });
+            const secondResponse = new Promise((resolve) => {
+                resolveSecond = resolve;
+            });
+            plugin.api.health = vi.fn().mockReturnValueOnce(firstResponse).mockReturnValueOnce(secondResponse);
+
+            // First save: point at a fork-capable server (still in flight).
+            plugin.settings.serverUrl = "http://127.0.0.1:8001";
+            const firstSave = plugin.saveSettings();
+            await flush();
+            // Second, later save: point at a server that is NOT fork-capable (also in flight).
+            plugin.settings.serverUrl = "http://127.0.0.1:8002";
+            const secondSave = plugin.saveSettings();
+            await flush();
+
+            // The SECOND (current) request resolves first...
+            resolveSecond({ isErr: () => false, isOk: () => true, value: { status: "ok", version: "0.6.90b420" } });
+            await flush();
+            // ...then the FIRST (stale) request resolves last, with a fork-capable version.
+            resolveFirst({ isErr: () => false, isOk: () => true, value: { status: "ok", version: "0.6.90b446" } });
+            await flush();
+            await Promise.all([firstSave, secondSave]);
+
+            // The stale, out-of-order answer must not win: the current server does not support fork.
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
+
+        it("a health-probe tick's answer is not overwritten by an earlier switch's stale response arriving later", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+
+            let resolveSwitch!: (value: unknown) => void;
+            const switchResponse = new Promise((resolve) => {
+                resolveSwitch = resolve;
+            });
+            plugin.api.health = vi.fn().mockReturnValueOnce(switchResponse);
+
+            // A switch's request starts (would report a fork-capable server) but is held back.
+            plugin.settings.serverUrl = "http://127.0.0.1:8003";
+            const save = plugin.saveSettings();
+            await flush();
+
+            // A probe tick fires next and resolves immediately, with a NON-fork-capable version.
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await (plugin as any).probeServerHealth();
+
+            // The switch's stale, fork-capable response finally arrives, after the probe already answered.
+            resolveSwitch({ isErr: () => false, isOk: () => true, value: { status: "ok", version: "0.6.90b446" } });
+            await flush();
+            await save;
+
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
     });
 
     describe("readCurrentToken() priority", () => {
@@ -4245,6 +4379,20 @@ describe("LilbeePlugin", () => {
             expect(plugin.serverSupportsSessionFork()).toBe(true);
             loadConfig.mockRestore();
         });
+
+        it("external mode learns the version from the startup health check, before the first probe tick", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await plugin.onload();
+            await flush();
+            // 0.6.90b420 has sessions but not the fork route (floor: 0.6.90b446). Failing
+            // open here is what lets Fork appear on an answer and then 404.
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
     });
 
     describe("chooseChatExportPath", () => {
@@ -4285,6 +4433,20 @@ describe("LilbeePlugin", () => {
             loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b446" });
             expect(plugin.serverSupportsSessionExport()).toBe(true);
             loadConfig.mockRestore();
+        });
+
+        it("external mode learns the version from the startup health check, before the first probe tick", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await plugin.onload();
+            await flush();
+            // 0.6.90b420 has sessions but not the markdown export route (floor: 0.6.90b446).
+            // Failing open here is what lets Save to vault attempt the server export and 404.
+            expect(plugin.serverSupportsSessionExport()).toBe(false);
         });
     });
 
@@ -6281,6 +6443,27 @@ describe("LilbeePlugin", () => {
             } finally {
                 vi.unstubAllGlobals();
             }
+        });
+
+        it("external outcome clears a stale cached version and re-reads it for the newly configured server", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockConsentResult = { kind: "external" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            // A previous external server left a cached version behind that supports
+            // fork; the server this switch points at does not.
+            (plugin as any).externalServerVersion = "0.6.90b446";
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+
+            await plugin.ensureManagedConsentThenStart();
+            await flush();
+
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
         });
 
         it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {

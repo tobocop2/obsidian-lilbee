@@ -177,28 +177,30 @@ export function relativeTime(timestamp: number): string {
     return `${days}d ago`;
 }
 
+/** Unknown versions fail open: the caller already degrades gracefully on a 404. */
+export function meetsVersionFloor(version: string, floor: string): boolean {
+    if (!version) return true;
+    return !isVersionOlder(version, floor);
+}
+
 /** Unknown versions fail open: the chat path already degrades gracefully on a 404. */
 export function supportsSessions(version: string): boolean {
-    if (!version) return true;
-    return !isVersionOlder(version, SESSIONS_MIN_SERVER_VERSION);
+    return meetsVersionFloor(version, SESSIONS_MIN_SERVER_VERSION);
 }
 
 /** Unknown versions fail open: the placement view renders its own explainer on a 404. */
 export function supportsPlacement(version: string): boolean {
-    if (!version) return true;
-    return !isVersionOlder(version, PLACEMENT_MIN_SERVER_VERSION);
+    return meetsVersionFloor(version, PLACEMENT_MIN_SERVER_VERSION);
 }
 
 /** Unknown versions fail open: a server without the fork route answers 404, and the chat view says so. */
 export function supportsSessionFork(version: string): boolean {
-    if (!version) return true;
-    return !isVersionOlder(version, SESSION_FORK_MIN_SERVER_VERSION);
+    return meetsVersionFloor(version, SESSION_FORK_MIN_SERVER_VERSION);
 }
 
 /** Unknown versions fail open: a server without the export route answers 404, and the caller says so. */
 export function supportsSessionExport(version: string): boolean {
-    if (!version) return true;
-    return !isVersionOlder(version, SESSION_EXPORT_MIN_SERVER_VERSION);
+    return meetsVersionFloor(version, SESSION_EXPORT_MIN_SERVER_VERSION);
 }
 
 /**

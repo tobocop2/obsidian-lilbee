@@ -18,6 +18,7 @@ import {
     type AgentWireOutcome,
 } from "./agent-integration";
 import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from "./api";
+import type { Result } from "./result";
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { electronDialog } from "./utils/file-dialog";
@@ -351,6 +352,10 @@ export default class LilbeePlugin extends Plugin {
     private pendingSyncCount = 0;
     private pendingHintTimeout: number | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
+    /** Compared in `saveSettings()` so an unrelated save doesn't re-request the
+     *  server's health; set from the loaded settings in `loadSettings()`, so the
+     *  first save after load only refreshes when the URL actually changed since. */
+    private previousServerUrl: string | null = null;
     private startingServer = false;
     private serverStartFailed = false;
     private unloaded = false;
@@ -393,9 +398,15 @@ export default class LilbeePlugin extends Plugin {
     // True once a health probe has validated status "ok". External readiness
     // belongs to the probe, never to a model-list response.
     private healthValidated = false;
-    // External-mode server version, cached from the health probe; managed mode
-    // reads the recorded install version instead.
+    // External-mode server version, refreshed by refreshExternalServerVersion()
+    // and the health probe; managed mode reads the recorded install version
+    // instead.
     private externalServerVersion = "";
+    // Bumped by every request that can write externalServerVersion (a launch/
+    // switch refresh or a probe tick), so a response that resolves out of
+    // order can tell it was superseded and skip the write. Same shape as
+    // ServerManager's startGeneration.
+    private externalVersionGeneration = 0;
     // The managed server has reached READY at least once this session. Until
     // it has, a failing health probe means "still coming up", not "error" —
     // so a fresh install / first-run wizard doesn't flash a red error pill
@@ -768,6 +779,7 @@ export default class LilbeePlugin extends Plugin {
             this.previousServerMode = SERVER_MODE.EXTERNAL;
             await this.persistAll();
             this.configureApi(this.settings.serverUrl);
+            void this.refreshExternalServerVersion();
             this.setStatusReady();
             new Notice(MESSAGES.NOTICE_SWITCHED_TO_EXTERNAL);
             // Navigation to the external server settings is the caller's job:
@@ -1301,12 +1313,30 @@ export default class LilbeePlugin extends Plugin {
         );
     }
 
+    /** The single place `externalServerVersion` gets (re)read outside the probe
+     *  tick: clears the cached value, then fills it from a fresh health check,
+     *  staying "" (which fails open) when the server doesn't answer. Call
+     *  whenever the plugin starts pointing at a (re)configured external server,
+     *  including a mode or URL switch, not only at launch. Shares a generation
+     *  counter with the probe tick, so a response that resolves out of order
+     *  (an earlier switch's check answering after a later one) is discarded
+     *  instead of overwriting the newer answer. */
+    private async refreshExternalServerVersion(): Promise<Result<HealthResponse, Error> | null> {
+        const generation = ++this.externalVersionGeneration;
+        this.externalServerVersion = "";
+        const health = await this.api.health().catch(() => null);
+        if (generation === this.externalVersionGeneration && health?.isOk()) {
+            this.externalServerVersion = health.value.version;
+        }
+        return health;
+    }
+
     /** External mode: on launch, tell the user when the running server is not the
      *  latest release. Best-effort — silent when offline or the server is unreachable. */
     private async warnExternalServerOutdated(): Promise<void> {
         try {
-            const health = await this.api.health();
-            if (health.isErr()) return;
+            const health = await this.refreshExternalServerVersion();
+            if (!health || health.isErr()) return;
             const latest = (await getLatestRelease(this.settings.includeDevBuilds)).tag.replace(/^v/, "");
             if (!latest || !isVersionOlder(health.value.version, latest)) return;
             // NOTICE_PERMANENT keeps it up until the user clicks it away.
@@ -1928,6 +1958,7 @@ export default class LilbeePlugin extends Plugin {
         // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
         this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
         this.previousServerMode = this.settings.serverMode;
+        this.previousServerUrl = this.settings.serverUrl;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
@@ -2092,7 +2123,9 @@ export default class LilbeePlugin extends Plugin {
 
     async saveSettings(): Promise<void> {
         const previousMode = this.previousServerMode;
+        const previousUrl = this.previousServerUrl;
         this.previousServerMode = this.settings.serverMode;
+        this.previousServerUrl = this.settings.serverUrl;
         await this.persistAll();
 
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -2107,6 +2140,12 @@ export default class LilbeePlugin extends Plugin {
                 this.serverManager = null;
             }
             this.configureApi(this.settings.serverUrl);
+            // Only a genuine switch needs a fresh read: an unrelated save (a
+            // toggle, a token edit) would otherwise re-request the server's
+            // health on every save for no reason.
+            if (previousMode === SERVER_MODE.MANAGED || previousUrl !== this.settings.serverUrl) {
+                void this.refreshExternalServerVersion();
+            }
             // The first successful health probe promotes this to "ready"; until
             // then the user sees "connecting..." so a non-lilbee server never
             // briefly claims ready on the strength of a mode switch alone.
@@ -2192,6 +2231,7 @@ export default class LilbeePlugin extends Plugin {
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
+        const generation = ++this.externalVersionGeneration;
         const health = await this.api.health().catch(() => null);
         // A 200 with a non-lilbee JSON body (e.g. {}) parses fine but is not a
         // healthy lilbee server. Only a body carrying status: "ok" counts, so a
@@ -2199,7 +2239,9 @@ export default class LilbeePlugin extends Plugin {
         if (health?.isOk() && health.value.status === "ok") {
             this.healthFailureStreak = 0;
             this.healthValidated = true;
-            if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
+            if (this.settings.serverMode === SERVER_MODE.EXTERNAL && generation === this.externalVersionGeneration) {
+                this.externalServerVersion = health.value.version;
+            }
             // Only a reconnect refetches the model: a restarted server may be on a different one.
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
@@ -2552,8 +2594,10 @@ export default class LilbeePlugin extends Plugin {
         return supportsPlacement(this.runningServerVersion());
     }
 
-    /** Managed mode knows the install version up front; external mode reports ""
-     *  (which fails open) until the first health probe caches one. */
+    /** Managed mode knows the install version up front; external mode caches it from
+     *  a health check run at launch, on every mode/URL switch, and on every
+     *  health-probe tick, so it always describes the server the plugin currently
+     *  points at. Reports "" (which fails open) only until the next such check answers. */
     private runningServerVersion(): string {
         return this.settings.serverMode === SERVER_MODE.MANAGED
             ? this.getSharedLilbeeVersion()
