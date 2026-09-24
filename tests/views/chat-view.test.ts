@@ -6231,7 +6231,7 @@ describe("ChatView — chat sessions", () => {
         expect((view as any).conversation.sessionId).toBe("s5");
     });
 
-    it("a resume that fails to load has already stopped the running answer", async () => {
+    it("a resume that fails to load has stopped the running answer and leaves send and resume free", async () => {
         const plugin = makePlugin();
         plugin.api.getSession = vi.fn().mockRejectedValue(new Error("gone"));
         const answer = abortableAnswer("partial");
@@ -6250,6 +6250,17 @@ describe("ChatView — chat sessions", () => {
             { role: "user", content: "q1" },
             { role: "assistant", content: "partial" },
         ]);
+
+        const next = streamOf("a2");
+        plugin.api.chatStream = next.mockFn;
+        container.find("lilbee-chat-textarea")!.value = "q2";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        expect(next.mockFn).toHaveBeenCalledTimes(1);
+        await next.done;
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        await (view as any).resumeSession("s5");
+        expect((view as any).conversation.sessionId).toBe("s5");
     });
 
     it("a resume started while the first turn's create is pending binds the resumed session", async () => {
