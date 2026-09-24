@@ -74,6 +74,7 @@ import {
     exportChatFile,
     saveChatNote,
     scopeFromChunkType,
+    type SessionScope,
 } from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
@@ -134,6 +135,12 @@ interface Conversation {
     title: string | null;
     /** A session write for this chat failed, so the server's copy is missing a turn. */
     persistFailed: boolean;
+}
+
+/** The model and search scope a session is opened with, as they stood when its first question was sent. */
+interface SessionOrigin {
+    model: string;
+    scope: SessionScope;
 }
 
 /** A chat with nothing said yet and no saved session. */
@@ -1030,10 +1037,9 @@ export class ChatView extends ItemView {
     }
 
     /** Open `conversation`'s session lazily, on its first turn, so an idle view creates nothing. Returns its id. */
-    private async ensureSession(conversation: Conversation, firstText: string): Promise<string> {
+    private async ensureSession(conversation: Conversation, firstText: string, origin: SessionOrigin): Promise<string> {
         if (conversation.sessionId) return conversation.sessionId;
-        const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
-        const created = await this.plugin.api.createSession(this.chatActive, scope);
+        const created = await this.plugin.api.createSession(origin.model, origin.scope);
         conversation.sessionId = created.meta.id;
         conversation.title = created.meta.title;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
@@ -1080,6 +1086,8 @@ export class ChatView extends ItemView {
     private async resumeSession(id: string): Promise<void> {
         let detail: SessionDetail;
         try {
+            // The server returns what it holds, so writes still queued for the session land first.
+            await this.persistQueue;
             detail = await this.plugin.api.getSession(id);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
@@ -1350,9 +1358,13 @@ export class ChatView extends ItemView {
             sessionId: null,
             conversation,
         };
+        const origin: SessionOrigin = {
+            model: this.chatActive,
+            scope: scopeFromChunkType(this.plugin.settings.searchChunkType),
+        };
         // Queued before the stream so the question is saved even if the answer never lands.
         this.queuePersist(conversation, async () => {
-            const sessionId = await this.ensureSession(conversation, text);
+            const sessionId = await this.ensureSession(conversation, text, origin);
             state.sessionId = sessionId;
             await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.USER, text, []);
         });

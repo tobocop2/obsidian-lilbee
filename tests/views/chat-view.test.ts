@@ -5800,6 +5800,7 @@ describe("ChatView — chat sessions", () => {
         const { mockFn, done } = streamOf("hi");
         plugin.api.chatStream = mockFn;
         const { container } = await openChat(plugin);
+        await tick();
 
         await send(container, "What is a bee?\nsecond line", done);
 
@@ -6042,6 +6043,69 @@ describe("ChatView — chat sessions", () => {
         expect((view as any).conversation.persistFailed).toBe(false);
     });
 
+    it("a chat's queued create carries the model and scope from when its question was sent", async () => {
+        const plugin = makePlugin();
+        plugin.api.createSession = vi
+            .fn()
+            .mockResolvedValueOnce(createdDetail("s1"))
+            .mockResolvedValueOnce(createdDetail("s2"));
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const held = deferred<ReturnType<typeof createdDetail>>();
+        append.mockReturnValueOnce(held.promise);
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { view, container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        (view as any).applyChatModel("phi3");
+        container
+            .findAll("lilbee-search-mode-btn")
+            .find((b) => b.textContent === MESSAGES.LABEL_SEARCH_RAW)!
+            .trigger("click");
+        await tick();
+        held.resolve(createdDetail("s1"));
+        await tick();
+        await tick();
+
+        expect(plugin.api.createSession).toHaveBeenNthCalledWith(2, "llama3", "both");
+    });
+
+    it("resumes only after the chat's queued writes land, so the view shows every saved turn", async () => {
+        const plugin = makePlugin();
+        const saved: { role: string; content: string; sources: string[]; ts: string }[] = [];
+        let saveA2!: () => void;
+        plugin.api.appendSessionMessage = vi.fn(async (_id: string, role: string, content: string) => {
+            if (content === "a2") await new Promise<void>((resolve) => (saveA2 = resolve));
+            saved.push({ role, content, sources: [], ts: "t" });
+            return { ...createdDetail("s1"), meta: { ...createdDetail("s1").meta, message_count: saved.length } };
+        });
+        plugin.api.getSession = vi.fn(async () => ({ ...createdDetail("s1"), messages: [...saved] }));
+        const { view, container } = await openChat(plugin);
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        await send(container, "q1", first.done);
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        const resumed = (view as any).resumeSession("s1");
+        await tick();
+        expect(plugin.api.getSession).not.toHaveBeenCalled();
+        saveA2();
+        await resumed;
+
+        expect((view as any).conversation.history.map((m: { content: string }) => m.content)).toEqual([
+            "q1",
+            "a1",
+            "q2",
+            "a2",
+        ]);
+    });
+
     it("a resume that races the first turn's create keeps the resumed session", async () => {
         const plugin = makePlugin();
         const create = deferred<ReturnType<typeof createdDetail>>();
@@ -6055,10 +6119,9 @@ describe("ChatView — chat sessions", () => {
         const { view, container } = await openChat(plugin);
 
         await send(container, "q1", done);
-        await (view as any).resumeSession("s5");
+        const resumed = (view as any).resumeSession("s5");
         create.resolve(createdDetail("s9"));
-        await tick();
-        await tick();
+        await resumed;
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
@@ -6073,10 +6136,9 @@ describe("ChatView — chat sessions", () => {
         const { view, container } = await openChat(plugin);
 
         await send(container, "q1", done);
-        await (view as any).resumeSession("s5");
+        const resumed = (view as any).resumeSession("s5");
         create.reject(new Error("store down"));
-        await tick();
-        await tick();
+        await resumed;
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
@@ -6096,10 +6158,9 @@ describe("ChatView — chat sessions", () => {
         await send(container, "q2", second.done);
         expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q2", []);
 
-        await (view as any).resumeSession("s5");
+        const resumed = (view as any).resumeSession("s5");
         held.reject(new Error('Server responded 404: {"detail":"No session with id \'s1\'"}'));
-        await tick();
-        await tick();
+        await resumed;
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
