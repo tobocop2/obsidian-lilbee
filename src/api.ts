@@ -12,6 +12,7 @@ import {
     HTTP_STATUS,
 } from "./types";
 import { ok, err, Result } from "./result";
+import { withIdleTimeout } from "./utils/idle";
 
 import type {
     AgentClient,
@@ -146,6 +147,29 @@ export function isClientError(error: unknown): boolean {
 function isServerError(error: unknown): boolean {
     const status = httpStatusOf(error);
     return status !== null && status >= HTTP_SERVER_ERROR;
+}
+
+/** `res` with its body read through a stream that fails once `idleMs` pass without a byte. */
+function idleBoundedBody(res: Response, idleMs: number, abort: () => void): Response {
+    if (!res.body) return res;
+    const chunks = withIdleTimeout(readChunks(res.body), idleMs, abort);
+    const body = new ReadableStream<Uint8Array>({
+        async pull(stream) {
+            const next = await chunks.next();
+            if (next.done) stream.close();
+            else stream.enqueue(next.value);
+        },
+    });
+    return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
+async function* readChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array, void> {
+    const reader = body.getReader();
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
+    }
 }
 
 /**
@@ -348,12 +372,13 @@ export class LilbeeClient {
                     },
                 };
                 let timer: number | undefined;
+                const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+                const controller = opts?.signal || opts?.stream ? null : new AbortController();
                 if (opts?.signal) {
                     fetchInit.signal = opts.signal;
-                } else if (!opts?.stream) {
-                    const controller = new AbortController();
+                } else if (controller) {
                     fetchInit.signal = controller.signal;
-                    timer = window.setTimeout(() => controller.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+                    timer = window.setTimeout(() => controller.abort(), timeoutMs);
                 }
                 try {
                     const res = await window.fetch(url, fetchInit);
@@ -371,7 +396,7 @@ export class LilbeeClient {
                     }
                     const okRes = await this.assertOk(res);
                     this.recordOutcome(REQUEST_OUTCOME.OK);
-                    return okRes;
+                    return controller ? idleBoundedBody(okRes, timeoutMs, () => controller.abort()) : okRes;
                 } finally {
                     if (timer !== undefined) window.clearTimeout(timer);
                 }

@@ -2094,7 +2094,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("fails the task and shows idle-stream notice when server stops sending events", async () => {
-            const { StreamIdleError } = await import("../src/utils");
+            const { StreamIdleError } = await import("../src/utils/idle");
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -3677,7 +3677,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("fails the task and shows idle-stream notice when add stream hangs", async () => {
-            const { StreamIdleError } = await import("../src/utils");
+            const { StreamIdleError } = await import("../src/utils/idle");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -4799,7 +4799,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("fails the task and shows idle-stream notice when crawl stream hangs", async () => {
-            const { StreamIdleError } = await import("../src/utils");
+            const { StreamIdleError } = await import("../src/utils/idle");
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -8092,7 +8092,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("skips the reindex-confirm prompt when retrying a file whose previous add just failed", async () => {
-            const { StreamIdleError } = await import("../src/utils");
+            const { StreamIdleError } = await import("../src/utils/idle");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -8159,7 +8159,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("clears the retry marker after a successful add so future adds prompt normally again", async () => {
-            const { StreamIdleError } = await import("../src/utils");
+            const { StreamIdleError } = await import("../src/utils/idle");
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";

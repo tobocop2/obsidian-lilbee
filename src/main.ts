@@ -124,9 +124,8 @@ import {
     sameWarnings,
     warmStatusText,
     STREAM_IDLE_TIMEOUT_MS,
-    StreamIdleError,
-    withIdleTimeout,
 } from "./utils";
+import { StreamIdleError, withIdleTimeout } from "./utils/idle";
 import { CatalogModal } from "./views/catalog-modal";
 import { ManagedConsentModal } from "./views/managed-consent-modal";
 import { ModelInfoModal } from "./views/model-info-modal";
