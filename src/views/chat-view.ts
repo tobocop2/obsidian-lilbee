@@ -165,13 +165,11 @@ interface AnswerAction {
     run: () => void;
 }
 
-const CONTEXT_MENU_KEY = "ContextMenu";
+/** Shift+F10 opens a focused answer's menu; the browser fires no contextmenu for it on macOS. */
 const SHIFT_CONTEXT_MENU_KEY = "F10";
 
-/** Keys that open a focused answer's menu: the menu key, or F10 with Shift. */
-function opensContextMenu(event: KeyboardEvent): boolean {
-    return event.key === CONTEXT_MENU_KEY || (event.shiftKey && event.key === SHIFT_CONTEXT_MENU_KEY);
-}
+/** The button Chromium reports on the contextmenu it fires for the menu key. */
+const KEYBOARD_CONTEXT_MENU_BUTTON = -1;
 
 /** Per-message streaming state: accumulated text and the live reasoning DOM. */
 interface StreamState {
@@ -1165,20 +1163,21 @@ export class ChatView extends ItemView {
         return actions;
     }
 
-    /** A saved answer with actions opens them on right-click, or on the menu key once focused. */
+    /** A saved answer with actions opens them on right-click, or from the keyboard once focused. */
     private addAnswerActions(bubble: HTMLElement, sessionId: string, index: number, text: string): void {
         const actions = this.answerActions(sessionId, index, text);
         if (actions.length === 0) return;
         bubble.setAttribute("tabindex", "0");
         bubble.setAttribute("role", "article");
         bubble.setAttribute("aria-label", MESSAGES.LABEL_ANSWER_ACTIONS_HINT);
-        bubble.setAttribute("aria-haspopup", "menu");
         bubble.addEventListener("contextmenu", (event) => {
             event.preventDefault();
-            this.prepareMenu(this.answerMenu(actions)).showAtMouseEvent(event);
+            const menu = this.prepareMenu(this.answerMenu(actions));
+            if (event.button === KEYBOARD_CONTEXT_MENU_BUTTON) this.showMenuBelow(menu, bubble);
+            else menu.showAtMouseEvent(event);
         });
         bubble.addEventListener("keydown", (event) => {
-            if (!opensContextMenu(event)) return;
+            if (!event.shiftKey || event.key !== SHIFT_CONTEXT_MENU_KEY) return;
             event.preventDefault();
             this.showMenuBelow(this.prepareMenu(this.answerMenu(actions)), bubble);
         });

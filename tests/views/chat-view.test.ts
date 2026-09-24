@@ -7294,9 +7294,18 @@ describe("ChatView — forking a session", () => {
 
     /** Right-click a transcript bubble with the fields Chromium sends: detail 0, button 2, the pointer. */
     function rightClick(bubble: MockElement, preventDefault = vi.fn()): Menu | null {
+        return contextMenu(bubble, 2, preventDefault);
+    }
+
+    /** The contextmenu Chromium fires for the menu key on a focused element: detail 0, button -1. */
+    function menuKeyContextMenu(bubble: MockElement, preventDefault = vi.fn()): Menu | null {
+        return contextMenu(bubble, -1, preventDefault);
+    }
+
+    function contextMenu(bubble: MockElement, button: number, preventDefault: () => void): Menu | null {
         (bubble as unknown as { getBoundingClientRect: () => typeof BUBBLE_RECT }).getBoundingClientRect = () =>
             BUBBLE_RECT;
-        const event = { detail: 0, button: 2, clientX: 40, clientY: 50, currentTarget: bubble, preventDefault };
+        const event = { detail: 0, button, clientX: 40, clientY: 50, currentTarget: bubble, preventDefault };
         return menuOpenedBy(() => bubble.trigger("contextmenu", event));
     }
 
@@ -7342,7 +7351,7 @@ describe("ChatView — forking a session", () => {
 
         expect(messagesEl.children.map((b) => b.getAttribute("tabindex"))).toEqual([null, "0", null, "0"]);
         expect(messagesEl.children[1].getAttribute("aria-label")).toBe(MESSAGES.LABEL_ANSWER_ACTIONS_HINT);
-        expect(messagesEl.children[1].getAttribute("aria-haspopup")).toBe("menu");
+        expect(messagesEl.children[1].getAttribute("aria-haspopup")).toBeNull();
         expect(messagesEl.children[1].getAttribute("role")).toBe("article");
         expect(messagesEl.children[0].getAttribute("aria-label")).toBeNull();
     });
@@ -7355,14 +7364,16 @@ describe("ChatView — forking a session", () => {
         expect(messagesEl.children.map((b) => b.getAttribute("tabindex"))).toEqual([null, null, null, null]);
     });
 
-    it.each([
-        ["the menu key", "ContextMenu", false],
-        ["Shift+F10", "F10", true],
-    ])("opens the same menu below a focused answer on %s", async (_name, key, shiftKey) => {
+    const openByKeyboard: Array<[string, (bubble: MockElement, preventDefault: () => void) => Menu | null]> = [
+        ["the menu key's contextmenu", (bubble, preventDefault) => menuKeyContextMenu(bubble, preventDefault)],
+        ["Shift+F10", (bubble, preventDefault) => pressKey(bubble, "F10", true, preventDefault)],
+    ];
+
+    it.each(openByKeyboard)("opens the same menu below a focused answer on %s", async (_name, open) => {
         const { messagesEl } = await resumed(makePlugin());
         const preventDefault = vi.fn();
 
-        const menu = pressKey(messagesEl.children[1], key, shiftKey, preventDefault)!;
+        const menu = open(messagesEl.children[1], preventDefault)!;
 
         expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_FORK_FROM_ANSWER]);
         expect(menu.position).toEqual({ x: BUBBLE_RECT.left, y: BUBBLE_RECT.bottom });
@@ -7370,6 +7381,36 @@ describe("ChatView — forking a session", () => {
     });
 
     it.each([
+        ...openByKeyboard,
+        ["a right-click", (bubble: MockElement, pd: () => void) => rightClick(bubble, pd)],
+    ] as Array<[string, (bubble: MockElement, preventDefault: () => void) => Menu | null]>)(
+        "follows the vault's native-menu setting and closes the in-window menu on Escape, on %s",
+        async (_name, open) => {
+            const { view, messagesEl } = await resumed(makePlugin());
+            (view.app.vault as any).getConfig = vi.fn().mockReturnValue(true);
+            expect(open(messagesEl.children[1], vi.fn())!.useNativeMenu).toBe(true);
+
+            (view.app.vault as any).getConfig = vi.fn().mockReturnValue(false);
+            const addListener = vi.spyOn(document, "addEventListener");
+            try {
+                const menu = open(messagesEl.children[1], vi.fn())!;
+                expect(menu.useNativeMenu).toBe(false);
+                const onKey = addListener.mock.calls.find(
+                    ([type, , capture]) => type === "keydown" && capture === true,
+                );
+                (onKey![1] as (e: KeyboardEvent) => void)({
+                    key: "Escape",
+                    preventDefault: vi.fn(),
+                } as unknown as KeyboardEvent);
+                expect(menu.visible).toBe(false);
+            } finally {
+                addListener.mockRestore();
+            }
+        },
+    );
+
+    it.each([
+        ["the menu key (the browser fires contextmenu for it)", "ContextMenu", false],
         ["F10 without Shift", "F10", false],
         ["another key", "Enter", true],
     ])("opens no menu on %s", async (_name, key, shiftKey) => {
