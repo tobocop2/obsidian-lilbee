@@ -1022,6 +1022,7 @@ export class ChatView extends ItemView {
             renamed: (id, title) => {
                 if (id === this.conversation.sessionId) this.conversation.title = title;
             },
+            writesSettled: () => this.persistQueue,
         }).open();
     }
 

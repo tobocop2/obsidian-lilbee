@@ -23,6 +23,8 @@ export interface SessionsModalHooks {
     exportActive: () => void;
     /** A session was renamed here, so a chat view showing it can take the new title. */
     renamed: (id: string, title: string) => void;
+    /** Settles once the chat view's queued session writes have finished. */
+    writesSettled: () => Promise<void>;
 }
 
 export class SessionsModal extends Modal {
@@ -78,6 +80,7 @@ export class SessionsModal extends Modal {
 
     private async load(): Promise<void> {
         try {
+            await this.hooks.writesSettled();
             this.sessions = await this.plugin.api.listSessions();
             this.loadFailed = false;
             this.disabled = false;
@@ -232,6 +235,7 @@ export class SessionsModal extends Modal {
     /** The server's markdown export of `meta`, or null after a notice saying why there is none. */
     private async sessionMarkdown(meta: SessionMeta): Promise<string | null> {
         try {
+            await this.hooks.writesSettled();
             return await this.plugin.api.getSessionMarkdown(meta.id);
         } catch (err) {
             if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) {
@@ -275,6 +279,8 @@ export class SessionsModal extends Modal {
             return;
         }
         try {
+            // A queued automatic title lands first, so the user's title is the last write.
+            await this.hooks.writesSettled();
             await this.plugin.api.renameSession(meta.id, title);
             meta.title = title;
             this.hooks.renamed(meta.id, title);
@@ -290,6 +296,7 @@ export class SessionsModal extends Modal {
         modal.open();
         if (!(await modal.result)) return;
         try {
+            await this.hooks.writesSettled();
             await this.plugin.api.deleteSession(meta.id);
             this.sessions = this.sessions.filter((s) => s.id !== meta.id);
             new Notice(MESSAGES.NOTICE_SESSION_DELETED(meta.title));
