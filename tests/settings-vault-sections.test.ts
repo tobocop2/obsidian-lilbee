@@ -142,6 +142,13 @@ function captureSettingCallbacks(fn: () => void) {
                 return origOnChange(handler);
             };
             cb(text);
+            // A box committed by the browser's change event: set its text and fire the event.
+            if ((text.inputEl._listeners["change"] ?? []).length > 0)
+                textOnChanges.push(async (value: string) => {
+                    text.inputEl.value = value;
+                    text.inputEl.trigger("change");
+                    await new Promise((r) => setTimeout(r, 0));
+                });
         });
     };
     // Capture button labels + onClick handlers without replacing the mock —
@@ -180,7 +187,7 @@ beforeEach(() => {
     Notice.clear?.();
 });
 
-describe("Shared root setting onChange", () => {
+describe("Shared root setting commit", () => {
     it("trims and saves the new path", async () => {
         const registry = makeRegistry();
         const plugin = makePlugin({ sharedRoot: "" }, registry);

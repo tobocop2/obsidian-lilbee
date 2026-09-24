@@ -67,8 +67,6 @@ import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
 import { UninstallModal } from "./views/uninstall-modal";
 import {
-    debounce,
-    DEBOUNCE_MS,
     percentFromSse,
     errorMessage,
     extractServerErrorDetail,
@@ -93,7 +91,15 @@ const RERANK_CANDIDATES_MAX = 100;
 const SEPARATOR_KEY = "__separator__";
 const SEPARATOR_LABEL = "\u2500\u2500 Other... \u2500\u2500";
 const ICON_RESET = "rotate-ccw";
-const KEY_ENTER = "Enter";
+type TextField = HTMLInputElement | HTMLTextAreaElement;
+
+/** How a box's commit ended: written; dropped (cancelled or nothing to send); refused, with the reason shown. */
+type CommitOutcome = "written" | "dropped" | "refused";
+const COMMIT_OUTCOME = {
+    WRITTEN: "written",
+    DROPPED: "dropped",
+    REFUSED: "refused",
+} as const satisfies Record<string, CommitOutcome>;
 
 // Credential-like fields that must never be clobbered by the global "Reset all" button,
 // even if the server endpoint returns a default for them. Resetting a user's API key to the
@@ -546,6 +552,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
+    // The text each box holds for the server's value: filled from the server, updated only by a successful commit.
+    private committedText: Map<TextField, string> = new Map();
     private serverConfigDropdowns: Map<string, { setValue: (v: string) => unknown }> = new Map();
     private serverConfigSliders: Map<string, { setValue: (v: number) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
@@ -692,10 +700,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     /** Write one server-config value and report the outcome, including why the server refused. */
-    private async pushConfig(key: string, value: unknown, name: string): Promise<void> {
+    private async pushConfig(key: string, value: unknown, name: string): Promise<CommitOutcome> {
         try {
             await applyConfig(this.plugin, { [key]: value });
             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+            return COMMIT_OUTCOME.WRITTEN;
         } catch (err) {
             const detail = err instanceof Error ? extractServerErrorDetail(err.message) : null;
             new Notice(
@@ -703,7 +712,27 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     ? MESSAGES.NOTICE_FAILED_UPDATE(name)
                     : MESSAGES.NOTICE_FAILED_UPDATE_REASON(name, detail),
             );
+            return COMMIT_OUTCOME.REFUSED;
         }
+    }
+
+    /** A value the plugin will not send: say why, once. */
+    private refuse(name: string, reason: string): CommitOutcome {
+        new Notice(MESSAGES.NOTICE_FAILED_UPDATE_REASON(name, reason));
+        return COMMIT_OUTCOME.REFUSED;
+    }
+
+    /** Commits a box on the browser's change event: Enter or leaving it, and only when its text changed. */
+    private commitOnChange(el: TextField, commit: (value: string) => Promise<CommitOutcome>): void {
+        el.addEventListener("change", () => void this.settleCommit(el, commit));
+    }
+
+    /** Records a written value; a dropped one puts the last written text back; a refused one stays for correcting. */
+    private async settleCommit(el: TextField, commit: (value: string) => Promise<CommitOutcome>): Promise<void> {
+        const sent = el.value;
+        const outcome = await commit(sent);
+        if (outcome === COMMIT_OUTCOME.WRITTEN) this.committedText.set(el, sent);
+        else if (outcome === COMMIT_OUTCOME.DROPPED) el.value = this.committedText.get(el) ?? "";
     }
 
     /** A server-config boolean on a toggle, with no reset affordance. */
@@ -738,6 +767,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.builtPlaceholders.clear();
         this.serverConfigToggles.clear();
         this.serverConfigTextAreas.clear();
+        this.committedText.clear();
         this.serverConfigDropdowns.clear();
         this.serverConfigHideableEls.clear();
 
@@ -1696,15 +1726,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         setting
             .setName(MESSAGES.LABEL_SHARED_ROOT)
             .setDesc(MESSAGES.DESC_SHARED_ROOT(resolved))
-            .addText((text) =>
-                text
-                    .setPlaceholder(resolved)
-                    .setValue(this.plugin.settings.sharedRoot)
-                    .onChange(async (value) => {
-                        this.plugin.settings.sharedRoot = value.trim();
-                        await this.plugin.saveSettings();
-                    }),
-            );
+            .addText((text) => {
+                text.setPlaceholder(resolved).setValue(this.plugin.settings.sharedRoot);
+                this.commitOnChange(text.inputEl, async (value) => {
+                    this.plugin.settings.sharedRoot = value.trim();
+                    await this.plugin.saveSettings();
+                    return COMMIT_OUTCOME.WRITTEN;
+                });
+            });
     }
 
     private applyAdoptDataDirRow(setting: Setting): void {
@@ -1780,15 +1809,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         setting
             .setName(MESSAGES.LABEL_SERVER_URL)
             .setDesc(MESSAGES.DESC_SERVER_URL_HELP)
-            .addText((text) =>
-                text
-                    .setPlaceholder(MESSAGES.PLACEHOLDER_HTTP_LOCALHOST)
-                    .setValue(this.plugin.settings.serverUrl)
-                    .onChange(async (value) => {
-                        this.plugin.settings.serverUrl = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_HTTP_LOCALHOST).setValue(this.plugin.settings.serverUrl);
+                this.commitOnChange(text.inputEl, async (value) => {
+                    this.plugin.settings.serverUrl = value;
+                    await this.plugin.saveSettings();
+                    return COMMIT_OUTCOME.WRITTEN;
+                });
+            });
 
         // Render re-runs on the same Setting; reuse the span instead of stacking a dot per refresh.
         const serverStatusEl =
@@ -1810,12 +1838,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(MESSAGES.LABEL_MANUAL_TOKEN)
             .setDesc(MESSAGES.DESC_MANUAL_TOKEN)
             .addText((text) => {
-                text.setPlaceholder("")
-                    .setValue(this.plugin.settings.manualToken)
-                    .onChange(async (value) => {
-                        this.plugin.settings.manualToken = value.trim();
-                        await this.plugin.saveSettings();
-                    });
+                text.setPlaceholder("").setValue(this.plugin.settings.manualToken);
+                this.commitOnChange(text.inputEl, async (value) => {
+                    this.plugin.settings.manualToken = value.trim();
+                    await this.plugin.saveSettings();
+                    return COMMIT_OUTCOME.WRITTEN;
+                });
                 text.inputEl.type = "password";
             });
         this.appendLocalResetAffordance(setting, "manualToken", MESSAGES.LABEL_MANUAL_TOKEN);
@@ -1961,6 +1989,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const formatted =
                 typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "";
             inputEl.value = formatted;
+            this.committedText.set(inputEl, formatted);
             const built = this.builtPlaceholders.get(key) ?? inputEl.placeholder;
             this.builtPlaceholders.set(key, built);
             inputEl.placeholder = formatted !== "" ? formatted : built;
@@ -1980,6 +2009,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const v = cfg[key];
             if (Array.isArray(v)) {
                 textArea.value = v.join("\n");
+                this.committedText.set(textArea, textArea.value);
             }
         }
         for (const [key, dropdown] of this.serverConfigDropdowns) {
@@ -2236,13 +2266,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addTextArea((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                    .setValue(initial)
-                    .onChange(async (value) => {
-                        this.plugin.settings[settingsKey] = value;
-                        await this.plugin.saveSettings();
-                        await this.pushSystemPrompt(spec.key, value, spec.name);
-                    });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT).setValue(initial);
+                this.commitOnChange(text.inputEl, async (value) => {
+                    this.plugin.settings[settingsKey] = value;
+                    await this.plugin.saveSettings();
+                    await this.pushSystemPrompt(spec.key, value, spec.name);
+                    // Saved for the next server start even when the live write fails.
+                    return COMMIT_OUTCOME.WRITTEN;
+                });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.appendPromptResetAffordance(setting, spec, settingsKey);
@@ -2282,18 +2313,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") {
-                            await this.pushConfig(spec.key, null, spec.name);
-                            return;
-                        }
-                        const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
-                        if (isNaN(num)) return;
-                        await this.pushConfig(spec.key, num, spec.name);
-                    });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET).setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
+                    if (trimmed === "") return this.pushConfig(spec.key, null, spec.name);
+                    const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
+                    if (isNaN(num)) return this.refuse(spec.name, MESSAGES.REASON_NOT_A_NUMBER);
+                    return this.pushConfig(spec.key, num, spec.name);
+                });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.appendResetAffordance(setting, spec.key, spec.name);
@@ -2427,12 +2454,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addText((text) => {
-                text.setPlaceholder(placeholder)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        await this.pushConfig(spec.key, trimmed === "" ? null : trimmed, spec.name);
-                    });
+                text.setPlaceholder(placeholder).setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
+                    return this.pushConfig(spec.key, trimmed === "" ? null : trimmed, spec.name);
+                });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.hideUntilServerReports(setting.settingEl, spec.key);
@@ -2637,28 +2663,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
-    /** Free text is sent on blur or Enter, never per keystroke: every prefix of a valid value is refused. */
     private applyLanguageTextRow(setting: Setting, spec: ConfigRowSpec): void {
         setting
             .setName(spec.name)
             .setDesc(spec.desc)
             .addText((text) => {
-                // Tracks input events, so filling the box from the server does not send it back.
-                let edited = false;
-                text.inputEl.addEventListener("input", () => {
-                    edited = true;
-                });
-                const commit = async (): Promise<void> => {
-                    if (!edited) return;
-                    edited = false;
-                    const trimmed = text.inputEl.value.trim();
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
                     // A blank box means "leave the server's language alone".
-                    if (trimmed === "") return;
-                    await this.pushConfig(spec.key, trimmed, spec.name);
-                };
-                text.inputEl.addEventListener("blur", () => void commit());
-                text.inputEl.addEventListener("keydown", (event: KeyboardEvent) => {
-                    if (event.key === KEY_ENTER) void commit();
+                    if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
+                    return this.pushConfig(spec.key, trimmed, spec.name);
                 });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
@@ -2693,7 +2707,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addTextArea((area) => {
-                area.onChange(async (value) => {
+                this.commitOnChange(area.inputEl, async (value) => {
                     const items = value
                         .split("\n")
                         .map((line) => line.trim())
@@ -2701,7 +2715,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     // An empty box means "use the server default", not "no
                     // languages" — sending [] would leave OCR unable to read
                     // anything at all.
-                    await this.pushConfig(spec.key, items.length > 0 ? items : null, spec.name);
+                    return this.pushConfig(spec.key, items.length > 0 ? items : null, spec.name);
                 });
                 this.serverConfigTextAreas.set(spec.key, area.inputEl);
             });
@@ -2713,11 +2727,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        await this.handleHideableNumberChange(value, spec.key, spec.name, opts);
-                    });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET).setValue("");
+                this.commitOnChange(text.inputEl, (value) =>
+                    this.handleHideableNumberChange(value, spec.key, spec.name, opts),
+                );
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.hideUntilServerReports(setting.settingEl, spec.key);
@@ -2734,19 +2747,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         key: string,
         name: string,
         opts: NumberFieldOpts,
-    ): Promise<void> {
+    ): Promise<CommitOutcome> {
         const trimmed = value.trim();
-        if (trimmed === "") return;
+        if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
         const num = opts.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
-        if (isNaN(num)) return;
-        if (opts.min !== undefined && num < opts.min) return;
+        if (isNaN(num)) return this.refuse(name, MESSAGES.REASON_NOT_A_NUMBER);
+        if (opts.min !== undefined && num < opts.min) return this.refuse(name, MESSAGES.REASON_AT_LEAST(opts.min));
         if (opts.reindex) {
             const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_REINDEX_WARNING.replace("{field}", name));
             confirmModal.open();
             const confirmed = await confirmModal.result;
-            if (!confirmed) return;
+            if (!confirmed) return COMMIT_OUTCOME.DROPPED;
         }
-        await this.pushConfig(key, num, name);
+        return this.pushConfig(key, num, name);
     }
 
     private loadEmbeddingDropdown(container: HTMLElement): void {
@@ -3111,22 +3124,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(MESSAGES.LABEL_EMBEDDING_MODEL)
             .setDesc(MESSAGES.DESC_EMBEDDING_MODEL)
             .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") return;
-                        const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
-                        confirmModal.open();
-                        const confirmed = await confirmModal.result;
-                        if (!confirmed) return;
-                        const result = await applyEmbeddingModel(this.plugin, trimmed);
-                        if (result.isErr()) {
-                            new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
-                            return;
-                        }
-                        new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                    });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT).setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
+                    if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
+                    const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
+                    confirmModal.open();
+                    const confirmed = await confirmModal.result;
+                    if (!confirmed) return COMMIT_OUTCOME.DROPPED;
+                    const result = await applyEmbeddingModel(this.plugin, trimmed);
+                    if (result.isErr()) {
+                        new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
+                        return COMMIT_OUTCOME.REFUSED;
+                    }
+                    new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                    return COMMIT_OUTCOME.WRITTEN;
+                });
                 this.serverConfigInputs.set("embedding_model", text.inputEl);
             });
     }
@@ -3193,21 +3206,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addText((text) => {
-                text.setPlaceholder(field.placeholder)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") {
-                            if (!field.nullable) return;
-                            await this.pushConfig(spec.key, null, spec.name);
-                            return;
-                        }
-                        const num = Number(trimmed);
-                        if (!Number.isFinite(num)) return;
-                        if (field.kind === "int" && !Number.isInteger(num)) return;
-                        if (field.min !== undefined && num < field.min) return;
-                        await this.pushConfig(spec.key, num, spec.name);
-                    });
+                text.setPlaceholder(field.placeholder).setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
+                    if (trimmed === "")
+                        return field.nullable ? this.pushConfig(spec.key, null, spec.name) : COMMIT_OUTCOME.DROPPED;
+                    const num = Number(trimmed);
+                    if (!Number.isFinite(num)) return this.refuse(spec.name, MESSAGES.REASON_NOT_A_NUMBER);
+                    if (field.kind === "int" && !Number.isInteger(num))
+                        return this.refuse(spec.name, MESSAGES.REASON_NOT_WHOLE_NUMBER);
+                    if (field.min !== undefined && num < field.min)
+                        return this.refuse(spec.name, MESSAGES.REASON_AT_LEAST(field.min));
+                    return this.pushConfig(spec.key, num, spec.name);
+                });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.appendResetAffordance(setting, spec.key, spec.name);
@@ -3276,12 +3287,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addTextArea((text) => {
-                text.setValue("").onChange(async (value) => {
+                text.setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
                     const patterns = value
                         .split("\n")
                         .map((pattern) => pattern.trim())
                         .filter((pattern) => pattern.length > 0);
-                    await this.pushConfig(spec.key, patterns, spec.name);
+                    return this.pushConfig(spec.key, patterns, spec.name);
                 });
                 text.inputEl.addClass("lilbee-crawl-exclude-patterns");
                 this.serverConfigTextAreas.set(spec.key, text.inputEl);
@@ -3445,12 +3457,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_WIKI_VAULT_FOLDER)
             .addText((text) => {
                 text.setValue(this.plugin.settings.wikiVaultFolder);
-                text.onChange(async (value) => {
+                this.commitOnChange(text.inputEl, async (value) => {
                     this.plugin.settings.wikiVaultFolder = value || DEFAULT_SETTINGS.wikiVaultFolder;
                     await this.plugin.saveSettings();
                     if (this.plugin.settings.wikiSyncToVault && this.plugin.wikiEnabled) {
                         this.plugin.initWikiSync();
                     }
+                    return COMMIT_OUTCOME.WRITTEN;
                 });
             });
         this.appendLocalResetAffordance(setting, "wikiVaultFolder", MESSAGES.LABEL_WIKI_VAULT_FOLDER);
@@ -3462,9 +3475,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(spec.name)
             .setDesc(spec.desc)
             .addTextArea((area) => {
-                area.onChange(async (value) => {
+                this.commitOnChange(area.inputEl, async (value) => {
                     const trimmed = value.trim();
-                    await this.pushConfig(spec.key, trimmed === "" ? null : trimmed, spec.name);
+                    return this.pushConfig(spec.key, trimmed === "" ? null : trimmed, spec.name);
                 });
                 this.serverConfigInputs.set(spec.key, area.inputEl);
             });
@@ -3651,18 +3664,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(field.name)
             .setDesc(field.desc)
             .addText((text) => {
-                text.setPlaceholder(field.placeholder)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") return;
-                        try {
-                            await applyConfig(this.plugin, { [field.key]: trimmed });
-                            new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_LOCAL_SERVER_URL);
-                        }
-                    });
+                text.setPlaceholder(field.placeholder).setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
+                    if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
+                    try {
+                        await applyConfig(this.plugin, { [field.key]: trimmed });
+                        new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
+                        return COMMIT_OUTCOME.WRITTEN;
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_LOCAL_SERVER_URL);
+                        return COMMIT_OUTCOME.REFUSED;
+                    }
+                });
                 this.serverConfigInputs.set(field.key, text.inputEl);
             });
         this.appendResetAffordance(setting, field.key, field.name);
@@ -3953,35 +3967,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private applyRerankCandidatesRow(setting: Setting): void {
-        const patch = debounce((...args: unknown[]) => {
-            const num = args[0] as number;
-            void this.patchRerankCandidates(num);
-        }, DEBOUNCE_MS);
-
         setting
             .setName(MESSAGES.LABEL_RERANKER_CANDIDATES)
             .setDesc(MESSAGES.DESC_RERANKER_CANDIDATES)
             .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_RERANK_CANDIDATES)
-                    .setValue("")
-                    .onChange((value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") return;
-                        const num = parseInt(trimmed, 10);
-                        if (isNaN(num) || num < RERANK_CANDIDATES_MIN || num > RERANK_CANDIDATES_MAX) return;
-                        patch.run(num);
-                    });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_RERANK_CANDIDATES).setValue("");
+                this.commitOnChange(text.inputEl, async (value) => {
+                    const trimmed = value.trim();
+                    if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
+                    const num = parseInt(trimmed, 10);
+                    if (isNaN(num) || num < RERANK_CANDIDATES_MIN || num > RERANK_CANDIDATES_MAX)
+                        return this.refuse(
+                            MESSAGES.LABEL_RERANKER_CANDIDATES,
+                            MESSAGES.REASON_BETWEEN(RERANK_CANDIDATES_MIN, RERANK_CANDIDATES_MAX),
+                        );
+                    return this.pushConfig("rerank_candidates", num, MESSAGES.LABEL_RERANKER_CANDIDATES);
+                });
                 this.serverConfigInputs.set("rerank_candidates", text.inputEl);
             });
-    }
-
-    private async patchRerankCandidates(num: number): Promise<void> {
-        try {
-            await applyConfig(this.plugin, { rerank_candidates: num });
-            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_RERANKER_CANDIDATES));
-        } catch {
-            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_RERANKER_CANDIDATES));
-        }
     }
 }
 
