@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { App, Notice, Platform } from "obsidian";
-import { mkdtempSync, readFileSync } from "fs";
+import { App, Notice } from "obsidian";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { MockElement } from "../__mocks__/obsidian";
@@ -267,12 +267,16 @@ describe("SessionsModal", () => {
     });
 
     describe("export to a file", () => {
+        const exportDirs: string[] = [];
+
         afterEach(() => {
-            Platform.isDesktopApp = true;
+            for (const dir of exportDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
         });
 
         function exportTarget(): string {
-            return join(mkdtempSync(join(tmpdir(), "lilbee-session-export-")), "chat.md");
+            const dir = mkdtempSync(join(tmpdir(), "lilbee-session-export-"));
+            exportDirs.push(dir);
+            return join(dir, "chat.md");
         }
 
         it("writes the row's session from the server's export to the chosen file and stays open", async () => {
@@ -305,15 +309,15 @@ describe("SessionsModal", () => {
             expect(Notice.instances).toEqual([]);
         });
 
-        it("hands the open chat's export to the chat view", async () => {
+        it("hands the open chat's export to the chat view with the row's title", async () => {
             const exportActive = vi.fn();
-            const plugin = makePlugin([makeSession({ id: "s7" })]);
+            const plugin = makePlugin([makeSession({ id: "s7", title: "Renamed chat" })]);
             const { el } = await openModal(plugin, makeHooks({ activeId: "s7", exportActive }));
 
             el.find("lilbee-session-export")!.trigger("click");
             await vi.runAllTimersAsync();
 
-            expect(exportActive).toHaveBeenCalledTimes(1);
+            expect(exportActive).toHaveBeenCalledExactlyOnceWith("Renamed chat");
             expect(plugin.chooseChatExportPath).not.toHaveBeenCalled();
         });
 
@@ -329,14 +333,6 @@ describe("SessionsModal", () => {
 
             expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_NOT_FOUND]);
             expect(() => readFileSync(target)).toThrow();
-        });
-
-        it("offers no export action on mobile", async () => {
-            Platform.isDesktopApp = false;
-            const { el } = await openModal(makePlugin([makeSession()]), makeHooks());
-
-            expect(el.find("lilbee-session-export")).toBeNull();
-            expect(el.find("lilbee-session-save")).not.toBeNull();
         });
     });
 

@@ -419,12 +419,10 @@ export class ChatView extends ItemView {
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => void this.saveToVault());
 
-        if (Platform.isDesktopApp) {
-            const exportBtn = actions.createEl("button", { cls: "lilbee-chat-export" });
-            setIcon(exportBtn, EXPORT_ICON);
-            exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
-            exportBtn.addEventListener("click", () => void this.exportToFile());
-        }
+        const exportBtn = actions.createEl("button", { cls: "lilbee-chat-export" });
+        setIcon(exportBtn, EXPORT_ICON);
+        exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
+        exportBtn.addEventListener("click", () => void this.exportToFile());
 
         const clearBtn = actions.createEl("button", { cls: "lilbee-chat-clear" });
         setIcon(clearBtn, "eraser");
@@ -999,7 +997,7 @@ export class ChatView extends ItemView {
             startNew: () => this.startNewConversation(),
             fork: (id) => void this.forkSession(id),
             saveActive: () => void this.saveToVault(),
-            exportActive: () => void this.exportToFile(),
+            exportActive: (title) => void this.exportToFile(title),
         }).open();
     }
 
@@ -1735,14 +1733,13 @@ export class ChatView extends ItemView {
         if (content !== null) await saveChatNote(this.app.vault, content);
     }
 
-    /** Write the open chat, as Save to vault would, to a file the user picks. */
-    async exportToFile(): Promise<void> {
+    /** Write the open chat, as Save to vault would, to a file the user picks. `title` defaults to the first question's. */
+    async exportToFile(title?: string): Promise<void> {
         const conversation = this.conversation;
         if (nothingToSave(conversation)) return;
-        const title = deriveSessionTitle(conversation.history[0].content);
         await exportChatFile(
             (name) => this.plugin.chooseChatExportPath(name),
-            chatExportName(title, conversation.sessionId),
+            chatExportName(title ?? deriveSessionTitle(conversation.history[0].content), conversation.sessionId),
             () => this.conversationMarkdown(conversation),
         );
     }

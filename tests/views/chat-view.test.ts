@@ -25,7 +25,7 @@ import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, compactionMarkerText } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
 import { EXPORT_ICON } from "../../src/utils/session";
-import { mkdtempSync, readFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { ok, err } from "../../src/result";
@@ -3516,14 +3516,18 @@ describe("ChatView — export chat to a file", () => {
         sessionsHooks.length = 0;
     });
 
+    const exportDirs: string[] = [];
+
     afterEach(() => {
-        Platform.isDesktopApp = true;
+        for (const dir of exportDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
 
     const EXPORT = "---\ntitle: Hello\n---\n\n# Hello\n";
 
     function exportTarget(): string {
-        return join(mkdtempSync(join(tmpdir(), "lilbee-chat-export-")), "chat.md");
+        const dir = mkdtempSync(join(tmpdir(), "lilbee-chat-export-"));
+        exportDirs.push(dir);
+        return join(dir, "chat.md");
     }
 
     async function openChat(plugin: LilbeePlugin) {
@@ -3559,14 +3563,6 @@ describe("ChatView — export chat to a file", () => {
         const btn = container.find("lilbee-chat-export")!;
         expect(btn.getAttribute("aria-label")).toBe(MESSAGES.LABEL_EXPORT_CHAT);
         expect(btn.getAttribute("data-icon")).toBe(EXPORT_ICON);
-    });
-
-    it("leaves the Export chat button out on mobile", async () => {
-        Platform.isDesktopApp = false;
-        const { container } = await openChat(makePlugin());
-
-        expect(container.find("lilbee-chat-export")).toBeNull();
-        expect(container.find("lilbee-chat-save")).not.toBeNull();
     });
 
     it("writes the server's export of the saved chat to the chosen file", async () => {
@@ -3659,10 +3655,11 @@ describe("ChatView — export chat to a file", () => {
         const { container } = await chatWithAnswer(plugin);
         container.find("lilbee-chat-sessions")!.trigger("click");
 
-        sessionsHooks[0].exportActive();
+        sessionsHooks[0].exportActive("Renamed chat");
         await tick();
         await tick();
 
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("renamed-chat-s1.md");
         expect(readFileSync(target, "utf8")).toBe(EXPORT);
     });
 

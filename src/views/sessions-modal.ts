@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Platform, setIcon } from "obsidian";
+import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { isHttpStatus } from "../api";
 import { HTTP_STATUS, type SessionMeta } from "../types";
@@ -19,8 +19,8 @@ export interface SessionsModalHooks {
     fork: (id: string) => void;
     /** Save the open chat to the vault the way the chat toolbar does. */
     saveActive: () => void;
-    /** Export the open chat to a file the way the chat toolbar does. */
-    exportActive: () => void;
+    /** Export the open chat to a file the way the chat toolbar does, named from the row's title. */
+    exportActive: (title: string) => void;
 }
 
 export class SessionsModal extends Modal {
@@ -195,7 +195,7 @@ export class SessionsModal extends Modal {
                 if (meta.id === this.hooks.activeId) this.hooks.saveActive();
                 else void this.saveToVault(meta);
             });
-            if (Platform.isDesktopApp) this.renderExportAction(actions, meta);
+            this.renderExportAction(actions, meta);
         }
 
         const deleteBtn = actions.createEl("button", { cls: "lilbee-session-delete" });
@@ -209,7 +209,7 @@ export class SessionsModal extends Modal {
         setIcon(exportBtn, EXPORT_ICON);
         exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
         exportBtn.addEventListener("click", () => {
-            if (meta.id === this.hooks.activeId) this.hooks.exportActive();
+            if (meta.id === this.hooks.activeId) this.hooks.exportActive(meta.title);
             else void this.exportToFile(meta);
         });
     }

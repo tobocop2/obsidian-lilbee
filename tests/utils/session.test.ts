@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { Notice, type Vault } from "obsidian";
-import { mkdtempSync, readFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -136,18 +136,34 @@ describe("chatExportName", () => {
         expect(name).toBe("a".repeat(59) + "-3f2a1b2c.md");
     });
 
+    it("strips the hyphens a title's leading punctuation leaves, like the server", () => {
+        expect(chatExportName(" - hello", ID)).toBe("hello-3f2a1b2c.md");
+    });
+
     it("names an unsaved chat from its title alone", () => {
         expect(chatExportName("Brake specs", null)).toBe("brake-specs.md");
     });
 });
 
 describe("exportChatFile", () => {
+    const exportDirs: string[] = [];
+
     beforeEach(() => {
         Notice.clear();
     });
 
+    afterEach(() => {
+        for (const dir of exportDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+
+    function exportDir(): string {
+        const dir = mkdtempSync(join(tmpdir(), "lilbee-export-"));
+        exportDirs.push(dir);
+        return dir;
+    }
+
     it("writes the content where the user chose and says where", async () => {
-        const target = join(mkdtempSync(join(tmpdir(), "lilbee-export-")), "bees.md");
+        const target = join(exportDir(), "bees.md");
         const choosePath = vi.fn().mockResolvedValue(target);
 
         await exportChatFile(choosePath, "bees-3f2a1b2c.md", () => Promise.resolve("# Bees\n"));
@@ -167,7 +183,7 @@ describe("exportChatFile", () => {
     });
 
     it("writes nothing when there is no content to export", async () => {
-        const target = join(mkdtempSync(join(tmpdir(), "lilbee-export-")), "bees.md");
+        const target = join(exportDir(), "bees.md");
 
         await exportChatFile(vi.fn().mockResolvedValue(target), "bees.md", () => Promise.resolve(null));
 
@@ -176,7 +192,7 @@ describe("exportChatFile", () => {
     });
 
     it("reports a failed write with its reason", async () => {
-        const target = join(mkdtempSync(join(tmpdir(), "lilbee-export-")), "missing", "bees.md");
+        const target = join(exportDir(), "missing", "bees.md");
 
         await exportChatFile(vi.fn().mockResolvedValue(target), "bees.md", () => Promise.resolve("# Bees"));
 

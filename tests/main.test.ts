@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
-import { App, MockElement, Platform, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { electronDialog } from "../src/utils/file-dialog";
 import {
     CAPABILITY,
@@ -689,10 +689,6 @@ describe("LilbeePlugin", () => {
         });
 
         describe("export-chat-to-file", () => {
-            afterEach(() => {
-                Platform.isDesktopApp = true;
-            });
-
             async function pluginWithExportableChat() {
                 const plugin = await createPlugin();
                 await plugin.onload();
@@ -717,13 +713,6 @@ describe("LilbeePlugin", () => {
 
                 expect(exportToFile).toHaveBeenCalledTimes(1);
                 expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
-            });
-
-            it("is unavailable on mobile", async () => {
-                const { cmd } = await pluginWithExportableChat();
-                Platform.isDesktopApp = false;
-
-                expect(cmd.checkCallback(true)).toBe(false);
             });
 
             it("is unavailable with no chat view open", async () => {
@@ -4275,7 +4264,9 @@ describe("LilbeePlugin", () => {
 
         it("returns null when the dialog is cancelled", async () => {
             const plugin = await createPlugin();
-            const dialog = vi.spyOn(electronDialog, "showSaveDialog").mockResolvedValue({ canceled: true });
+            const dialog = vi
+                .spyOn(electronDialog, "showSaveDialog")
+                .mockResolvedValue({ canceled: true, filePath: "/tmp/bees.md" });
 
             expect(await plugin.chooseChatExportPath("bees.md")).toBeNull();
             dialog.mockRestore();

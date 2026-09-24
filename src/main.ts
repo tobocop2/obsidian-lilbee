@@ -3,7 +3,6 @@ import {
     type Menu,
     type MenuItem,
     Notice,
-    Platform,
     Plugin,
     type TAbstractFile,
     TFile,
@@ -1613,7 +1612,6 @@ export default class LilbeePlugin extends Plugin {
             id: "export-chat-to-file",
             name: MESSAGES.COMMAND_EXPORT_CHAT,
             checkCallback: (checking) => {
-                if (!Platform.isDesktopApp) return false;
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
                 if (!chatLeaf || !(chatLeaf.view instanceof ChatView)) return false;
                 if (!checking) {
