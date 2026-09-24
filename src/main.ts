@@ -352,8 +352,7 @@ export default class LilbeePlugin extends Plugin {
     private pendingHintTimeout: number | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     /** Compared in `saveSettings()` so an unrelated save doesn't re-request the
-     *  server's health; set from the loaded settings in `loadSettings()`, so the
-     *  first save after load only refreshes when the URL actually changed since. */
+     *  server's health. Kept in sync with `previousServerMode` by `recordServerBaseline()`. */
     private previousServerUrl: string | null = null;
     private startingServer = false;
     private serverStartFailed = false;
@@ -757,6 +756,8 @@ export default class LilbeePlugin extends Plugin {
         const binDir = sharedBinDir(registry.sharedRoot);
         const binaryPresent = new ServerBinary(binDir).installed() !== null;
         if (binaryPresent && !this.serverUninstalled) {
+            // True up the baseline before starting, the way the branches below do.
+            this.recordServerBaseline();
             await this.startManagedServer(onProgress, true, signal);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
@@ -767,7 +768,7 @@ export default class LilbeePlugin extends Plugin {
         const result = await new ManagedConsentModal(this.app, this.settings.includeDevBuilds, binDir).openConsent();
         if (result.kind === MANAGED_CONSENT_RESULT.DOWNLOAD) {
             this.settings.serverMode = SERVER_MODE.MANAGED;
-            this.previousServerMode = SERVER_MODE.MANAGED;
+            this.recordServerBaseline();
             await this.persistAll();
             this.setServerUninstalled(false);
             await this.startManagedServer(onProgress, true, signal);
@@ -775,7 +776,7 @@ export default class LilbeePlugin extends Plugin {
         }
         if (result.kind === MANAGED_CONSENT_RESULT.EXTERNAL) {
             this.settings.serverMode = SERVER_MODE.EXTERNAL;
-            this.previousServerMode = SERVER_MODE.EXTERNAL;
+            this.recordServerBaseline();
             await this.persistAll();
             this.configureApi(this.settings.serverUrl);
             void this.refreshExternalServerVersion();
@@ -1948,6 +1949,13 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Mirrors the mode and URL into the `previous*` pair. Call after writing
+     *  `settings.serverMode` anywhere outside `saveSettings()` itself. */
+    recordServerBaseline(): void {
+        this.previousServerMode = this.settings.serverMode;
+        this.previousServerUrl = this.settings.serverUrl;
+    }
+
     async loadSettings(): Promise<void> {
         const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
         this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
@@ -1956,8 +1964,7 @@ export default class LilbeePlugin extends Plugin {
         this.settings.agentIntegration = { ...DEFAULT_AGENT_INTEGRATION, ...(raw?.agentIntegration ?? {}) };
         // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
         this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
-        this.previousServerMode = this.settings.serverMode;
-        this.previousServerUrl = this.settings.serverUrl;
+        this.recordServerBaseline();
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
@@ -2123,8 +2130,7 @@ export default class LilbeePlugin extends Plugin {
     async saveSettings(): Promise<void> {
         const previousMode = this.previousServerMode;
         const previousUrl = this.previousServerUrl;
-        this.previousServerMode = this.settings.serverMode;
-        this.previousServerUrl = this.settings.serverUrl;
+        this.recordServerBaseline();
         await this.persistAll();
 
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {

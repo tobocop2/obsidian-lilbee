@@ -6466,6 +6466,52 @@ describe("LilbeePlugin", () => {
             expect(plugin.serverSupportsSessionFork()).toBe(false);
         });
 
+        it("an unrelated save after the consent flow's external switch does not re-request the server's health", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockConsentResult = { kind: "external" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            // The URL mirror is stale here, the way it can be before this gate runs;
+            // the branch below must resync it, not just the mode.
+            (plugin as any).previousServerUrl = "http://stale-before-switch:1";
+            const health = plugin.api.health as ReturnType<typeof vi.fn>;
+            health.mockClear();
+
+            await plugin.ensureManagedConsentThenStart();
+            // The switch's own refresh is expected; only the NEXT, unrelated save matters.
+            health.mockClear();
+
+            // Nothing about the server changed since the consent flow's switch.
+            await plugin.saveSettings();
+            await flush();
+
+            expect(health).not.toHaveBeenCalled();
+        });
+
+        it("the DOWNLOAD branch resyncs a stale previous server URL too, not just the mode", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockConsentResult = { kind: "download" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            // The URL mirror is stale here, the way it can be before this gate runs;
+            // the branch below must resync it, not just the mode. Managed mode's
+            // saveSettings() never reads the URL mirror, so there is no health-call
+            // observation to assert here the way the EXTERNAL branch's test does;
+            // this checks the mirror the fix writes directly.
+            (plugin as any).previousServerUrl = "http://stale-before-download:1";
+
+            await plugin.ensureManagedConsentThenStart();
+
+            expect((plugin as any).previousServerUrl).toBe(plugin.settings.serverUrl);
+        });
+
         it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {
             mockInstalled.mockReturnValue(null);
             mockConsentResult = { kind: "external" };
@@ -6579,6 +6625,26 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(mockGatekeeperOpen).toHaveBeenCalled();
+        });
+
+        it("a mode switch to managed with the binary already present does not restart the server on the next unrelated save", async () => {
+            mockInstalled.mockReturnValue(INSTALLED);
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+            mockServerStart.mockClear();
+
+            // Mirrors the wizard's Managed-card handler: it writes serverMode
+            // directly, with no save, before calling this gate.
+            plugin.settings.serverMode = "managed";
+            await plugin.ensureManagedConsentThenStart();
+            mockServerStart.mockClear();
+
+            // Nothing about the server changed since the switch.
+            await plugin.saveSettings();
+            await flush();
+
+            expect(mockServerStart).not.toHaveBeenCalled();
         });
 
         it("a refused spawn defers to take-over negotiation instead of an error", async () => {
