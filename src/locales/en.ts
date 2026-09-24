@@ -704,8 +704,10 @@ export const MESSAGES = {
     ERROR_SESSION_FORK_FAILED: (reason: string): string => `Could not fork conversation: ${reason}`,
     ERROR_SESSION_FORK_NOT_FOUND:
         "Could not fork conversation: the server does not have it, has saved conversations off, or is too old to fork.",
-    ERROR_SESSION_FORK_BUSY: "Could not fork conversation: wait for the current answer or fork to finish.",
-    ERROR_SEND_WHILE_FORKING: "Wait for the fork to open, then send your question.",
+    ERROR_SESSION_FORK_BUSY:
+        "Could not fork conversation: wait for the current answer to finish or the conversation to open.",
+    ERROR_SESSION_RESUME_BUSY: "Could not resume conversation: another conversation is still opening.",
+    ERROR_SEND_WHILE_OPENING: "Wait for the conversation to open, then send your question.",
     ERROR_SESSION_FORK_OWNED: "Could not fork conversation: an agent owns it.",
     ERROR_SESSION_FORK_POINT_MOVED: "Could not fork here: the saved conversation has no such message at this point.",
     ERROR_SESSION_EXPORT_FAILED: (reason: string): string => `Could not save conversation: ${reason}`,

@@ -74,6 +74,7 @@ import {
     exportChatFile,
     saveChatNote,
     scopeFromChunkType,
+    type SessionScope,
 } from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
@@ -134,6 +135,12 @@ interface Conversation {
     title: string | null;
     /** A session write for this chat failed, so the server's copy is missing a turn. */
     persistFailed: boolean;
+}
+
+/** The model and search scope a session is opened with, as they stood when its first question was sent. */
+interface SessionOrigin {
+    model: string;
+    scope: SessionScope;
 }
 
 /** A chat with nothing said yet and no saved session. */
@@ -270,8 +277,8 @@ export class ChatView extends ItemView {
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
     private sending = false;
-    /** True while a fork request runs; a send is refused so no turn lands in the chat being replaced. */
-    private forking = false;
+    /** True while a fork or resume opens a conversation; a send is refused so no turn lands in the chat being replaced. */
+    private opening = false;
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
     private chatCatalogEntries: CatalogEntry[] = [];
@@ -1030,10 +1037,9 @@ export class ChatView extends ItemView {
     }
 
     /** Open `conversation`'s session lazily, on its first turn, so an idle view creates nothing. Returns its id. */
-    private async ensureSession(conversation: Conversation, firstText: string): Promise<string> {
+    private async ensureSession(conversation: Conversation, firstText: string, origin: SessionOrigin): Promise<string> {
         if (conversation.sessionId) return conversation.sessionId;
-        const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
-        const created = await this.plugin.api.createSession(this.chatActive, scope);
+        const created = await this.plugin.api.createSession(origin.model, origin.scope);
         conversation.sessionId = created.meta.id;
         conversation.title = created.meta.title;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
@@ -1078,18 +1084,27 @@ export class ChatView extends ItemView {
     }
 
     private async resumeSession(id: string): Promise<void> {
+        if (this.opening) {
+            new Notice(MESSAGES.ERROR_SESSION_RESUME_BUSY);
+            return;
+        }
+        this.opening = true;
         let detail: SessionDetail;
         try {
+            // Stop the in-flight answer and let it unwind first, so it queues no write after the wait below.
+            if (this.sending) {
+                this.streamController?.abort();
+                await this.inFlightSend;
+            }
+            // The server returns what it holds, so every write queued before this point lands first.
+            await this.persistQueue;
             detail = await this.plugin.api.getSession(id);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
             return;
-        }
-        // Stop the in-flight answer and let it unwind, so the restored chat can send at once.
-        if (this.sending) {
-            this.streamController?.abort();
-            await this.inFlightSend;
+        } finally {
+            this.opening = false;
         }
         this.showSession(detail);
         new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
@@ -1098,7 +1113,7 @@ export class ChatView extends ItemView {
     /** Copy the first `messageCount` messages of `sourceId` (all when omitted) into a new conversation and open it. */
     async forkSession(sourceId: string, messageCount?: number): Promise<void> {
         if (this.refuseForkWhileBusy()) return;
-        this.forking = true;
+        this.opening = true;
         let detail: SessionDetail;
         try {
             // The server copies what it holds, so writes still queued for the source land first.
@@ -1108,7 +1123,7 @@ export class ChatView extends ItemView {
             new Notice(this.forkErrorText(err));
             return;
         } finally {
-            this.forking = false;
+            this.opening = false;
         }
         this.showSession(detail);
         new Notice(MESSAGES.NOTICE_SESSION_FORKED(detail.meta.title));
@@ -1132,9 +1147,9 @@ export class ChatView extends ItemView {
         await this.forkSession(sessionId, index + 1);
     }
 
-    /** An answer or a fork in progress would land in the chat a fork replaces. */
+    /** An answer, fork or resume in progress would land in the chat a fork replaces. */
     private refuseForkWhileBusy(): boolean {
-        if (!this.sending && !this.forking) return false;
+        if (!this.sending && !this.opening) return false;
         new Notice(MESSAGES.ERROR_SESSION_FORK_BUSY);
         return true;
     }
@@ -1307,8 +1322,8 @@ export class ChatView extends ItemView {
 
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
-        if (this.forking) {
-            new Notice(MESSAGES.ERROR_SEND_WHILE_FORKING);
+        if (this.opening) {
+            new Notice(MESSAGES.ERROR_SEND_WHILE_OPENING);
             return;
         }
         if (!this.plugin.assertFleetReady()) return;
@@ -1350,9 +1365,13 @@ export class ChatView extends ItemView {
             sessionId: null,
             conversation,
         };
+        const origin: SessionOrigin = {
+            model: this.chatActive,
+            scope: scopeFromChunkType(this.plugin.settings.searchChunkType),
+        };
         // Queued before the stream so the question is saved even if the answer never lands.
         this.queuePersist(conversation, async () => {
-            const sessionId = await this.ensureSession(conversation, text);
+            const sessionId = await this.ensureSession(conversation, text, origin);
             state.sessionId = sessionId;
             await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.USER, text, []);
         });
