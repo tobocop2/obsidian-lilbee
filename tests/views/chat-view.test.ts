@@ -6106,22 +6106,68 @@ describe("ChatView — chat sessions", () => {
         ]);
     });
 
+    it("resuming the chat that is still answering shows what the server holds", async () => {
+        const plugin = makePlugin();
+        const saved: { role: string; content: string; sources: string[]; ts: string }[] = [];
+        let saveQ2!: () => void;
+        plugin.api.appendSessionMessage = vi.fn(async (_id: string, role: string, content: string) => {
+            if (content === "q2") await new Promise<void>((resolve) => (saveQ2 = resolve));
+            saved.push({ role, content, sources: [], ts: "t" });
+            return { ...createdDetail("s1"), meta: { ...createdDetail("s1").meta, message_count: saved.length } };
+        });
+        plugin.api.getSession = vi.fn(async () => ({ ...createdDetail("s1"), messages: [...saved] }));
+        const { view, container } = await openChat(plugin);
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        await send(container, "q1", first.done);
+        let finishA2!: () => void;
+        plugin.api.chatStream = vi.fn((_q: string, _h: unknown, _k: unknown, signal: AbortSignal) =>
+            (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: "a2" };
+                await new Promise<void>((resolve, reject) => {
+                    finishA2 = resolve;
+                    signal.addEventListener("abort", () =>
+                        reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+                    );
+                });
+                yield { event: SSE_EVENT.DONE, data: {} };
+            })(),
+        );
+        container.find("lilbee-chat-textarea")!.value = "q2";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        const resumed = (view as any).resumeSession("s1");
+        await tick();
+        finishA2();
+        await tick();
+        saveQ2();
+        await resumed;
+        await tick();
+        await tick();
+
+        const shown = (view as any).conversation.history.map((m: { content: string }) => m.content);
+        expect(shown).toEqual(saved.map((m) => m.content));
+    });
+
     it("a resume that races the first turn's create keeps the resumed session", async () => {
         const plugin = makePlugin();
         const create = deferred<ReturnType<typeof createdDetail>>();
         plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
-        plugin.api.getSession = vi.fn().mockResolvedValue({
-            ...createdDetail("s5"),
-            meta: { ...createdDetail("s5").meta, title: "Earlier chat" },
-        });
+        const fetched = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.getSession = vi.fn().mockReturnValue(fetched.promise);
         const { mockFn, done } = streamOf("a1");
         plugin.api.chatStream = mockFn;
         const { view, container } = await openChat(plugin);
 
-        await send(container, "q1", done);
         const resumed = (view as any).resumeSession("s5");
-        create.resolve(createdDetail("s9"));
+        await tick();
+        await send(container, "q1", done);
+        fetched.resolve({ ...createdDetail("s5"), meta: { ...createdDetail("s5").meta, title: "Earlier chat" } });
         await resumed;
+        create.resolve(createdDetail("s9"));
+        await tick();
+        await tick();
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
@@ -6130,15 +6176,20 @@ describe("ChatView — chat sessions", () => {
         const plugin = makePlugin();
         const create = deferred<ReturnType<typeof createdDetail>>();
         plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
-        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const fetched = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.getSession = vi.fn().mockReturnValue(fetched.promise);
         const { mockFn, done } = streamOf("a1");
         plugin.api.chatStream = mockFn;
         const { view, container } = await openChat(plugin);
 
-        await send(container, "q1", done);
         const resumed = (view as any).resumeSession("s5");
-        create.reject(new Error("store down"));
+        await tick();
+        await send(container, "q1", done);
+        fetched.resolve(createdDetail("s5"));
         await resumed;
+        create.reject(new Error("store down"));
+        await tick();
+        await tick();
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
@@ -6147,20 +6198,24 @@ describe("ChatView — chat sessions", () => {
         const plugin = makePlugin();
         const first = streamOf("a1");
         plugin.api.chatStream = first.mockFn;
-        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const fetched = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.getSession = vi.fn().mockReturnValue(fetched.promise);
         const { view, container } = await openChat(plugin);
         await send(container, "q1", first.done);
 
+        const resumed = (view as any).resumeSession("s5");
+        await tick();
         const held = deferred<ReturnType<typeof createdDetail>>();
         plugin.api.appendSessionMessage = vi.fn().mockReturnValue(held.promise);
         const second = streamOf("a2");
         plugin.api.chatStream = second.mockFn;
         await send(container, "q2", second.done);
         expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q2", []);
-
-        const resumed = (view as any).resumeSession("s5");
-        held.reject(new Error('Server responded 404: {"detail":"No session with id \'s1\'"}'));
+        fetched.resolve(createdDetail("s5"));
         await resumed;
+        held.reject(new Error('Server responded 404: {"detail":"No session with id \'s1\'"}'));
+        await tick();
+        await tick();
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });

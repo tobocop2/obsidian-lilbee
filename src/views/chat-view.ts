@@ -1084,20 +1084,20 @@ export class ChatView extends ItemView {
     }
 
     private async resumeSession(id: string): Promise<void> {
+        // Stop the in-flight answer and let it unwind first, so it queues no write after the wait below.
+        if (this.sending) {
+            this.streamController?.abort();
+            await this.inFlightSend;
+        }
         let detail: SessionDetail;
         try {
-            // The server returns what it holds, so writes still queued for the session land first.
+            // The server returns what it holds, so every write queued before this point lands first.
             await this.persistQueue;
             detail = await this.plugin.api.getSession(id);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
             return;
-        }
-        // Stop the in-flight answer and let it unwind, so the restored chat can send at once.
-        if (this.sending) {
-            this.streamController?.abort();
-            await this.inFlightSend;
         }
         this.showSession(detail);
         new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
