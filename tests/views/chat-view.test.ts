@@ -5877,6 +5877,26 @@ describe("ChatView — chat sessions", () => {
         expect(plugin.api.appendSessionMessage).not.toHaveBeenCalled();
     });
 
+    /** An answer that streams `text`, then ends when `finish` runs or stops on abort, as the real stream does. */
+    function abortableAnswer(text: string) {
+        let finish!: () => void;
+        let signal: AbortSignal | undefined;
+        const mockFn = vi.fn((_q: string, _h: unknown, _k: unknown, abort: AbortSignal) => {
+            signal = abort;
+            return (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: text };
+                await new Promise<void>((resolve, reject) => {
+                    finish = resolve;
+                    abort.addEventListener("abort", () =>
+                        reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+                    );
+                });
+                yield { event: SSE_EVENT.DONE, data: {} };
+            })();
+        });
+        return { mockFn, finish: () => finish(), aborted: () => signal?.aborted ?? false };
+    }
+
     function deferred<T>() {
         let resolve!: (v: T) => void;
         let reject!: (e: unknown) => void;
@@ -6043,6 +6063,34 @@ describe("ChatView — chat sessions", () => {
         expect((view as any).conversation.persistFailed).toBe(false);
     });
 
+    it("a 404 on the write for an answer that ends after a clear unbinds the cleared chat", async () => {
+        const plugin = makePlugin();
+        const answer = abortableAnswer("a1");
+        plugin.api.chatStream = answer.mockFn;
+        const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
+        const saveTurn = append.getMockImplementation()!;
+        append.mockImplementation((...args: unknown[]) =>
+            args[1] === "assistant"
+                ? Promise.reject(new Error('Server responded 404: {"detail":"No session with id \'s1\'"}'))
+                : saveTurn(...args),
+        );
+        const { view, container } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q1";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        const cleared = (view as any).conversation;
+        expect(cleared.sessionId).toBe("s1");
+
+        container.find("lilbee-chat-clear")!.trigger("click");
+        answer.finish();
+        await tick();
+        await tick();
+
+        expect(append).toHaveBeenCalledWith("s1", "assistant", "a1", []);
+        expect(cleared.sessionId).toBeNull();
+        expect(cleared.title).toBeNull();
+    });
+
     it("a chat's queued create carries the model and scope from when its question was sent", async () => {
         const plugin = makePlugin();
         plugin.api.createSession = vi
@@ -6120,26 +6168,15 @@ describe("ChatView — chat sessions", () => {
         const first = streamOf("a1");
         plugin.api.chatStream = first.mockFn;
         await send(container, "q1", first.done);
-        let finishA2!: () => void;
-        plugin.api.chatStream = vi.fn((_q: string, _h: unknown, _k: unknown, signal: AbortSignal) =>
-            (async function* () {
-                yield { event: SSE_EVENT.TOKEN, data: "a2" };
-                await new Promise<void>((resolve, reject) => {
-                    finishA2 = resolve;
-                    signal.addEventListener("abort", () =>
-                        reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
-                    );
-                });
-                yield { event: SSE_EVENT.DONE, data: {} };
-            })(),
-        );
+        const second = abortableAnswer("a2");
+        plugin.api.chatStream = second.mockFn;
         container.find("lilbee-chat-textarea")!.value = "q2";
         container.find("lilbee-chat-send")!.trigger("click");
         await tick();
 
         const resumed = (view as any).resumeSession("s1");
         await tick();
-        finishA2();
+        second.finish();
         await tick();
         saveQ2();
         await resumed;
@@ -6150,72 +6187,126 @@ describe("ChatView — chat sessions", () => {
         expect(shown).toEqual(saved.map((m) => m.content));
     });
 
-    it("a resume that races the first turn's create keeps the resumed session", async () => {
+    it("refuses a question sent while a resume opens, and keeps it in the box", async () => {
         const plugin = makePlugin();
-        const create = deferred<ReturnType<typeof createdDetail>>();
-        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
-        const fetched = deferred<ReturnType<typeof createdDetail>>();
-        plugin.api.getSession = vi.fn().mockReturnValue(fetched.promise);
-        const { mockFn, done } = streamOf("a1");
-        plugin.api.chatStream = mockFn;
+        const held = deferred<ReturnType<typeof createdDetail>>();
+        (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce(held.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const answer = abortableAnswer("a1");
+        plugin.api.chatStream = answer.mockFn;
         const { view, container } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q1";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
 
         const resumed = (view as any).resumeSession("s5");
         await tick();
-        await send(container, "q1", done);
-        fetched.resolve({ ...createdDetail("s5"), meta: { ...createdDetail("s5").meta, title: "Earlier chat" } });
+        await tick();
+        container.find("lilbee-chat-textarea")!.value = "q3";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        held.resolve(createdDetail("s1"));
         await resumed;
-        create.resolve(createdDetail("s9"));
-        await tick();
-        await tick();
 
+        expect(plugin.api.chatStream).toHaveBeenCalledTimes(1);
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SEND_WHILE_OPENING);
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("q3");
         expect((view as any).conversation.sessionId).toBe("s5");
     });
 
-    it("a store failure from a previous conversation doesn't unbind a resumed one", async () => {
+    it("refuses a second resume while the first one opens", async () => {
         const plugin = makePlugin();
-        const create = deferred<ReturnType<typeof createdDetail>>();
-        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
         const fetched = deferred<ReturnType<typeof createdDetail>>();
         plugin.api.getSession = vi.fn().mockReturnValue(fetched.promise);
-        const { mockFn, done } = streamOf("a1");
-        plugin.api.chatStream = mockFn;
-        const { view, container } = await openChat(plugin);
+        const { view } = await openChat(plugin);
 
-        const resumed = (view as any).resumeSession("s5");
+        const first = (view as any).resumeSession("s5");
         await tick();
-        await send(container, "q1", done);
+        const second = (view as any).resumeSession("s6");
         fetched.resolve(createdDetail("s5"));
+        await Promise.all([first, second]);
+
+        expect(plugin.api.getSession).toHaveBeenCalledTimes(1);
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_RESUME_BUSY);
+        expect((view as any).conversation.sessionId).toBe("s5");
+    });
+
+    it("a resume that fails to load has already stopped the running answer", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockRejectedValue(new Error("gone"));
+        const answer = abortableAnswer("partial");
+        plugin.api.chatStream = answer.mockFn;
+        const { view, container } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q1";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        await (view as any).resumeSession("s5");
+
+        expect(answer.aborted()).toBe(true);
+        expect((view as any).sending).toBe(false);
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_RESUME_FAILED("gone"));
+        expect((view as any).conversation.history).toEqual([
+            { role: "user", content: "q1" },
+            { role: "assistant", content: "partial" },
+        ]);
+    });
+
+    it("a resume started while the first turn's create is pending binds the resumed session", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            ...createdDetail("s5"),
+            meta: { ...createdDetail("s5").meta, title: "Earlier chat" },
+        });
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        const resumed = (view as any).resumeSession("s5");
+        create.resolve(createdDetail("s9"));
         await resumed;
-        create.reject(new Error("store down"));
-        await tick();
-        await tick();
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
 
-    it("a 404 on the previous chat's write leaves the new chat's session bound", async () => {
+    it("a store failure on a write pending when a resume starts leaves the resumed session bound", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        const resumed = (view as any).resumeSession("s5");
+        create.reject(new Error("store down"));
+        await resumed;
+
+        expect((view as any).conversation.sessionId).toBe("s5");
+    });
+
+    it("a 404 on a write pending when a resume starts leaves the resumed session bound", async () => {
         const plugin = makePlugin();
         const first = streamOf("a1");
         plugin.api.chatStream = first.mockFn;
-        const fetched = deferred<ReturnType<typeof createdDetail>>();
-        plugin.api.getSession = vi.fn().mockReturnValue(fetched.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
         const { view, container } = await openChat(plugin);
         await send(container, "q1", first.done);
 
-        const resumed = (view as any).resumeSession("s5");
-        await tick();
         const held = deferred<ReturnType<typeof createdDetail>>();
         plugin.api.appendSessionMessage = vi.fn().mockReturnValue(held.promise);
         const second = streamOf("a2");
         plugin.api.chatStream = second.mockFn;
         await send(container, "q2", second.done);
         expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q2", []);
-        fetched.resolve(createdDetail("s5"));
-        await resumed;
+
+        const resumed = (view as any).resumeSession("s5");
         held.reject(new Error('Server responded 404: {"detail":"No session with id \'s1\'"}'));
-        await tick();
-        await tick();
+        await resumed;
 
         expect((view as any).conversation.sessionId).toBe("s5");
     });
@@ -7789,7 +7880,7 @@ describe("ChatView — forking a session", () => {
         expect(plugin.api.appendSessionMessage).not.toHaveBeenCalled();
         expect(container.find("lilbee-chat-textarea")!.value).toBe("q3");
         expect(view.currentSessionId()).toBe("s6");
-        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SEND_WHILE_FORKING);
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SEND_WHILE_OPENING);
     });
 
     it.each([

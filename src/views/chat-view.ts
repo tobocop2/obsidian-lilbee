@@ -277,8 +277,8 @@ export class ChatView extends ItemView {
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
     private sending = false;
-    /** True while a fork request runs; a send is refused so no turn lands in the chat being replaced. */
-    private forking = false;
+    /** True while a fork or resume opens a conversation; a send is refused so no turn lands in the chat being replaced. */
+    private opening = false;
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
     private chatCatalogEntries: CatalogEntry[] = [];
@@ -1084,13 +1084,18 @@ export class ChatView extends ItemView {
     }
 
     private async resumeSession(id: string): Promise<void> {
-        // Stop the in-flight answer and let it unwind first, so it queues no write after the wait below.
-        if (this.sending) {
-            this.streamController?.abort();
-            await this.inFlightSend;
+        if (this.opening) {
+            new Notice(MESSAGES.ERROR_SESSION_RESUME_BUSY);
+            return;
         }
+        this.opening = true;
         let detail: SessionDetail;
         try {
+            // Stop the in-flight answer and let it unwind first, so it queues no write after the wait below.
+            if (this.sending) {
+                this.streamController?.abort();
+                await this.inFlightSend;
+            }
             // The server returns what it holds, so every write queued before this point lands first.
             await this.persistQueue;
             detail = await this.plugin.api.getSession(id);
@@ -1098,6 +1103,8 @@ export class ChatView extends ItemView {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
             return;
+        } finally {
+            this.opening = false;
         }
         this.showSession(detail);
         new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
@@ -1106,7 +1113,7 @@ export class ChatView extends ItemView {
     /** Copy the first `messageCount` messages of `sourceId` (all when omitted) into a new conversation and open it. */
     async forkSession(sourceId: string, messageCount?: number): Promise<void> {
         if (this.refuseForkWhileBusy()) return;
-        this.forking = true;
+        this.opening = true;
         let detail: SessionDetail;
         try {
             // The server copies what it holds, so writes still queued for the source land first.
@@ -1116,7 +1123,7 @@ export class ChatView extends ItemView {
             new Notice(this.forkErrorText(err));
             return;
         } finally {
-            this.forking = false;
+            this.opening = false;
         }
         this.showSession(detail);
         new Notice(MESSAGES.NOTICE_SESSION_FORKED(detail.meta.title));
@@ -1140,9 +1147,9 @@ export class ChatView extends ItemView {
         await this.forkSession(sessionId, index + 1);
     }
 
-    /** An answer or a fork in progress would land in the chat a fork replaces. */
+    /** An answer, fork or resume in progress would land in the chat a fork replaces. */
     private refuseForkWhileBusy(): boolean {
-        if (!this.sending && !this.forking) return false;
+        if (!this.sending && !this.opening) return false;
         new Notice(MESSAGES.ERROR_SESSION_FORK_BUSY);
         return true;
     }
@@ -1315,8 +1322,8 @@ export class ChatView extends ItemView {
 
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
-        if (this.forking) {
-            new Notice(MESSAGES.ERROR_SEND_WHILE_FORKING);
+        if (this.opening) {
+            new Notice(MESSAGES.ERROR_SEND_WHILE_OPENING);
             return;
         }
         if (!this.plugin.assertFleetReady()) return;
