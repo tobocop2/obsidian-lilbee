@@ -6466,6 +6466,34 @@ describe("LilbeePlugin", () => {
             expect(plugin.serverSupportsSessionFork()).toBe(false);
         });
 
+        it("an unrelated save after the consent flow's external switch does not re-request the server's health", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockConsentResult = { kind: "external" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            // The URL mirror is stale here, the way it can be before this gate runs;
+            // the branch below must resync it, not just the mode.
+            (plugin as any).previousServerUrl = "http://stale-before-switch:1";
+            const health = plugin.api.health as ReturnType<typeof vi.fn>;
+            health.mockClear();
+
+            await plugin.ensureManagedConsentThenStart();
+            // The switch's own refresh is expected; only the NEXT, unrelated save matters.
+            health.mockClear();
+
+            // Nothing about the server changed since the consent flow's switch.
+            await plugin.saveSettings();
+            await flush();
+
+            expect(health).not.toHaveBeenCalled();
+        });
+
         it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {
             mockInstalled.mockReturnValue(null);
             mockConsentResult = { kind: "external" };
