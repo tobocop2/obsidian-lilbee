@@ -18,6 +18,7 @@ import {
     type AgentWireOutcome,
 } from "./agent-integration";
 import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from "./api";
+import type { Result } from "./result";
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { electronDialog } from "./utils/file-dialog";
@@ -768,6 +769,7 @@ export default class LilbeePlugin extends Plugin {
             this.previousServerMode = SERVER_MODE.EXTERNAL;
             await this.persistAll();
             this.configureApi(this.settings.serverUrl);
+            void this.refreshExternalServerVersion();
             this.setStatusReady();
             new Notice(MESSAGES.NOTICE_SWITCHED_TO_EXTERNAL);
             // Navigation to the external server settings is the caller's job:
@@ -1301,15 +1303,24 @@ export default class LilbeePlugin extends Plugin {
         );
     }
 
-    /** External mode: on launch, cache the running server's version so feature floors
-     *  don't fail open until the first health-probe tick, and tell the user when the
-     *  running server is not the latest release. Best-effort — silent when offline or
-     *  the server is unreachable. */
+    /** The single place `externalServerVersion` gets (re)read: clears the cached
+     *  value, then fills it from a fresh health check, staying "" (which fails
+     *  open) when the server doesn't answer. Call whenever the plugin starts
+     *  pointing at a (re)configured external server, including a mode or URL
+     *  switch, not only at launch. */
+    private async refreshExternalServerVersion(): Promise<Result<HealthResponse, Error> | null> {
+        this.externalServerVersion = "";
+        const health = await this.api.health().catch(() => null);
+        if (health?.isOk()) this.externalServerVersion = health.value.version;
+        return health;
+    }
+
+    /** External mode: on launch, tell the user when the running server is not the
+     *  latest release. Best-effort — silent when offline or the server is unreachable. */
     private async warnExternalServerOutdated(): Promise<void> {
         try {
-            const health = await this.api.health();
-            if (health.isErr()) return;
-            this.externalServerVersion = health.value.version;
+            const health = await this.refreshExternalServerVersion();
+            if (!health || health.isErr()) return;
             const latest = (await getLatestRelease(this.settings.includeDevBuilds)).tag.replace(/^v/, "");
             if (!latest || !isVersionOlder(health.value.version, latest)) return;
             // NOTICE_PERMANENT keeps it up until the user clicks it away.
@@ -2110,6 +2121,7 @@ export default class LilbeePlugin extends Plugin {
                 this.serverManager = null;
             }
             this.configureApi(this.settings.serverUrl);
+            void this.refreshExternalServerVersion();
             // The first successful health probe promotes this to "ready"; until
             // then the user sees "connecting..." so a non-lilbee server never
             // briefly claims ready on the strength of a mode switch alone.
@@ -2556,8 +2568,9 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /** Managed mode knows the install version up front; external mode caches it from
-     *  the startup health check, then keeps it fresh on every health-probe tick. Reports
-     *  "" (which fails open) only until that first check answers. */
+     *  a health check run at launch, on every mode/URL switch, and on every
+     *  health-probe tick, so it always describes the server the plugin currently
+     *  points at. Reports "" (which fails open) only until the next such check answers. */
     private runningServerVersion(): string {
         return this.settings.serverMode === SERVER_MODE.MANAGED
             ? this.getSharedLilbeeVersion()

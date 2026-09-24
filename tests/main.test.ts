@@ -1329,6 +1329,30 @@ describe("LilbeePlugin", () => {
             expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
             expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://newserver:8080");
         });
+
+        it("clears a stale cached version and re-reads it for the newly configured server", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            expect(plugin.serverSupportsSessionFork()).toBe(true);
+
+            // Point at a different, older server.
+            plugin.settings.serverUrl = "http://127.0.0.1:9999";
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await plugin.saveSettings();
+            await flush();
+
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
     });
 
     describe("readCurrentToken() priority", () => {
@@ -6309,6 +6333,27 @@ describe("LilbeePlugin", () => {
             } finally {
                 vi.unstubAllGlobals();
             }
+        });
+
+        it("external outcome clears a stale cached version and re-reads it for the newly configured server", async () => {
+            mockInstalled.mockReturnValue(null);
+            mockConsentResult = { kind: "external" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            // A previous external server left a cached version behind that supports
+            // fork; the server this switch points at does not.
+            (plugin as any).externalServerVersion = "0.6.90b446";
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+
+            await plugin.ensureManagedConsentThenStart();
+            await flush();
+
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
         });
 
         it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {
