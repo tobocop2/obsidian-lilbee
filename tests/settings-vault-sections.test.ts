@@ -136,25 +136,19 @@ function captureSettingCallbacks(fn: () => void) {
     const origAddText = Setting.prototype.addText;
     Setting.prototype.addText = function (cb: (text: any) => void) {
         return origAddText.call(this, (text: any) => {
-            const listeners = new Map<string, () => void>();
             const origOnChange = text.onChange.bind(text);
             text.onChange = (handler: (value: string) => void | Promise<void>) => {
                 textOnChanges.push(handler);
                 return origOnChange(handler);
             };
-            // A box on the shared commit helper: typing a value and leaving the box sends it.
-            text.inputEl.addEventListener = (event: string, handler: () => void) => {
-                listeners.set(event, handler);
-                if (event !== "focus") return;
+            cb(text);
+            // A box committed by the browser's change event: set its text and fire the event.
+            if ((text.inputEl._listeners["change"] ?? []).length > 0)
                 textOnChanges.push(async (value: string) => {
-                    listeners.get("focus")?.();
                     text.inputEl.value = value;
-                    listeners.get("input")?.();
-                    listeners.get("blur")?.();
+                    text.inputEl.trigger("change");
                     await new Promise((r) => setTimeout(r, 0));
                 });
-            };
-            cb(text);
         });
     };
     // Capture button labels + onClick handlers without replacing the mock —

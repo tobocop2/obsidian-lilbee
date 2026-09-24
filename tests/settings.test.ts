@@ -306,53 +306,69 @@ interface BlurCapture {
 
 /** Drives one text box the way a user does: focus, keystrokes, Enter, leaving it. */
 interface FieldDriver {
-    inputEl: { value: string; type: string };
+    inputEl: MockElement & { type: string };
     /** Focus the box if it is not focused, then set its value and fire what one keystroke fires. */
     type: (value: string) => void;
-    /** Fire the box's keydown listeners for one key. */
+    /** Fire the box's keydown for one key, and the change event the browser fires for Enter in a one-line box. */
     press: (key: string) => void;
-    /** Leave the box: fire its blur listeners. */
+    /** Leave the box: the browser's change event if the text changed, then blur. */
     blur: () => void;
 }
 
 /** Lets every promise chain a handler started settle before the test asserts. */
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-/** Wraps a text or text-area component so a test can type into it and leave it. */
-function driveTextField(text: any, onChangeHandlers: TextOnChange[]): FieldDriver {
-    const listeners = new Map<string, Array<(event?: unknown) => void>>();
-    let onChange: TextOnChange | null = null;
+/**
+ * Wraps a text box or text area so a test can type into it and leave it. It fires `change` as
+ * Chromium does: on Enter in a one-line box or on leaving the box, only when the text differs from
+ * the text at focus, at the last change, or at the last programmatic set.
+ */
+function driveTextField(text: any, onChangeHandlers: TextOnChange[], oneLine: boolean): FieldDriver {
+    const el = text.inputEl as MockElement & { type: string };
+    let raw = el.value;
+    let baseline = raw;
     let focused = false;
-    const fire = (event: string, arg?: unknown): void => {
-        for (const listener of listeners.get(event) ?? []) listener(arg);
-    };
+    let onChange: TextOnChange | null = null;
+    Object.defineProperty(el, "value", {
+        get: () => raw,
+        set: (v: string) => {
+            raw = v;
+            baseline = v;
+        },
+    });
     const origOnChange = text.onChange.bind(text);
     text.onChange = (handler: TextOnChange) => {
         onChange = handler;
         onChangeHandlers.push(handler);
         return origOnChange(handler);
     };
-    const driver: FieldDriver = {
-        inputEl: text.inputEl,
+    const changeIfEdited = (): void => {
+        if (raw === baseline) return;
+        baseline = raw;
+        el.trigger("change");
+    };
+    return {
+        inputEl: el,
         type: (value: string) => {
-            if (!focused) fire("focus");
-            focused = true;
-            text.inputEl.value = value;
-            fire("input");
+            if (!focused) {
+                focused = true;
+                baseline = raw;
+                el.trigger("focus");
+            }
+            raw = value;
+            el.trigger("input");
             void onChange?.(value);
         },
-        press: (key: string) => fire("keydown", { key }),
+        press: (key: string) => {
+            el.trigger("keydown", { key, preventDefault: () => undefined });
+            if (key === "Enter" && oneLine && focused) changeIfEdited();
+        },
         blur: () => {
+            if (focused) changeIfEdited();
             focused = false;
-            fire("blur");
+            el.trigger("blur");
         },
     };
-    text.inputEl.addEventListener = (event: string, handler: (event?: unknown) => void) => {
-        listeners.set(event, [...(listeners.get(event) ?? []), handler]);
-        // The shared commit helper listens for focus; list it where the old per-keystroke handler stood.
-        if (event === "focus") onChangeHandlers.push((value: string) => commitThrough(driver, value));
-    };
-    return driver;
 }
 
 /** Type a value into a box and leave it, as a user committing one edit does. */
@@ -360,6 +376,12 @@ async function commitThrough(driver: FieldDriver, value: string): Promise<void> 
     driver.type(value);
     driver.blur();
     await settle();
+}
+
+/** A row the change event commits is listed where its old per-keystroke handler stood. */
+function listIfCommitted(driver: FieldDriver, handlers: TextOnChange[]): void {
+    if ((driver.inputEl._listeners["change"] ?? []).length > 0)
+        handlers.push((value: string) => commitThrough(driver, value));
 }
 
 interface Captured {
@@ -457,38 +479,37 @@ function captureSettingCallbacks(fn: () => void): Captured {
     Setting.prototype.addText = function (cb: (text: any) => void) {
         const name = currentName;
         return origAddText.call(this, (text: any) => {
-            const driver = driveTextField(text, textOnChanges);
-            const origListen = text.inputEl.addEventListener;
-            text.inputEl.addEventListener = (event: string, handler: BlurHandler) => {
-                origListen(event, handler);
-                if (event !== "blur") return;
-                const capture: BlurCapture = {
-                    handler,
-                    inputEl: text.inputEl,
-                    edit: (value: string) => driver.type(value),
-                    press: (key: string) => driver.press(key),
-                };
-                blurHandlers.push(capture);
-                blurByName.set(name, capture);
-            };
+            const driver = driveTextField(text, textOnChanges, true);
             if (name) {
                 textByName.set(name, (value: string) => commitThrough(driver, value));
                 textInputByName.set(name, text.inputEl);
                 fieldByName.set(name, driver);
             }
             cb(text);
+            listIfCommitted(driver, textOnChanges);
+            for (const handler of driver.inputEl._listeners["blur"] ?? []) {
+                const capture: BlurCapture = {
+                    handler: handler as BlurHandler,
+                    inputEl: text.inputEl,
+                    edit: (value: string) => driver.type(value),
+                    press: (key: string) => driver.press(key),
+                };
+                blurHandlers.push(capture);
+                blurByName.set(name, capture);
+            }
         });
     };
 
     (Setting.prototype as any).addTextArea = function (cb: (text: any) => void) {
         const name = currentName;
         return origAddTextArea.call(this, (text: any) => {
-            const driver = driveTextField(text, textAreaOnChanges);
+            const driver = driveTextField(text, textAreaOnChanges, false);
             if (name) {
                 textAreaByName.set(name, (value: string) => commitThrough(driver, value));
                 fieldByName.set(name, driver);
             }
             cb(text);
+            listIfCommitted(driver, textAreaOnChanges);
         });
     };
 
@@ -3629,9 +3650,100 @@ describe("managed mode settings", () => {
             return captureSettingCallbacks(() => tab.display()).fieldByName.get(MESSAGES.LABEL_CHUNK_SIZE)!;
         }
 
+        /** The chunk size box after the server has reported chunk_size 512 into it. */
+        async function filledChunkSizeField(plugin: ReturnType<typeof makePlugin>): Promise<FieldDriver> {
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
+            const tab = makeTab(plugin);
+            const field = captureSettingCallbacks(() => tab.display()).fieldByName.get(MESSAGES.LABEL_CHUNK_SIZE)!;
+            await settle();
+            expect(field.inputEl.value).toBe("512");
+            return field;
+        }
+
         beforeEach(() => {
             vi.mocked(ConfirmModal).mockClear();
             Notice.clear();
+        });
+
+        afterEach(() => {
+            mockGenericConfirmResult = true;
+        });
+
+        it("Enter's keydown alone commits nothing: only the browser's change event does", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = chunkSizeField(plugin);
+
+            field.type("768");
+            field.inputEl.trigger("keydown", { key: "Enter", preventDefault: () => undefined });
+            await settle();
+            expect(confirmsOpened()).toBe(0);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("a cancelled confirmation puts the server's value back in the box", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = await filledChunkSizeField(plugin);
+            mockGenericConfirmResult = false;
+
+            field.type("768");
+            field.press("Enter");
+            await settle();
+            expect(confirmsOpened()).toBe(1);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(field.inputEl.value).toBe("512");
+        });
+
+        it("retyping the value a cancel dropped still sends it", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = await filledChunkSizeField(plugin);
+            mockGenericConfirmResult = false;
+            field.type("768");
+            field.press("Enter");
+            await settle();
+
+            mockGenericConfirmResult = true;
+            field.type("768");
+            field.blur();
+            await settle();
+            expect(confirmsOpened()).toBe(2);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 768 });
+        });
+
+        it("a system prompt the server refuses stays in the box, as the plugin saved it for the next start", async () => {
+            const plugin = makePlugin({ generalSystemPrompt: "You are a friendly tutor." });
+            mockChatPicker(plugin);
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            const tab = makeTab(plugin);
+            const area = captureSettingCallbacks(() => tab.display()).fieldByName.get(
+                MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
+            )!;
+
+            area.type("You are terse.");
+            area.blur();
+            await settle();
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+            expect(plugin.settings.generalSystemPrompt).toBe("You are terse.");
+            expect(area.inputEl.value).toBe("You are terse.");
+        });
+
+        it("a written value is what a later cancel puts back", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = await filledChunkSizeField(plugin);
+            field.type("768");
+            field.press("Enter");
+            await settle();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 768 });
+
+            mockGenericConfirmResult = false;
+            field.type("1024");
+            field.blur();
+            await settle();
+            expect(field.inputEl.value).toBe("768");
         });
 
         it("typing a chunk size asks nothing, writes nothing and shows no notice", async () => {
@@ -3724,13 +3836,13 @@ describe("managed mode settings", () => {
             expect(updatedNotices(MESSAGES.LABEL_CHUNK_SIZE)).toBe(2);
         });
 
-        it("reports a refused value once, with the server's reason, and keeps the text", async () => {
+        it("reports a refused value once, with the server's reason, and keeps the typed text", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
+            const field = await filledChunkSizeField(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(
                 new Error(`Server responded 400: ${JSON.stringify(configRefusal)}`),
             );
-            const field = chunkSizeField(plugin);
 
             field.type("5");
             field.type("50");
@@ -3740,6 +3852,53 @@ describe("managed mode settings", () => {
             const failures = Notice.instances.filter((n) => n.message.includes(configRefusal.detail));
             expect(failures).toHaveLength(1);
             expect(field.inputEl.value).toBe("50");
+        });
+
+        it("a corrected value sends after a refusal, and a refused value is never what a cancel puts back", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = await filledChunkSizeField(plugin);
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("refused"));
+            field.type("50");
+            field.press("Enter");
+            await settle();
+            expect(field.inputEl.value).toBe("50");
+
+            field.type("500");
+            field.press("Enter");
+            await settle();
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ chunk_size: 500 });
+
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("refused"));
+            field.type("60");
+            field.press("Enter");
+            await settle();
+            mockGenericConfirmResult = false;
+            field.type("768");
+            field.blur();
+            await settle();
+            expect(field.inputEl.value).toBe("500");
+        });
+
+        it("a value the plugin rejects shows the reason once, keeps the text, and sends once corrected", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = await filledChunkSizeField(plugin);
+
+            field.type("0");
+            field.press("Enter");
+            field.blur();
+            await settle();
+            const reason = MESSAGES.NOTICE_FAILED_UPDATE_REASON(MESSAGES.LABEL_CHUNK_SIZE, MESSAGES.REASON_AT_LEAST(1));
+            expect(Notice.instances.filter((n) => n.message === reason)).toHaveLength(1);
+            expect(confirmsOpened()).toBe(0);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(field.inputEl.value).toBe("0");
+
+            field.type("256");
+            field.press("Enter");
+            await settle();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 256 });
         });
 
         it("a text area sends on leaving it, not on Enter, which starts a new line", async () => {
@@ -3782,26 +3941,29 @@ describe("managed mode settings", () => {
         });
 
         it.each([
-            ["managed", SERVER_MODE.MANAGED],
-            ["external", SERVER_MODE.EXTERNAL],
-        ])("no text box in %s mode writes, saves, asks or notifies while the user types", async (_mode, serverMode) => {
-            const plugin = makePlugin({ serverMode });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { fieldByName } = captureSettingCallbacks(() => tab.display());
-            (plugin.saveSettings as ReturnType<typeof vi.fn>).mockClear();
+            ["managed", SERVER_MODE.MANAGED, 59],
+            ["external", SERVER_MODE.EXTERNAL, 60],
+        ])(
+            "no text box in %s mode writes, saves, asks or notifies while the user types",
+            async (_mode, serverMode, boxes) => {
+                const plugin = makePlugin({ serverMode });
+                mockChatPicker(plugin);
+                const tab = makeTab(plugin);
+                const { fieldByName } = captureSettingCallbacks(() => tab.display());
+                (plugin.saveSettings as ReturnType<typeof vi.fn>).mockClear();
 
-            expect(fieldByName.size).toBeGreaterThan(0);
-            for (const field of fieldByName.values()) {
-                field.type("4");
-                field.type("42");
-            }
-            await settle();
-            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(plugin.saveSettings).not.toHaveBeenCalled();
-            expect(confirmsOpened()).toBe(0);
-            expect(Notice.instances).toHaveLength(0);
-        });
+                expect(fieldByName.size).toBe(boxes);
+                for (const field of fieldByName.values()) {
+                    field.type("4");
+                    field.type("42");
+                }
+                await settle();
+                expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+                expect(plugin.saveSettings).not.toHaveBeenCalled();
+                expect(confirmsOpened()).toBe(0);
+                expect(Notice.instances).toHaveLength(0);
+            },
+        );
     });
 
     describe("Embedding model dropdown", () => {
@@ -9395,15 +9557,16 @@ describe("new server config fields", () => {
         it("sends free text once the field is left, not on every keystroke", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
-            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+            const row = freeTextRow(plugin).fieldByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
 
             // Every prefix of a valid language is refused, so typing must write nothing.
-            row.edit("G");
-            row.edit("Germ");
-            row.edit("German");
+            row.type("G");
+            row.type("Germ");
+            row.type("German");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
 
-            await row.handler();
+            row.blur();
+            await settle();
             expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
         });
@@ -9411,9 +9574,9 @@ describe("new server config fields", () => {
         it("sends on Enter, and not a second time on the blur that follows", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
-            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+            const row = freeTextRow(plugin).fieldByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
 
-            row.edit("German");
+            row.type("German");
             row.press("Escape");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
 
@@ -9423,22 +9586,25 @@ describe("new server config fields", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
 
             await new Promise((r) => setTimeout(r, 0));
-            await row.handler();
+            row.blur();
+            await settle();
             expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
         });
 
         it("leaves the server's language alone for an untouched or blank box", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
-            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+            const row = freeTextRow(plugin).fieldByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
 
             // The server fills the box without firing an input event.
             row.inputEl.value = "English";
-            await row.handler();
+            row.blur();
+            await settle();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
 
-            row.edit("   ");
-            await row.handler();
+            row.type("   ");
+            row.blur();
+            await settle();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -9446,11 +9612,12 @@ describe("new server config fields", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error(REFUSAL));
-            const row = freeTextRow(plugin).blurByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+            const row = freeTextRow(plugin).fieldByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
 
             Notice.clear();
-            row.edit("Germ");
-            await row.handler();
+            row.type("Germ");
+            row.blur();
+            await settle();
             await new Promise((r) => setTimeout(r, 0));
             const message = Notice.instances.map((n) => n.message).join("\n");
             expect(message).toContain("failed to update");
@@ -9459,8 +9626,9 @@ describe("new server config fields", () => {
             // A failure the server did not explain still reports the field that failed.
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue("offline");
             Notice.clear();
-            row.edit("Germa");
-            await row.handler();
+            row.type("Germa");
+            row.blur();
+            await settle();
             await new Promise((r) => setTimeout(r, 0));
             expect(
                 Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FTS_LANGUAGE)),
