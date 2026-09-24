@@ -353,7 +353,8 @@ export default class LilbeePlugin extends Plugin {
     private pendingHintTimeout: number | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     /** Compared in `saveSettings()` so an unrelated save doesn't re-request the
-     *  server's health; null until the first save, which always refreshes. */
+     *  server's health; set from the loaded settings in `loadSettings()`, so the
+     *  first save after load only refreshes when the URL actually changed since. */
     private previousServerUrl: string | null = null;
     private startingServer = false;
     private serverStartFailed = false;
@@ -1957,6 +1958,7 @@ export default class LilbeePlugin extends Plugin {
         // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
         this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
         this.previousServerMode = this.settings.serverMode;
+        this.previousServerUrl = this.settings.serverUrl;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));

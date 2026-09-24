@@ -1363,13 +1363,33 @@ describe("LilbeePlugin", () => {
             });
             await plugin.onload();
             await flush();
-            // First save after onload establishes the previous-URL baseline.
             await plugin.saveSettings();
             await flush();
             const health = plugin.api.health as ReturnType<typeof vi.fn>;
             health.mockClear();
 
-            // Second save: nothing about the server changed.
+            // A later save: still nothing about the server changed.
+            await plugin.saveSettings();
+            await flush();
+
+            expect(health).not.toHaveBeenCalled();
+        });
+
+        it("the very FIRST save after load does not re-request the server's health when nothing changed since load", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            const health = plugin.api.health as ReturnType<typeof vi.fn>;
+            health.mockClear();
+
+            // No baseline save first: this is the first saveSettings() call of the
+            // plugin's life, saving something unrelated to the server (mode/URL
+            // both still exactly what onload/loadSettings recorded).
             await plugin.saveSettings();
             await flush();
 
