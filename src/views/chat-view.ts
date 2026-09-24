@@ -33,7 +33,6 @@ import type {
     SearchChunkType,
     SessionDetail,
     SessionMessageItem,
-    SessionRole,
     Source,
     SSEEvent,
 } from "../types";
@@ -160,6 +159,13 @@ function nothingToSave(conversation: Conversation): boolean {
 }
 
 /** Per-message streaming state: accumulated text and the live reasoning DOM. */
+/** One entry in the menu a right-click on a saved answer opens. */
+interface AnswerAction {
+    title: string;
+    icon: string;
+    run: () => void;
+}
+
 interface StreamState {
     fullContent: string;
     reasoningContent: string;
@@ -1053,14 +1059,16 @@ export class ChatView extends ItemView {
         });
     }
 
-    private async persistTurn(
+    /** A saved answer offers its actions; `message_count` places it in the saved transcript. */
+    private async persistAnswer(
         sessionId: string | null,
-        role: SessionRole,
+        bubble: HTMLElement,
         content: string,
-        sources: string[] = [],
+        sources: string[],
     ): Promise<void> {
         if (!sessionId) return;
-        await this.plugin.api.appendSessionMessage(sessionId, role, content, sources);
+        const saved = await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.ASSISTANT, content, sources);
+        this.addAnswerActions(bubble, sessionId, saved.meta.message_count - 1, content);
     }
 
     private async resumeSession(id: string): Promise<void> {
@@ -1081,11 +1089,8 @@ export class ChatView extends ItemView {
         new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
     }
 
-    /**
-     * Copy the first `messageCount` messages of `sourceId` (all when omitted) into a new
-     * conversation and open it, with `prefill` in the input box.
-     */
-    async forkSession(sourceId: string, messageCount?: number, prefill?: string): Promise<void> {
+    /** Copy the first `messageCount` messages of `sourceId` (all when omitted) into a new conversation and open it. */
+    async forkSession(sourceId: string, messageCount?: number): Promise<void> {
         if (this.refuseForkWhileBusy()) return;
         this.forking = true;
         let detail: SessionDetail;
@@ -1101,11 +1106,10 @@ export class ChatView extends ItemView {
         }
         this.showSession(detail);
         new Notice(MESSAGES.NOTICE_SESSION_FORKED(detail.meta.title));
-        if (prefill !== undefined) this.prefillInput(prefill);
     }
 
-    /** Fork before the question saved at `index`, once the server confirms it is still there. */
-    private async forkFromMessage(sessionId: string, index: number, text: string): Promise<void> {
+    /** Fork through the answer saved at `index`, once the server confirms it is still there. */
+    private async forkFromAnswer(sessionId: string, index: number, text: string): Promise<void> {
         if (this.refuseForkWhileBusy()) return;
         let messages: SessionMessageItem[];
         try {
@@ -1115,11 +1119,11 @@ export class ChatView extends ItemView {
             return;
         }
         const saved = messages[index];
-        if (saved?.role !== SESSION_ROLE.USER || saved.content !== text) {
+        if (saved?.role !== SESSION_ROLE.ASSISTANT || saved.content !== text) {
             new Notice(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
             return;
         }
-        await this.forkSession(sessionId, index, saved.content);
+        await this.forkSession(sessionId, index + 1);
     }
 
     /** An answer or a fork in progress would land in the chat a fork replaces. */
@@ -1140,20 +1144,31 @@ export class ChatView extends ItemView {
         return MESSAGES.ERROR_SESSION_FORK_FAILED(reason);
     }
 
-    /** `index` is the question's position in the saved transcript of `sessionId`. */
-    private addForkAction(bubble: HTMLElement, sessionId: string, index: number, text: string): void {
-        if (!this.plugin.serverSupportsSessionFork()) return;
-        const btn = bubble.createEl("button", { cls: "lilbee-chat-fork" });
-        setIcon(btn, FORK_ICON);
-        btn.setAttribute("aria-label", MESSAGES.LABEL_FORK_FROM_HERE);
-        btn.addEventListener("click", () => void this.forkFromMessage(sessionId, index, text));
+    /** The actions offered on the answer saved at `index` in the transcript of `sessionId`. */
+    private answerActions(sessionId: string, index: number, text: string): AnswerAction[] {
+        const actions: AnswerAction[] = [];
+        if (this.plugin.serverSupportsSessionFork()) {
+            actions.push({
+                title: MESSAGES.LABEL_FORK_FROM_ANSWER,
+                icon: FORK_ICON,
+                run: () => void this.forkFromAnswer(sessionId, index, text),
+            });
+        }
+        return actions;
     }
 
-    private prefillInput(text: string): void {
-        if (!this.textareaEl) return;
-        this.textareaEl.value = text;
-        this.textareaEl.focus();
-        this.textareaEl.setSelectionRange(text.length, text.length);
+    /** Right-clicking a saved answer opens its actions menu, when it has any action. */
+    private addAnswerActions(bubble: HTMLElement, sessionId: string, index: number, text: string): void {
+        const actions = this.answerActions(sessionId, index, text);
+        if (actions.length === 0) return;
+        bubble.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            const menu = new Menu();
+            for (const action of actions) {
+                menu.addItem((item) => item.setTitle(action.title).setIcon(action.icon).onClick(action.run));
+            }
+            this.showMenu(menu, event);
+        });
     }
 
     /** Replace the transcript with a saved conversation and bind the view to it. */
@@ -1244,13 +1259,13 @@ export class ChatView extends ItemView {
         if (message.role === SESSION_ROLE.USER) {
             const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
             bubble.createEl("p", { text: message.content });
-            this.addForkAction(bubble, sessionId, index, message.content);
             return;
         }
         const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const textEl = bubble.createDiv({ cls: "lilbee-chat-content" });
         void this.renderMarkdown(textEl, message.content);
         if (message.sources.length > 0) this.renderRestoredSources(bubble, message.sources);
+        this.addAnswerActions(bubble, sessionId, index, message.content);
     }
 
     /** Persisted sources are bare paths, so restored chips link out without the live chunk detail. */
@@ -1319,8 +1334,7 @@ export class ChatView extends ItemView {
         this.queuePersist(conversation, async () => {
             const sessionId = await this.ensureSession(conversation, text);
             state.sessionId = sessionId;
-            const saved = await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.USER, text, []);
-            this.addForkAction(userBubble, sessionId, saved.meta.message_count - 1, text);
+            await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.USER, text, []);
         });
 
         const spinnerCreatedAt = Date.now();
@@ -1513,7 +1527,7 @@ export class ChatView extends ItemView {
                 if (rendered) {
                     const paths = [...new Set(state.sources.map((s) => s.source))];
                     this.queuePersist(state.conversation, () =>
-                        this.persistTurn(state.sessionId, SESSION_ROLE.ASSISTANT, rendered, paths),
+                        this.persistAnswer(state.sessionId, assistantBubble, rendered, paths),
                     );
                 }
                 break;

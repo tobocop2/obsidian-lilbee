@@ -668,7 +668,7 @@ export const MESSAGES = {
     LABEL_RENAME_SESSION: "Rename",
     LABEL_DELETE_SESSION: "Delete",
     LABEL_FORK_SESSION: "Fork",
-    LABEL_FORK_FROM_HERE: "Fork from here",
+    LABEL_FORK_FROM_ANSWER: "Fork from this answer",
     PLACEHOLDER_FILTER_SESSIONS: "Filter conversations...",
     PLACEHOLDER_RENAME_SESSION: "New name (enter saves, esc cancels)",
     SESSIONS_COUNT: (count: number): string => `${count} saved`,
