@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach, onTestFinished } from "vitest";
 import { App, Notice } from "obsidian";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
@@ -61,6 +61,7 @@ function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHo
         saveActive: vi.fn(),
         exportActive: vi.fn(),
         renamed: vi.fn(),
+        writesSettled: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };
 }
@@ -334,6 +335,88 @@ describe("SessionsModal", () => {
 
             expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_NOT_FOUND]);
             expect(() => readFileSync(target)).toThrow();
+        });
+    });
+
+    describe("waits for the chat view's queued writes", () => {
+        function held() {
+            let release!: () => void;
+            const landed = new Promise<void>((resolve) => (release = resolve));
+            return { landed, release };
+        }
+
+        it("lists sessions only after the queued writes land", async () => {
+            const plugin = makePlugin([makeSession()]);
+            const writes = held();
+            const { el } = await openModal(plugin, makeHooks({ writesSettled: () => writes.landed }));
+            expect(plugin.api.listSessions).not.toHaveBeenCalled();
+
+            writes.release();
+            await vi.runAllTimersAsync();
+
+            expect(plugin.api.listSessions).toHaveBeenCalledTimes(1);
+            expect(collectTexts(el)).toContain("What is a bee?");
+        });
+
+        it.each(["lilbee-session-save", "lilbee-session-export"])(
+            "%s asks for a chat that is not open only after the queued writes land",
+            async (cls) => {
+                const plugin = makePlugin([makeSession({ id: "s7" })]);
+                const dir = mkdtempSync(join(tmpdir(), "lilbee-wait-"));
+                onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+                plugin.chooseChatExportPath.mockResolvedValue(join(dir, "chat.md"));
+                let pending = Promise.resolve();
+                const { el } = await openModal(plugin, makeHooks({ writesSettled: () => pending }));
+                const writes = held();
+                pending = writes.landed;
+
+                el.find(cls)!.trigger("click");
+                await vi.runAllTimersAsync();
+                expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+
+                writes.release();
+                await vi.runAllTimersAsync();
+                expect(plugin.api.getSessionMarkdown).toHaveBeenCalledWith("s7");
+            },
+        );
+
+        it("deletes a session only after the queued writes land", async () => {
+            const plugin = makePlugin([makeSession()]);
+            let pending = Promise.resolve();
+            const { el } = await openModal(plugin, makeHooks({ writesSettled: () => pending }));
+            const writes = held();
+            pending = writes.landed;
+
+            el.find("lilbee-session-delete")!.trigger("click");
+            await vi.runAllTimersAsync();
+            expect(plugin.api.deleteSession).not.toHaveBeenCalled();
+
+            writes.release();
+            await vi.runAllTimersAsync();
+            expect(plugin.api.deleteSession).toHaveBeenCalledWith("s1");
+            expect(el.findAll("lilbee-session-row")).toHaveLength(0);
+        });
+
+        it("keeps the user's title when the chat's automatic title is still queued", async () => {
+            const plugin = makePlugin([makeSession({ title: "Untitled chat" })]);
+            const autoTitle = held();
+            const queue = autoTitle.landed.then(async () => {
+                await plugin.api.renameSession("s1", "What is a bee?");
+            });
+            let pending: Promise<void> = Promise.resolve();
+            const { el } = await openModal(plugin, makeHooks({ writesSettled: () => pending }));
+            pending = queue;
+            el.find("lilbee-session-rename")!.trigger("click");
+            const input = el.find("lilbee-session-rename-input") as MockElement;
+            (input as any).value = "My bees";
+            input.trigger("keydown", { key: "Enter" });
+            await vi.runAllTimersAsync();
+
+            autoTitle.release();
+            await vi.runAllTimersAsync();
+
+            const written = plugin.api.renameSession.mock.calls.map((call: unknown[]) => call[1]);
+            expect(written).toEqual(["What is a bee?", "My bees"]);
         });
     });
 

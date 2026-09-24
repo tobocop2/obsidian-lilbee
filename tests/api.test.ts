@@ -14,6 +14,19 @@ const CRAWLER_STATUS_NO_CHROMIUM = {
     browsers_path: "/root/.cache/ms-playwright",
 };
 
+/** A 200 whose body `pull` feeds and whose request signal errors it, as fetch does. */
+function signalledBody(init: RequestInit, pull?: UnderlyingDefaultSource<Uint8Array>["pull"]): Response {
+    const body = new ReadableStream<Uint8Array>({
+        start(stream) {
+            init.signal?.addEventListener("abort", () =>
+                stream.error(Object.assign(new Error("aborted"), { name: "AbortError" })),
+            );
+        },
+        pull,
+    });
+    return new Response(body, { status: 200 });
+}
+
 function jsonResponse(data: unknown): Response {
     return {
         ok: true,
@@ -1638,6 +1651,70 @@ describe("fetchWithRetry()", () => {
 
             expect(aborted.length).toBeGreaterThan(0);
             expect(result.isErr()).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("fails a response whose body stops arriving for the default timeout", async () => {
+        vi.useFakeTimers();
+        try {
+            // Headers arrive at once; the body never sends a byte.
+            fetchMock.mockImplementation((_url: string, init: RequestInit) => Promise.resolve(signalledBody(init)));
+
+            const outcome = client.listSessions().then(
+                () => "resolved",
+                () => "failed",
+            );
+            await vi.advanceTimersByTimeAsync(14_999);
+            expect(await Promise.race([outcome, Promise.resolve("still pending")])).toBe("still pending");
+            await vi.advanceTimersByTimeAsync(1);
+
+            expect(await Promise.race([outcome, Promise.resolve("still pending")])).toBe("failed");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    // Chromium gives these statuses a non-null empty body, which a rebuilt Response rejects.
+    it.each([204, 205])("returns a %i response as it came, body and all", async (status) => {
+        const res = { ok: true, status, body: new ReadableStream<Uint8Array>(), headers: new Headers() };
+        fetchMock.mockResolvedValue(res as unknown as Response);
+
+        await expect(client.getSourceRaw("a.pdf")).resolves.toBe(res);
+    });
+
+    it("cancelling the body releases the response underneath", async () => {
+        const cancel = vi.fn();
+        fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ cancel }), { status: 200 }));
+
+        const res = await client.getSourceRaw("a.pdf");
+        await res.body!.cancel("closed");
+
+        expect(cancel).toHaveBeenCalledWith("closed");
+    });
+
+    it("reads a body that keeps flowing for longer than the default timeout", async () => {
+        vi.useFakeTimers();
+        try {
+            const bytes = new TextEncoder().encode(JSON.stringify({ sessions: [{ id: "s1" }] }));
+            const pieces = [bytes.slice(0, 5), bytes.slice(5, 10), bytes.slice(10, 20), bytes.slice(20)];
+            let sent = 0;
+            // A piece every 10 s: 40 s in all, never 15 s without a byte.
+            fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+                Promise.resolve(
+                    signalledBody(init, async (stream) => {
+                        await new Promise((r) => window.setTimeout(r, 10_000));
+                        if (sent < pieces.length) stream.enqueue(pieces[sent++]);
+                        else stream.close();
+                    }),
+                ),
+            );
+
+            const listed = client.listSessions();
+            await vi.advanceTimersByTimeAsync(60_000);
+
+            await expect(listed).resolves.toEqual([{ id: "s1" }]);
         } finally {
             vi.useRealTimers();
         }

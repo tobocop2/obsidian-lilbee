@@ -6187,6 +6187,32 @@ describe("ChatView — chat sessions", () => {
         expect(shown).toEqual(saved.map((m) => m.content));
     });
 
+    it("gives the history list a wait that settles only after the chat's queued writes land", async () => {
+        const plugin = makePlugin();
+        let saveA1!: () => void;
+        plugin.api.appendSessionMessage = vi.fn(async (_id: string, _role: string, content: string) => {
+            if (content === "a1") await new Promise<void>((resolve) => (saveA1 = resolve));
+            return createdDetail("s1");
+        });
+        const { container } = await openChat(plugin);
+        const answer = streamOf("a1");
+        plugin.api.chatStream = answer.mockFn;
+        await send(container, "q1", answer.done);
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        let settled = false;
+        const wait = sessionsHooks
+            .at(-1)
+            .writesSettled()
+            .then(() => (settled = true));
+        await tick();
+        expect(settled).toBe(false);
+        saveA1();
+        await wait;
+
+        expect(settled).toBe(true);
+    });
+
     it("refuses a question sent while a resume opens, and keeps it in the box", async () => {
         const plugin = makePlugin();
         const held = deferred<ReturnType<typeof createdDetail>>();

@@ -143,26 +143,12 @@ function literalSegments(template: string): number {
 }
 
 /**
- * A response every consumer in the client can read: `.json()` for body callers,
- * a `body.getReader()` that reports done immediately for the SSE parser, and
- * `.arrayBuffer()` for the dataset export. The contract test cares about the
- * request, so the body only has to avoid throwing.
+ * A response every consumer in the client can read: JSON for body callers, a body with no
+ * events for the SSE parser, and bytes for the dataset export. The contract test cares about
+ * the request, so the body only has to avoid throwing.
  */
 function universalResponse(): Response {
-    return {
-        ok: true,
-        status: 200,
-        headers: { get: () => null },
-        json: () => Promise.resolve({}),
-        text: () => Promise.resolve("{}"),
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-        body: {
-            getReader: () => ({
-                read: async () => ({ done: true, value: undefined }),
-                cancel: async () => undefined,
-            }),
-        },
-    } as unknown as Response;
+    return new Response("{}", { status: 200 });
 }
 
 /**
