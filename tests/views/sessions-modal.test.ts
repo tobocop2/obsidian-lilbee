@@ -60,6 +60,7 @@ function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHo
         fork: vi.fn(),
         saveActive: vi.fn(),
         exportActive: vi.fn(),
+        renamed: vi.fn(),
         ...overrides,
     };
 }
@@ -309,15 +310,15 @@ describe("SessionsModal", () => {
             expect(Notice.instances).toEqual([]);
         });
 
-        it("hands the open chat's export to the chat view with the row's title", async () => {
+        it("hands the open chat's export to the chat view", async () => {
             const exportActive = vi.fn();
-            const plugin = makePlugin([makeSession({ id: "s7", title: "Renamed chat" })]);
+            const plugin = makePlugin([makeSession({ id: "s7" })]);
             const { el } = await openModal(plugin, makeHooks({ activeId: "s7", exportActive }));
 
             el.find("lilbee-session-export")!.trigger("click");
             await vi.runAllTimersAsync();
 
-            expect(exportActive).toHaveBeenCalledExactlyOnceWith("Renamed chat");
+            expect(exportActive).toHaveBeenCalledTimes(1);
             expect(plugin.chooseChatExportPath).not.toHaveBeenCalled();
         });
 
@@ -413,15 +414,16 @@ describe("SessionsModal", () => {
     });
 
     describe("rename", () => {
-        async function startRename(plugin: ReturnType<typeof makePlugin>) {
-            const opened = await openModal(plugin, makeHooks());
+        async function startRename(plugin: ReturnType<typeof makePlugin>, hooks = makeHooks()) {
+            const opened = await openModal(plugin, hooks);
             opened.el.find("lilbee-session-rename")!.trigger("click");
             return opened;
         }
 
-        it("commits a new title on enter", async () => {
+        it("commits a new title on enter and tells the chat view", async () => {
             const plugin = makePlugin([makeSession()]);
-            const { el } = await startRename(plugin);
+            const hooks = makeHooks();
+            const { el } = await startRename(plugin, hooks);
 
             const input = el.find("lilbee-session-rename-input") as MockElement;
             expect((input as any).value).toBe("What is a bee?");
@@ -431,6 +433,7 @@ describe("SessionsModal", () => {
 
             expect(plugin.api.renameSession).toHaveBeenCalledWith("s1", "Renamed");
             expect(collectTexts(el)).toContain("Renamed");
+            expect(hooks.renamed).toHaveBeenCalledExactlyOnceWith("s1", "Renamed");
         });
 
         it("discards an empty title without writing", async () => {
@@ -486,7 +489,8 @@ describe("SessionsModal", () => {
         it("keeps the old title and warns when the rename fails", async () => {
             const plugin = makePlugin([makeSession()]);
             plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("nope"));
-            const { el } = await startRename(plugin);
+            const hooks = makeHooks();
+            const { el } = await startRename(plugin, hooks);
 
             const input = el.find("lilbee-session-rename-input") as MockElement;
             (input as any).value = "Renamed";
@@ -495,6 +499,7 @@ describe("SessionsModal", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("Could not rename"))).toBe(true);
             expect(collectTexts(el)).toContain("What is a bee?");
+            expect(hooks.renamed).not.toHaveBeenCalled();
         });
     });
 

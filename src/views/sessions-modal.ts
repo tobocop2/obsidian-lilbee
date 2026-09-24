@@ -19,8 +19,10 @@ export interface SessionsModalHooks {
     fork: (id: string) => void;
     /** Save the open chat to the vault the way the chat toolbar does. */
     saveActive: () => void;
-    /** Export the open chat to a file the way the chat toolbar does, named from the row's title. */
-    exportActive: (title: string) => void;
+    /** Export the open chat to a file the way the chat toolbar does. */
+    exportActive: () => void;
+    /** A session was renamed here, so a chat view showing it can take the new title. */
+    renamed: (id: string, title: string) => void;
 }
 
 export class SessionsModal extends Modal {
@@ -209,7 +211,7 @@ export class SessionsModal extends Modal {
         setIcon(exportBtn, EXPORT_ICON);
         exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
         exportBtn.addEventListener("click", () => {
-            if (meta.id === this.hooks.activeId) this.hooks.exportActive(meta.title);
+            if (meta.id === this.hooks.activeId) this.hooks.exportActive();
             else void this.exportToFile(meta);
         });
     }
@@ -275,6 +277,7 @@ export class SessionsModal extends Modal {
         try {
             await this.plugin.api.renameSession(meta.id, title);
             meta.title = title;
+            this.hooks.renamed(meta.id, title);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_RENAME_FAILED(reason));

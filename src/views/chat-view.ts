@@ -131,13 +131,15 @@ interface Conversation {
     summary: string;
     /** Server-side session this chat appends to. Null until the first turn opens one. */
     sessionId: string | null;
+    /** The session's title as the server holds it. Null while the chat is unsaved. */
+    title: string | null;
     /** A session write for this chat failed, so the server's copy is missing a turn. */
     persistFailed: boolean;
 }
 
 /** A chat with nothing said yet and no saved session. */
 function emptyConversation(): Conversation {
-    return { history: [], summary: "", sessionId: null, persistFailed: false };
+    return { history: [], summary: "", sessionId: null, title: null, persistFailed: false };
 }
 
 /** The chat as shown, in the plain format used when the server's export cannot stand in for it. */
@@ -997,7 +999,10 @@ export class ChatView extends ItemView {
             startNew: () => this.startNewConversation(),
             fork: (id) => void this.forkSession(id),
             saveActive: () => void this.saveToVault(),
-            exportActive: (title) => void this.exportToFile(title),
+            exportActive: () => void this.exportToFile(),
+            renamed: (id, title) => {
+                if (id === this.conversation.sessionId) this.conversation.title = title;
+            },
         }).open();
     }
 
@@ -1018,9 +1023,12 @@ export class ChatView extends ItemView {
         const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
         const created = await this.plugin.api.createSession(this.chatActive, scope);
         conversation.sessionId = created.meta.id;
+        conversation.title = created.meta.title;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
         try {
-            await this.plugin.api.renameSession(created.meta.id, deriveSessionTitle(firstText));
+            const title = deriveSessionTitle(firstText);
+            await this.plugin.api.renameSession(created.meta.id, title);
+            conversation.title = title;
         } catch {
             // A failed title write leaves the server's default; the transcript still persists.
         }
@@ -1150,6 +1158,7 @@ export class ChatView extends ItemView {
     private showSession(detail: SessionDetail): void {
         this.clearChat();
         this.conversation.sessionId = detail.meta.id;
+        this.conversation.title = detail.meta.title;
         this.conversation.summary = detail.summary;
         this.hideEmptyState();
 
@@ -1733,13 +1742,14 @@ export class ChatView extends ItemView {
         if (content !== null) await saveChatNote(this.app.vault, content);
     }
 
-    /** Write the open chat, as Save to vault would, to a file the user picks. `title` defaults to the first question's. */
-    async exportToFile(title?: string): Promise<void> {
+    /** Write the open chat, as Save to vault would, to a file the user picks. An unsaved chat is named from its first question. */
+    async exportToFile(): Promise<void> {
         const conversation = this.conversation;
         if (nothingToSave(conversation)) return;
+        const title = conversation.title ?? deriveSessionTitle(conversation.history[0].content);
         await exportChatFile(
             (name) => this.plugin.chooseChatExportPath(name),
-            chatExportName(title ?? deriveSessionTitle(conversation.history[0].content), conversation.sessionId),
+            chatExportName(title, conversation.sessionId),
             () => this.conversationMarkdown(conversation),
         );
     }
