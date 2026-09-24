@@ -21,6 +21,7 @@ import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
+import { ConfirmModal } from "../src/views/confirm-modal";
 
 const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
@@ -303,6 +304,64 @@ interface BlurCapture {
     press: (key: string) => void;
 }
 
+/** Drives one text box the way a user does: focus, keystrokes, Enter, leaving it. */
+interface FieldDriver {
+    inputEl: { value: string; type: string };
+    /** Focus the box if it is not focused, then set its value and fire what one keystroke fires. */
+    type: (value: string) => void;
+    /** Fire the box's keydown listeners for one key. */
+    press: (key: string) => void;
+    /** Leave the box: fire its blur listeners. */
+    blur: () => void;
+}
+
+/** Lets every promise chain a handler started settle before the test asserts. */
+const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+/** Wraps a text or text-area component so a test can type into it and leave it. */
+function driveTextField(text: any, onChangeHandlers: TextOnChange[]): FieldDriver {
+    const listeners = new Map<string, Array<(event?: unknown) => void>>();
+    let onChange: TextOnChange | null = null;
+    let focused = false;
+    const fire = (event: string, arg?: unknown): void => {
+        for (const listener of listeners.get(event) ?? []) listener(arg);
+    };
+    const origOnChange = text.onChange.bind(text);
+    text.onChange = (handler: TextOnChange) => {
+        onChange = handler;
+        onChangeHandlers.push(handler);
+        return origOnChange(handler);
+    };
+    const driver: FieldDriver = {
+        inputEl: text.inputEl,
+        type: (value: string) => {
+            if (!focused) fire("focus");
+            focused = true;
+            text.inputEl.value = value;
+            fire("input");
+            void onChange?.(value);
+        },
+        press: (key: string) => fire("keydown", { key }),
+        blur: () => {
+            focused = false;
+            fire("blur");
+        },
+    };
+    text.inputEl.addEventListener = (event: string, handler: (event?: unknown) => void) => {
+        listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+        // The shared commit helper listens for focus; list it where the old per-keystroke handler stood.
+        if (event === "focus") onChangeHandlers.push((value: string) => commitThrough(driver, value));
+    };
+    return driver;
+}
+
+/** Type a value into a box and leave it, as a user committing one edit does. */
+async function commitThrough(driver: FieldDriver, value: string): Promise<void> {
+    driver.type(value);
+    driver.blur();
+    await settle();
+}
+
 interface Captured {
     /** Callbacks keyed by the row's display name, so a test names the field it
      * means instead of counting rows to it. */
@@ -326,6 +385,8 @@ interface Captured {
     blurHandlers: BlurCapture[];
     /** Blur savers keyed by the row's display name. */
     blurByName: Map<string, BlurCapture>;
+    /** A driver for each text box and text area, keyed by the row's display name. */
+    fieldByName: Map<string, FieldDriver>;
     sliderOnChanges: SliderOnChange[];
     dropdownOnChanges: DropdownOnChange[];
     dropdownOptions: Array<Record<string, string>>;
@@ -363,6 +424,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const textByName = new Map<string, TextOnChange>();
     const textInputByName = new Map<string, { value: string; type: string }>();
     const blurByName = new Map<string, BlurCapture>();
+    const fieldByName = new Map<string, FieldDriver>();
     const toggleByName = new Map<string, ToggleOnChange>();
     const dropdownByName = new Map<string, DropdownOnChange>();
     const textAreaByName = new Map<string, TextOnChange>();
@@ -395,34 +457,25 @@ function captureSettingCallbacks(fn: () => void): Captured {
     Setting.prototype.addText = function (cb: (text: any) => void) {
         const name = currentName;
         return origAddText.call(this, (text: any) => {
-            const listeners = new Map<string, () => void>();
-            const origOnChange = text.onChange.bind(text);
-            text.onChange = (handler: TextOnChange) => {
-                textOnChanges.push(handler);
-                if (name) textByName.set(name, handler);
-                return origOnChange(handler);
-            };
+            const driver = driveTextField(text, textOnChanges);
+            const origListen = text.inputEl.addEventListener;
             text.inputEl.addEventListener = (event: string, handler: BlurHandler) => {
-                listeners.set(event, handler);
-                if (event === "blur") {
-                    const capture: BlurCapture = {
-                        handler,
-                        inputEl: text.inputEl,
-                        edit: (value: string) => {
-                            text.inputEl.value = value;
-                            listeners.get("input")?.();
-                        },
-                        press: (key: string) => {
-                            (listeners.get("keydown") as unknown as ((e: { key: string }) => void) | undefined)?.({
-                                key,
-                            });
-                        },
-                    };
-                    blurHandlers.push(capture);
-                    blurByName.set(name, capture);
-                }
+                origListen(event, handler);
+                if (event !== "blur") return;
+                const capture: BlurCapture = {
+                    handler,
+                    inputEl: text.inputEl,
+                    edit: (value: string) => driver.type(value),
+                    press: (key: string) => driver.press(key),
+                };
+                blurHandlers.push(capture);
+                blurByName.set(name, capture);
             };
-            if (name) textInputByName.set(name, text.inputEl);
+            if (name) {
+                textByName.set(name, (value: string) => commitThrough(driver, value));
+                textInputByName.set(name, text.inputEl);
+                fieldByName.set(name, driver);
+            }
             cb(text);
         });
     };
@@ -430,12 +483,11 @@ function captureSettingCallbacks(fn: () => void): Captured {
     (Setting.prototype as any).addTextArea = function (cb: (text: any) => void) {
         const name = currentName;
         return origAddTextArea.call(this, (text: any) => {
-            const origOnChange = text.onChange.bind(text);
-            text.onChange = (handler: TextOnChange) => {
-                textAreaOnChanges.push(handler);
-                if (name) textAreaByName.set(name, handler);
-                return origOnChange(handler);
-            };
+            const driver = driveTextField(text, textAreaOnChanges);
+            if (name) {
+                textAreaByName.set(name, (value: string) => commitThrough(driver, value));
+                fieldByName.set(name, driver);
+            }
             cb(text);
         });
     };
@@ -583,6 +635,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         textAreaOnChanges,
         blurHandlers,
         blurByName,
+        fieldByName,
         sliderOnChanges,
         dropdownOnChanges,
         dropdownOptions,
@@ -677,13 +730,12 @@ describe("LilbeeSettingTab", () => {
             // sharedRoot + 9 generation + 4 retrieval-advanced + 5 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
-            // The API-key rows, the HF token row and the keyword search language save on blur,
-            // so they register no onChange.
-            expect(textOnChanges.length).toBe(49);
+            // + keyword search language. The API-key rows and the HF token row keep their own blur saver.
+            expect(textOnChanges.length).toBe(50);
         });
     });
 
-    describe("serverUrl setting onChange", () => {
+    describe("serverUrl setting commit", () => {
         it("updates plugin settings and calls saveSettings", async () => {
             const plugin = makePlugin({ serverMode: "external" });
             mockChatPicker(plugin);
@@ -704,7 +756,7 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("manual token setting onChange", () => {
+    describe("manual token setting commit", () => {
         it("updates manualToken and calls saveSettings", async () => {
             const plugin = makePlugin({ serverMode: "external" });
             mockChatPicker(plugin);
@@ -1357,8 +1409,9 @@ describe("LilbeeSettingTab", () => {
                 const tab = makeTab(plugin);
                 const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
+                await textOnChanges[idx](value);
                 await textOnChanges[idx]("");
-                expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: null });
+                expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ [key]: null });
             });
         }
 
@@ -1402,9 +1455,11 @@ describe("LilbeeSettingTab", () => {
             Notice.clear();
             const plugin = makePlugin();
             mockChatPicker(plugin);
-            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            await textOnChanges[1]("0.7");
+            Notice.clear();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
 
             await textOnChanges[1]("");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
@@ -3460,7 +3515,7 @@ describe("managed mode settings", () => {
         expect(displaySpy).toHaveBeenCalled();
     });
 
-    describe("Ingest chunk fields onChange", () => {
+    describe("Ingest chunk fields commit", () => {
         // Ingest section text inputs sit at: [14] chunk_size, [15] chunk_overlap,
         // [16] tesseract_timeout, [17] vision_load_budget_s.
 
@@ -3502,7 +3557,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("   ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3561,6 +3616,191 @@ describe("managed mode settings", () => {
 
             await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("text settings commit on Enter or on leaving the box, never per keystroke", () => {
+        const confirmsOpened = (): number => vi.mocked(ConfirmModal).mock.calls.length;
+        const updatedNotices = (name: string): number =>
+            Notice.instances.filter((n) => n.message === MESSAGES.NOTICE_FIELD_UPDATED(name)).length;
+
+        function chunkSizeField(plugin: ReturnType<typeof makePlugin>): FieldDriver {
+            const tab = makeTab(plugin);
+            return captureSettingCallbacks(() => tab.display()).fieldByName.get(MESSAGES.LABEL_CHUNK_SIZE)!;
+        }
+
+        beforeEach(() => {
+            vi.mocked(ConfirmModal).mockClear();
+            Notice.clear();
+        });
+
+        it("typing a chunk size asks nothing, writes nothing and shows no notice", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = chunkSizeField(plugin);
+
+            field.type("5");
+            field.type("51");
+            field.type("512");
+            await settle();
+            expect(confirmsOpened()).toBe(0);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("Enter commits once, and the blur that follows sends nothing more", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = chunkSizeField(plugin);
+
+            field.type("5");
+            field.type("512");
+            field.press("Enter");
+            await settle();
+            expect(confirmsOpened()).toBe(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
+            expect(updatedNotices(MESSAGES.LABEL_CHUNK_SIZE)).toBe(1);
+
+            field.blur();
+            await settle();
+            expect(confirmsOpened()).toBe(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("leaving the box commits once", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = chunkSizeField(plugin);
+
+            field.type("5");
+            field.type("512");
+            field.blur();
+            await settle();
+            expect(confirmsOpened()).toBe(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
+
+            field.blur();
+            await settle();
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+        });
+
+        it("an unchanged value sends nothing, whether untouched or retyped", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = chunkSizeField(plugin);
+            // The server fills the box without an input event.
+            field.inputEl.value = "512";
+
+            field.press("Enter");
+            field.blur();
+            field.type("51");
+            field.type("512");
+            field.press("Enter");
+            field.blur();
+            await settle();
+            expect(confirmsOpened()).toBe(0);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("asks and reports once per committed change", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const field = chunkSizeField(plugin);
+
+            field.type("512");
+            field.blur();
+            field.type("1");
+            field.type("10");
+            field.type("1024");
+            field.press("Enter");
+            field.blur();
+            await settle();
+            expect(confirmsOpened()).toBe(2);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(2);
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ chunk_size: 1024 });
+            expect(updatedNotices(MESSAGES.LABEL_CHUNK_SIZE)).toBe(2);
+        });
+
+        it("reports a refused value once, with the server's reason, and keeps the text", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error(`Server responded 400: ${JSON.stringify(configRefusal)}`),
+            );
+            const field = chunkSizeField(plugin);
+
+            field.type("5");
+            field.type("50");
+            field.press("Enter");
+            field.blur();
+            await settle();
+            const failures = Notice.instances.filter((n) => n.message.includes(configRefusal.detail));
+            expect(failures).toHaveLength(1);
+            expect(field.inputEl.value).toBe("50");
+        });
+
+        it("a text area sends on leaving it, not on Enter, which starts a new line", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const area = captureSettingCallbacks(() => tab.display()).fieldByName.get(MESSAGES.LABEL_OCR_LANGUAGE)!;
+
+            area.type("eng");
+            area.press("Enter");
+            area.type("eng\ndeu");
+            await settle();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+
+            area.blur();
+            await settle();
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ ocr_language: ["eng", "deu"] });
+        });
+
+        it("the embedding model box asks to re-index once, on commit", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const { fieldByName } = captureSettingCallbacks(() => (tab as any).renderEmbeddingFallback(container));
+            const field = fieldByName.get(MESSAGES.LABEL_EMBEDDING_MODEL)!;
+
+            field.type("n");
+            field.type("nomic");
+            await settle();
+            expect(confirmsOpened()).toBe(0);
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+
+            field.press("Enter");
+            field.blur();
+            await settle();
+            expect(confirmsOpened()).toBe(1);
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([
+            ["managed", SERVER_MODE.MANAGED],
+            ["external", SERVER_MODE.EXTERNAL],
+        ])("no text box in %s mode writes, saves, asks or notifies while the user types", async (_mode, serverMode) => {
+            const plugin = makePlugin({ serverMode });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { fieldByName } = captureSettingCallbacks(() => tab.display());
+            (plugin.saveSettings as ReturnType<typeof vi.fn>).mockClear();
+
+            expect(fieldByName.size).toBeGreaterThan(0);
+            for (const field of fieldByName.values()) {
+                field.type("4");
+                field.type("42");
+            }
+            await settle();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+            expect(confirmsOpened()).toBe(0);
+            expect(Notice.instances).toHaveLength(0);
         });
     });
 
@@ -3874,23 +4114,9 @@ describe("managed mode settings", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
-            const texts: TextOnChange[] = [];
-            const origAddText = Setting.prototype.addText;
-            Setting.prototype.addText = function (cb: (text: any) => void) {
-                const fakeText = {
-                    setPlaceholder: () => fakeText,
-                    setValue: () => fakeText,
-                    onChange: (handler: TextOnChange) => {
-                        texts.push(handler);
-                        return fakeText;
-                    },
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
-                };
-                cb(fakeText);
-                return this;
-            };
-            (tab as any).renderEmbeddingFallback(container);
-            Setting.prototype.addText = origAddText;
+            const { textOnChanges: texts } = captureSettingCallbacks(() =>
+                (tab as any).renderEmbeddingFallback(container),
+            );
 
             expect(texts.length).toBe(1);
             await texts[0]("nomic-embed-text");
@@ -3907,23 +4133,9 @@ describe("managed mode settings", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
-            const texts: TextOnChange[] = [];
-            const origAddText = Setting.prototype.addText;
-            Setting.prototype.addText = function (cb: (text: any) => void) {
-                const fakeText = {
-                    setPlaceholder: () => fakeText,
-                    setValue: () => fakeText,
-                    onChange: (handler: TextOnChange) => {
-                        texts.push(handler);
-                        return fakeText;
-                    },
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
-                };
-                cb(fakeText);
-                return this;
-            };
-            (tab as any).renderEmbeddingFallback(container);
-            Setting.prototype.addText = origAddText;
+            const { textOnChanges: texts } = captureSettingCallbacks(() =>
+                (tab as any).renderEmbeddingFallback(container),
+            );
 
             await texts[0]("nomic-embed-text");
             expect(plugin.triggerSync).not.toHaveBeenCalled();
@@ -3935,25 +4147,11 @@ describe("managed mode settings", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
-            const texts: TextOnChange[] = [];
-            const origAddText = Setting.prototype.addText;
-            Setting.prototype.addText = function (cb: (text: any) => void) {
-                const fakeText = {
-                    setPlaceholder: () => fakeText,
-                    setValue: () => fakeText,
-                    onChange: (handler: TextOnChange) => {
-                        texts.push(handler);
-                        return fakeText;
-                    },
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
-                };
-                cb(fakeText);
-                return this;
-            };
-            (tab as any).renderEmbeddingFallback(container);
-            Setting.prototype.addText = origAddText;
+            const { textOnChanges: texts } = captureSettingCallbacks(() =>
+                (tab as any).renderEmbeddingFallback(container),
+            );
 
-            await texts[0]("");
+            await texts[0]("   ");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
         });
 
@@ -3964,23 +4162,9 @@ describe("managed mode settings", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
-            const texts: TextOnChange[] = [];
-            const origAddText = Setting.prototype.addText;
-            Setting.prototype.addText = function (cb: (text: any) => void) {
-                const fakeText = {
-                    setPlaceholder: () => fakeText,
-                    setValue: () => fakeText,
-                    onChange: (handler: TextOnChange) => {
-                        texts.push(handler);
-                        return fakeText;
-                    },
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
-                };
-                cb(fakeText);
-                return this;
-            };
-            (tab as any).renderEmbeddingFallback(container);
-            Setting.prototype.addText = origAddText;
+            const { textOnChanges: texts } = captureSettingCallbacks(() =>
+                (tab as any).renderEmbeddingFallback(container),
+            );
 
             await texts[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
@@ -3994,23 +4178,9 @@ describe("managed mode settings", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
-            const texts: TextOnChange[] = [];
-            const origAddText = Setting.prototype.addText;
-            Setting.prototype.addText = function (cb: (text: any) => void) {
-                const fakeText = {
-                    setPlaceholder: () => fakeText,
-                    setValue: () => fakeText,
-                    onChange: (handler: TextOnChange) => {
-                        texts.push(handler);
-                        return fakeText;
-                    },
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
-                };
-                cb(fakeText);
-                return this;
-            };
-            (tab as any).renderEmbeddingFallback(container);
-            Setting.prototype.addText = origAddText;
+            const { textOnChanges: texts } = captureSettingCallbacks(() =>
+                (tab as any).renderEmbeddingFallback(container),
+            );
 
             await texts[0]("nomic-embed-text");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding model"))).toBe(
@@ -4019,7 +4189,7 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("Crawling fields onChange", () => {
+    describe("Crawling fields commit", () => {
         // Order: [0] shared-root, [1-6] generation (6 fields), [7-11] retrieval-advanced,
         // [12-15] ingest, [16-17] worker-pool, then crawling at [18..].
         // Per-field offsets within crawling: [0] crawl_max_depth, [1] crawl_max_pages,
@@ -4052,8 +4222,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("3");
             await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: null });
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ crawl_max_depth: null });
         });
 
         it("skips invalid number", async () => {
@@ -4082,7 +4253,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textByName.get(MESSAGES.LABEL_CRAWL_TIMEOUT)!("");
+            await textByName.get(MESSAGES.LABEL_CRAWL_TIMEOUT)!("   ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -4152,10 +4323,12 @@ describe("managed mode settings", () => {
 
         it("nullable-clear shows error notice when updateConfig rejects", async () => {
             const plugin = makePlugin();
-            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textByName } = captureSettingCallbacks(() => tab.display());
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("3");
+            Notice.clear();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
 
             await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!(""); // clear crawl_max_depth (nullable)
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
@@ -5319,7 +5492,7 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("Local server URL onChange", () => {
+    describe("Local server URL commit", () => {
         it("calls updateConfig with ollama_base_url on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
@@ -7887,37 +8060,30 @@ describe("managed mode settings", () => {
         // [15-18]=ingest, [19-20]=worker-pool, [21-30]=crawling, [31]=wikiVaultFolder,
         // [32]=rerank_candidates.
 
-        beforeEach(() => {
-            vi.useFakeTimers();
-        });
-        afterEach(() => {
-            vi.useRealTimers();
-        });
-
-        it("calls updateConfig with parsed number after debounce", async () => {
+        it("sends the parsed number on commit", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("40");
-            // Debounced: PATCH doesn't fire synchronously
-            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ rerank_candidates: 40 });
             expect(Notice.instances.some((n) => n.message.includes("Rerank candidates"))).toBe(true);
         });
 
-        it("debounces rapid changes into a single PATCH", async () => {
+        it("typing several values sends only the one committed", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
+            const field = captureSettingCallbacks(() => tab.display()).fieldByName.get(
+                MESSAGES.LABEL_RERANKER_CANDIDATES,
+            )!;
 
-            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("30");
-            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("35");
-            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("40");
-            await vi.advanceTimersByTimeAsync(400);
+            field.type("30");
+            field.type("35");
+            field.type("40");
+            field.blur();
+            await settle();
             expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ rerank_candidates: 40 });
         });
@@ -7928,8 +8094,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("");
-            await vi.advanceTimersByTimeAsync(400);
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("   ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -7940,7 +8105,6 @@ describe("managed mode settings", () => {
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("abc");
-            await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -7951,7 +8115,6 @@ describe("managed mode settings", () => {
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("0");
-            await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -7962,7 +8125,6 @@ describe("managed mode settings", () => {
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("101");
-            await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -7974,7 +8136,6 @@ describe("managed mode settings", () => {
             const { textByName } = captureSettingCallbacks(() => tab.display());
 
             await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("40");
-            await vi.advanceTimersByTimeAsync(400);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -8478,8 +8639,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
+            await textOnChanges[MAX_TOKENS_IDX]("2048");
             await textOnChanges[MAX_TOKENS_IDX]("");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_tokens: null });
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ max_tokens: null });
         });
 
         it("PATCHes max_reasoning_chars with a parsed integer", async () => {
@@ -8498,8 +8660,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
+            await textOnChanges[MAX_REASONING_CHARS_IDX]("80000");
             await textOnChanges[MAX_REASONING_CHARS_IDX]("");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_reasoning_chars: null });
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ max_reasoning_chars: null });
         });
 
         it("PATCHes model_keep_alive with a parsed integer", async () => {
@@ -9296,7 +9459,7 @@ describe("new server config fields", () => {
             // A failure the server did not explain still reports the field that failed.
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue("offline");
             Notice.clear();
-            row.edit("Germ");
+            row.edit("Germa");
             await row.handler();
             await new Promise((r) => setTimeout(r, 0));
             expect(

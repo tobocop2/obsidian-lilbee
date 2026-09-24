@@ -136,10 +136,23 @@ function captureSettingCallbacks(fn: () => void) {
     const origAddText = Setting.prototype.addText;
     Setting.prototype.addText = function (cb: (text: any) => void) {
         return origAddText.call(this, (text: any) => {
+            const listeners = new Map<string, () => void>();
             const origOnChange = text.onChange.bind(text);
             text.onChange = (handler: (value: string) => void | Promise<void>) => {
                 textOnChanges.push(handler);
                 return origOnChange(handler);
+            };
+            // A box on the shared commit helper: typing a value and leaving the box sends it.
+            text.inputEl.addEventListener = (event: string, handler: () => void) => {
+                listeners.set(event, handler);
+                if (event !== "focus") return;
+                textOnChanges.push(async (value: string) => {
+                    listeners.get("focus")?.();
+                    text.inputEl.value = value;
+                    listeners.get("input")?.();
+                    listeners.get("blur")?.();
+                    await new Promise((r) => setTimeout(r, 0));
+                });
             };
             cb(text);
         });
@@ -180,7 +193,7 @@ beforeEach(() => {
     Notice.clear?.();
 });
 
-describe("Shared root setting onChange", () => {
+describe("Shared root setting commit", () => {
     it("trims and saves the new path", async () => {
         const registry = makeRegistry();
         const plugin = makePlugin({ sharedRoot: "" }, registry);
