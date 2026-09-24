@@ -18,6 +18,7 @@ import {
     isModelUnavailableError,
     isRoleMismatchDetail,
     isStreamInterruptedError,
+    meetsVersionFloor,
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
     percentFromSse,
@@ -208,6 +209,21 @@ describe("isVersionOlder", () => {
     it("treats a digitless version as zero, so anything real is newer", () => {
         expect(isVersionOlder("", "0.6.74")).toBe(true);
         expect(isVersionOlder("dev", "dev")).toBe(false);
+    });
+});
+
+describe("meetsVersionFloor", () => {
+    it("rejects a version older than the floor", () => {
+        expect(meetsVersionFloor("0.6.90b419", "0.6.90b420")).toBe(false);
+    });
+
+    it("accepts a version at or above the floor", () => {
+        expect(meetsVersionFloor("0.6.90b420", "0.6.90b420")).toBe(true);
+        expect(meetsVersionFloor("0.6.91b1", "0.6.90b420")).toBe(true);
+    });
+
+    it("fails open when the version is unknown, regardless of the floor", () => {
+        expect(meetsVersionFloor("", "0.6.90b420")).toBe(true);
     });
 });
 

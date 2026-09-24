@@ -4245,6 +4245,20 @@ describe("LilbeePlugin", () => {
             expect(plugin.serverSupportsSessionFork()).toBe(true);
             loadConfig.mockRestore();
         });
+
+        it("external mode learns the version from the startup health check, before the first probe tick", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await plugin.onload();
+            await flush();
+            // 0.6.90b420 has sessions but not the fork route (floor: 0.6.90b446). Failing
+            // open here is what lets Fork appear on an answer and then 404.
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
     });
 
     describe("chooseChatExportPath", () => {
@@ -4285,6 +4299,20 @@ describe("LilbeePlugin", () => {
             loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b446" });
             expect(plugin.serverSupportsSessionExport()).toBe(true);
             loadConfig.mockRestore();
+        });
+
+        it("external mode learns the version from the startup health check, before the first probe tick", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await plugin.onload();
+            await flush();
+            // 0.6.90b420 has sessions but not the markdown export route (floor: 0.6.90b446).
+            // Failing open here is what lets Save to vault attempt the server export and 404.
+            expect(plugin.serverSupportsSessionExport()).toBe(false);
         });
     });
 

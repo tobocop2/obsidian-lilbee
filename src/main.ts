@@ -1301,12 +1301,15 @@ export default class LilbeePlugin extends Plugin {
         );
     }
 
-    /** External mode: on launch, tell the user when the running server is not the
-     *  latest release. Best-effort — silent when offline or the server is unreachable. */
+    /** External mode: on launch, cache the running server's version so feature floors
+     *  don't fail open until the first health-probe tick, and tell the user when the
+     *  running server is not the latest release. Best-effort — silent when offline or
+     *  the server is unreachable. */
     private async warnExternalServerOutdated(): Promise<void> {
         try {
             const health = await this.api.health();
             if (health.isErr()) return;
+            this.externalServerVersion = health.value.version;
             const latest = (await getLatestRelease(this.settings.includeDevBuilds)).tag.replace(/^v/, "");
             if (!latest || !isVersionOlder(health.value.version, latest)) return;
             // NOTICE_PERMANENT keeps it up until the user clicks it away.
@@ -2552,8 +2555,9 @@ export default class LilbeePlugin extends Plugin {
         return supportsPlacement(this.runningServerVersion());
     }
 
-    /** Managed mode knows the install version up front; external mode reports ""
-     *  (which fails open) until the first health probe caches one. */
+    /** Managed mode knows the install version up front; external mode caches it from
+     *  the startup health check, then keeps it fresh on every health-probe tick. Reports
+     *  "" (which fails open) only until that first check answers. */
     private runningServerVersion(): string {
         return this.settings.serverMode === SERVER_MODE.MANAGED
             ? this.getSharedLilbeeVersion()
