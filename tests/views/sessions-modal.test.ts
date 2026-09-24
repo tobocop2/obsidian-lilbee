@@ -1,6 +1,10 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { App, Notice } from "obsidian";
+import { App, Notice, Platform } from "obsidian";
+import { mkdtempSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { MockElement } from "../__mocks__/obsidian";
+import { EXPORT_ICON } from "../../src/utils/session";
 import { SessionsModal, type SessionsModalHooks } from "../../src/views/sessions-modal";
 import type { SessionMeta } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
@@ -44,6 +48,7 @@ function makePlugin(sessions: SessionMeta[] = []) {
         settings: { serverMode: "managed" },
         serverSupportsSessionFork: vi.fn().mockReturnValue(true),
         serverSupportsSessionExport: vi.fn().mockReturnValue(true),
+        chooseChatExportPath: vi.fn().mockResolvedValue(null as string | null),
     };
 }
 
@@ -54,6 +59,7 @@ function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHo
         startNew: vi.fn(),
         fork: vi.fn(),
         saveActive: vi.fn(),
+        exportActive: vi.fn(),
         ...overrides,
     };
 }
@@ -256,7 +262,82 @@ describe("SessionsModal", () => {
         const { el } = await openModal(plugin, makeHooks());
 
         expect(el.find("lilbee-session-save")).toBeNull();
+        expect(el.find("lilbee-session-export")).toBeNull();
         expect(el.find("lilbee-session-delete")).not.toBeNull();
+    });
+
+    describe("export to a file", () => {
+        afterEach(() => {
+            Platform.isDesktopApp = true;
+        });
+
+        function exportTarget(): string {
+            return join(mkdtempSync(join(tmpdir(), "lilbee-session-export-")), "chat.md");
+        }
+
+        it("writes the row's session from the server's export to the chosen file and stays open", async () => {
+            const plugin = makePlugin([makeSession({ id: "3f2a1b2c-9d8e", title: "What is a bee?" })]);
+            const target = exportTarget();
+            plugin.chooseChatExportPath.mockResolvedValue(target);
+            const { modal, el } = await openModal(plugin, makeHooks());
+            const closeSpy = vi.spyOn(modal, "close");
+            const exportBtn = el.find("lilbee-session-export")!;
+
+            exportBtn.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(exportBtn.getAttribute("aria-label")).toBe(MESSAGES.LABEL_EXPORT_CHAT);
+            expect(exportBtn.getAttribute("data-icon")).toBe(EXPORT_ICON);
+            expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("what-is-a-bee-3f2a1b2c.md");
+            expect(readFileSync(target, "utf8")).toBe("# exported");
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_CHAT_EXPORTED(target)]);
+            expect(closeSpy).not.toHaveBeenCalled();
+        });
+
+        it("asks the server for nothing when the dialog is cancelled", async () => {
+            const plugin = makePlugin([makeSession()]);
+            const { el } = await openModal(plugin, makeHooks());
+
+            el.find("lilbee-session-export")!.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+            expect(Notice.instances).toEqual([]);
+        });
+
+        it("hands the open chat's export to the chat view", async () => {
+            const exportActive = vi.fn();
+            const plugin = makePlugin([makeSession({ id: "s7" })]);
+            const { el } = await openModal(plugin, makeHooks({ activeId: "s7", exportActive }));
+
+            el.find("lilbee-session-export")!.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(exportActive).toHaveBeenCalledTimes(1);
+            expect(plugin.chooseChatExportPath).not.toHaveBeenCalled();
+        });
+
+        it("says the server has no such conversation when the export answers 404", async () => {
+            const plugin = makePlugin([makeSession()]);
+            plugin.api.getSessionMarkdown.mockRejectedValue(new Error('Server responded 404: {"detail":"no"}'));
+            const target = exportTarget();
+            plugin.chooseChatExportPath.mockResolvedValue(target);
+            const { el } = await openModal(plugin, makeHooks());
+
+            el.find("lilbee-session-export")!.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_NOT_FOUND]);
+            expect(() => readFileSync(target)).toThrow();
+        });
+
+        it("offers no export action on mobile", async () => {
+            Platform.isDesktopApp = false;
+            const { el } = await openModal(makePlugin([makeSession()]), makeHooks());
+
+            expect(el.find("lilbee-session-export")).toBeNull();
+            expect(el.find("lilbee-session-save")).not.toBeNull();
+        });
     });
 
     it("resumes the clicked session and closes", async () => {

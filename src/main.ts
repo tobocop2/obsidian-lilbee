@@ -3,6 +3,7 @@ import {
     type Menu,
     type MenuItem,
     Notice,
+    Platform,
     Plugin,
     type TAbstractFile,
     TFile,
@@ -20,6 +21,8 @@ import {
 import { LilbeeClient, SessionTokenError, hasStatusLine, isClientError } from "./api";
 import { node } from "./node";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
+import { electronDialog } from "./utils/file-dialog";
+import { CHAT_EXPORT_EXTENSION } from "./utils/session";
 import { exportDiagnostics } from "./diagnostics-export";
 import { hasNvidiaDevice, readEngineBackend, readFleetDevices } from "./engine-backend";
 import { ErrorJournal } from "./error-journal";
@@ -1607,6 +1610,21 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "export-chat-to-file",
+            name: MESSAGES.COMMAND_EXPORT_CHAT,
+            checkCallback: (checking) => {
+                if (!Platform.isDesktopApp) return false;
+                const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+                if (!chatLeaf || !(chatLeaf.view instanceof ChatView)) return false;
+                if (!checking) {
+                    void this.app.workspace.revealLeaf(chatLeaf);
+                    void chatLeaf.view.exportToFile();
+                }
+                return true;
+            },
+        });
+
+        this.addCommand({
             id: "remember",
             name: MESSAGES.COMMAND_REMEMBER,
             checkCallback: (checking) => {
@@ -2520,6 +2538,15 @@ export default class LilbeePlugin extends Plugin {
     /** Exporting a saved conversation as markdown needs the export route, newer than the other session routes. */
     serverSupportsSessionExport(): boolean {
         return supportsSessionExport(this.runningServerVersion());
+    }
+
+    /** Ask the user where to export a chat; null when they cancel. End-to-end runs replace it to skip the native dialog. */
+    async chooseChatExportPath(defaultName: string): Promise<string | null> {
+        const result = await electronDialog.showSaveDialog({
+            defaultPath: defaultName,
+            filters: [{ name: MESSAGES.LABEL_MARKDOWN_FILTER, extensions: [CHAT_EXPORT_EXTENSION] }],
+        });
+        return result.canceled || !result.filePath ? null : result.filePath;
     }
 
     /** GPU placement needs the /api/placement routes, which pre-0.6.90 servers don't have. */

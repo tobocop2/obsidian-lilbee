@@ -1,7 +1,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
-import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { App, MockElement, Platform, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { electronDialog } from "../src/utils/file-dialog";
 import {
     CAPABILITY,
     CHAT_STATUS,
@@ -568,11 +569,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all thirty-one commands", async () => {
+        it("adds all thirty-two commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(31);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(32);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -604,6 +605,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("open-placement");
             expect(ids).toContain("open-placement-beside-chat");
             expect(ids).toContain("fork-current-chat");
+            expect(ids).toContain("export-chat-to-file");
         });
 
         it("add-file command returns false when no active file", async () => {
@@ -684,6 +686,52 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: {} }]);
 
             expect(forkCommand(plugin).checkCallback(true)).toBe(false);
+        });
+
+        describe("export-chat-to-file", () => {
+            afterEach(() => {
+                Platform.isDesktopApp = true;
+            });
+
+            async function pluginWithExportableChat() {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                const exportToFile = vi.fn().mockResolvedValue(undefined);
+                const view = Object.assign(Object.create(ChatView.prototype), { exportToFile });
+                const chatLeaf = { view };
+                plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
+                plugin.app.workspace.revealLeaf = vi.fn();
+                const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                    (c: any[]) => c[0].id === "export-chat-to-file",
+                )![0];
+                return { plugin, exportToFile, chatLeaf, cmd };
+            }
+
+            it("exports the open chat and reveals it", async () => {
+                const { plugin, exportToFile, chatLeaf, cmd } = await pluginWithExportableChat();
+
+                expect(cmd.name).toBe(MESSAGES.COMMAND_EXPORT_CHAT);
+                expect(cmd.checkCallback(true)).toBe(true);
+                expect(exportToFile).not.toHaveBeenCalled();
+                cmd.checkCallback(false);
+
+                expect(exportToFile).toHaveBeenCalledTimes(1);
+                expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            });
+
+            it("is unavailable on mobile", async () => {
+                const { cmd } = await pluginWithExportableChat();
+                Platform.isDesktopApp = false;
+
+                expect(cmd.checkCallback(true)).toBe(false);
+            });
+
+            it("is unavailable with no chat view open", async () => {
+                const { plugin, cmd } = await pluginWithExportableChat();
+                plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: {} }]);
+
+                expect(cmd.checkCallback(true)).toBe(false);
+            });
         });
 
         it("fork-current-chat is unavailable with no chat view open", async () => {
@@ -4207,6 +4255,30 @@ describe("LilbeePlugin", () => {
             loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b446" });
             expect(plugin.serverSupportsSessionFork()).toBe(true);
             loadConfig.mockRestore();
+        });
+    });
+
+    describe("chooseChatExportPath", () => {
+        it("opens the save dialog on the suggested name for markdown files and returns the chosen path", async () => {
+            const plugin = await createPlugin();
+            const dialog = vi
+                .spyOn(electronDialog, "showSaveDialog")
+                .mockResolvedValue({ canceled: false, filePath: "/tmp/bees.md" });
+
+            expect(await plugin.chooseChatExportPath("bees-3f2a1b2c.md")).toBe("/tmp/bees.md");
+            expect(dialog).toHaveBeenCalledWith({
+                defaultPath: "bees-3f2a1b2c.md",
+                filters: [{ name: MESSAGES.LABEL_MARKDOWN_FILTER, extensions: ["md"] }],
+            });
+            dialog.mockRestore();
+        });
+
+        it("returns null when the dialog is cancelled", async () => {
+            const plugin = await createPlugin();
+            const dialog = vi.spyOn(electronDialog, "showSaveDialog").mockResolvedValue({ canceled: true });
+
+            expect(await plugin.chooseChatExportPath("bees.md")).toBeNull();
+            dialog.mockRestore();
         });
     });
 

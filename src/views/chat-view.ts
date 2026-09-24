@@ -66,10 +66,13 @@ import {
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
 import {
+    EXPORT_ICON,
     FORK_ICON,
     SAVE_ICON,
+    chatExportName,
     chunkTypeFromScope,
     deriveSessionTitle,
+    exportChatFile,
     saveChatNote,
     scopeFromChunkType,
 } from "../utils/session";
@@ -145,6 +148,13 @@ function transcriptMarkdown(history: readonly Message[]): string {
         lines.push(`**${label}**: ${msg.content}`, "");
     }
     return lines.join("\n");
+}
+
+/** True, after saying so, when `conversation` has nothing to save or export. */
+function nothingToSave(conversation: Conversation): boolean {
+    if (conversation.history.length > 0) return false;
+    new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
+    return true;
 }
 
 /** Per-message streaming state: accumulated text and the live reasoning DOM. */
@@ -408,6 +418,13 @@ export class ChatView extends ItemView {
         setIcon(saveBtn, SAVE_ICON);
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => void this.saveToVault());
+
+        if (Platform.isDesktopApp) {
+            const exportBtn = actions.createEl("button", { cls: "lilbee-chat-export" });
+            setIcon(exportBtn, EXPORT_ICON);
+            exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
+            exportBtn.addEventListener("click", () => void this.exportToFile());
+        }
 
         const clearBtn = actions.createEl("button", { cls: "lilbee-chat-clear" });
         setIcon(clearBtn, "eraser");
@@ -982,6 +999,7 @@ export class ChatView extends ItemView {
             startNew: () => this.startNewConversation(),
             fork: (id) => void this.forkSession(id),
             saveActive: () => void this.saveToVault(),
+            exportActive: () => void this.exportToFile(),
         }).open();
     }
 
@@ -1712,20 +1730,33 @@ export class ChatView extends ItemView {
 
     private async saveToVault(): Promise<void> {
         const conversation = this.conversation;
-        if (conversation.history.length === 0) {
-            new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
-            return;
-        }
+        if (nothingToSave(conversation)) return;
+        const content = await this.conversationMarkdown(conversation);
+        if (content !== null) await saveChatNote(this.app.vault, content);
+    }
+
+    /** Write the open chat, as Save to vault would, to a file the user picks. */
+    async exportToFile(): Promise<void> {
+        const conversation = this.conversation;
+        if (nothingToSave(conversation)) return;
+        const title = deriveSessionTitle(conversation.history[0].content);
+        await exportChatFile(
+            (name) => this.plugin.chooseChatExportPath(name),
+            chatExportName(title, conversation.sessionId),
+            () => this.conversationMarkdown(conversation),
+        );
+    }
+
+    /** `conversation` as Save to vault writes it, or null after a notice saying why there is none. */
+    private async conversationMarkdown(conversation: Conversation): Promise<string | null> {
         const transcript = transcriptMarkdown(conversation.history);
-        let content: string;
         try {
-            content = await this.chatMarkdown(conversation, transcript);
+            return await this.chatMarkdown(conversation, transcript);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_EXPORT_FAILED(reason));
-            return;
+            return null;
         }
-        await saveChatNote(this.app.vault, content);
     }
 
     /** The server's export of `conversation` when the server holds all of it, else `transcript`. */

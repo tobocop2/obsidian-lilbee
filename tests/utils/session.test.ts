@@ -1,8 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Notice, type Vault } from "obsidian";
+import { mkdtempSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
+    chatExportName,
     chunkTypeFromScope,
     deriveSessionTitle,
+    exportChatFile,
     saveChatNote,
     scopeFromChunkType,
     SESSION_SCOPE,
@@ -108,5 +113,84 @@ describe("saveChatNote", () => {
         await saveChatNote(vault as unknown as Vault, "# body");
 
         expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SAVE_CHAT]);
+    });
+});
+
+describe("chatExportName", () => {
+    const ID = "3f2a1b2c-9d8e-4f00-a1b2-c3d4e5f6a7b8";
+
+    it("joins the title's slug and the session id's first eight characters", () => {
+        expect(chatExportName("Brake specs!", ID)).toBe("brake-specs-3f2a1b2c.md");
+    });
+
+    it("folds whitespace runs to one hyphen and encodes a slash as two", () => {
+        expect(chatExportName("  Torque \t specs / 2026  ", ID)).toBe("torque-specs----2026-3f2a1b2c.md");
+    });
+
+    it.each(["", "!!!", "\u{1F41D}"])("falls back to chat when the title %j has nothing to slug", (title) => {
+        expect(chatExportName(title, ID)).toBe("chat-3f2a1b2c.md");
+    });
+
+    it("caps the slug at sixty characters and drops a hyphen the cap leaves at the end", () => {
+        const name = chatExportName("a".repeat(59) + " bcdef".repeat(100), ID);
+        expect(name).toBe("a".repeat(59) + "-3f2a1b2c.md");
+    });
+
+    it("names an unsaved chat from its title alone", () => {
+        expect(chatExportName("Brake specs", null)).toBe("brake-specs.md");
+    });
+});
+
+describe("exportChatFile", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    it("writes the content where the user chose and says where", async () => {
+        const target = join(mkdtempSync(join(tmpdir(), "lilbee-export-")), "bees.md");
+        const choosePath = vi.fn().mockResolvedValue(target);
+
+        await exportChatFile(choosePath, "bees-3f2a1b2c.md", () => Promise.resolve("# Bees\n"));
+
+        expect(choosePath).toHaveBeenCalledWith("bees-3f2a1b2c.md");
+        expect(readFileSync(target, "utf8")).toBe("# Bees\n");
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_CHAT_EXPORTED(target)]);
+    });
+
+    it("does nothing and says nothing when the user cancels the dialog", async () => {
+        const content = vi.fn();
+
+        await exportChatFile(vi.fn().mockResolvedValue(null), "bees.md", content);
+
+        expect(content).not.toHaveBeenCalled();
+        expect(Notice.instances).toEqual([]);
+    });
+
+    it("writes nothing when there is no content to export", async () => {
+        const target = join(mkdtempSync(join(tmpdir(), "lilbee-export-")), "bees.md");
+
+        await exportChatFile(vi.fn().mockResolvedValue(target), "bees.md", () => Promise.resolve(null));
+
+        expect(() => readFileSync(target)).toThrow();
+        expect(Notice.instances).toEqual([]);
+    });
+
+    it("reports a failed write with its reason", async () => {
+        const target = join(mkdtempSync(join(tmpdir(), "lilbee-export-")), "missing", "bees.md");
+
+        await exportChatFile(vi.fn().mockResolvedValue(target), "bees.md", () => Promise.resolve("# Bees"));
+
+        const [message] = Notice.instances.map((n) => n.message);
+        expect(message).toMatch(/^Could not export chat: ENOENT/);
+        expect(Notice.instances).toHaveLength(1);
+    });
+
+    it("reports a dialog that fails to open with its reason", async () => {
+        const content = vi.fn();
+
+        await exportChatFile(vi.fn().mockRejectedValue(new Error("no dialog")), "bees.md", content);
+
+        expect(content).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_CHAT_EXPORT_FAILED("no dialog")]);
     });
 });

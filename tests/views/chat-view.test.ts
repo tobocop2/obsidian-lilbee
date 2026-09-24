@@ -24,6 +24,10 @@ import { App, Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, Workspace
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, compactionMarkerText } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
+import { EXPORT_ICON } from "../../src/utils/session";
+import { mkdtempSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { ok, err } from "../../src/result";
 import type LilbeePlugin from "../../src/main";
 import { SSE_EVENT, TASK_TYPE } from "../../src/types";
@@ -263,6 +267,7 @@ function makePlugin(): LilbeePlugin {
         serverSupportsSessions: vi.fn().mockReturnValue(true),
         serverSupportsSessionFork: vi.fn().mockReturnValue(true),
         serverSupportsSessionExport: vi.fn().mockReturnValue(false),
+        chooseChatExportPath: vi.fn().mockResolvedValue(null),
         refreshMemoryViews: vi.fn(),
         taskQueue,
         enqueuePull: vi.fn((name: string) => taskQueue.enqueue(name, TASK_TYPE.PULL)),
@@ -3502,6 +3507,175 @@ describe("ChatView — save to vault from the server's export", () => {
 
         expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
         expect(create).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("**Assistant**: Reply"));
+    });
+});
+
+describe("ChatView — export chat to a file", () => {
+    beforeEach(() => {
+        Notice.clear();
+        sessionsHooks.length = 0;
+    });
+
+    afterEach(() => {
+        Platform.isDesktopApp = true;
+    });
+
+    const EXPORT = "---\ntitle: Hello\n---\n\n# Hello\n";
+
+    function exportTarget(): string {
+        return join(mkdtempSync(join(tmpdir(), "lilbee-chat-export-")), "chat.md");
+    }
+
+    async function openChat(plugin: LilbeePlugin) {
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        return { view, container: view.containerEl.children[1] as unknown as MockElement };
+    }
+
+    async function chatWithAnswer(plugin: LilbeePlugin) {
+        const opened = await openChat(plugin);
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: { token: "Reply" } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        opened.container.find("lilbee-chat-textarea")!.value = "Hello";
+        opened.container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+        return opened;
+    }
+
+    async function clickExport(container: MockElement) {
+        container.find("lilbee-chat-export")!.trigger("click");
+        await tick();
+        await tick();
+    }
+
+    it("puts an Export chat button in the toolbar on desktop", async () => {
+        const { container } = await openChat(makePlugin());
+
+        const btn = container.find("lilbee-chat-export")!;
+        expect(btn.getAttribute("aria-label")).toBe(MESSAGES.LABEL_EXPORT_CHAT);
+        expect(btn.getAttribute("data-icon")).toBe(EXPORT_ICON);
+    });
+
+    it("leaves the Export chat button out on mobile", async () => {
+        Platform.isDesktopApp = false;
+        const { container } = await openChat(makePlugin());
+
+        expect(container.find("lilbee-chat-export")).toBeNull();
+        expect(container.find("lilbee-chat-save")).not.toBeNull();
+    });
+
+    it("writes the server's export of the saved chat to the chosen file", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        const target = exportTarget();
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockResolvedValue(target);
+        const { container } = await chatWithAnswer(plugin);
+
+        await clickExport(container);
+
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello-s1.md");
+        expect(readFileSync(target, "utf8")).toBe(EXPORT);
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_CHAT_EXPORTED(target)]);
+    });
+
+    it("writes the chat as shown for an unsaved chat and names it from its title alone", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessions as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const target = exportTarget();
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockResolvedValue(target);
+        const { container } = await chatWithAnswer(plugin);
+
+        await clickExport(container);
+
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello.md");
+        expect(readFileSync(target, "utf8")).toContain("**Assistant**: Reply");
+    });
+
+    it("does nothing and says nothing when the dialog is cancelled", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        const { container } = await chatWithAnswer(plugin);
+
+        await clickExport(container);
+
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledTimes(1);
+        expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+        expect(Notice.instances).toEqual([]);
+    });
+
+    it("says there is nothing to export for an empty chat without opening the dialog", async () => {
+        const plugin = makePlugin();
+        const { container } = await openChat(plugin);
+
+        await clickExport(container);
+
+        expect(plugin.chooseChatExportPath).not.toHaveBeenCalled();
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_NOTHING_SAVE]);
+    });
+
+    it("exports the chat it was asked for when a new chat starts while the dialog is open", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessions as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const target = exportTarget();
+        let choose!: (path: string) => void;
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockReturnValue(new Promise((r) => (choose = r)));
+        const { container } = await chatWithAnswer(plugin);
+
+        await clickExport(container);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        choose(target);
+        await tick();
+        await tick();
+
+        expect(readFileSync(target, "utf8")).toContain("**User**: Hello");
+    });
+
+    it("reports a failed export and writes nothing", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockRejectedValue(new Error("disk on fire"));
+        const target = exportTarget();
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockResolvedValue(target);
+        const { container } = await chatWithAnswer(plugin);
+
+        await clickExport(container);
+
+        expect(() => readFileSync(target)).toThrow();
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_FAILED("disk on fire")]);
+    });
+
+    it("exports the open chat when the history list asks for it", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        const target = exportTarget();
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockResolvedValue(target);
+        const { container } = await chatWithAnswer(plugin);
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        sessionsHooks[0].exportActive();
+        await tick();
+        await tick();
+
+        expect(readFileSync(target, "utf8")).toBe(EXPORT);
+    });
+
+    it("exports the open chat when the command asks for it", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessions as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const target = exportTarget();
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockResolvedValue(target);
+        const { view } = await chatWithAnswer(plugin);
+
+        await view.exportToFile();
+
+        expect(readFileSync(target, "utf8")).toContain("**User**: Hello");
     });
 });
 

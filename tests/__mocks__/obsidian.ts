@@ -8,9 +8,10 @@
 
 import { vi } from "vitest";
 
-// Mutable so tests can simulate either platform; reset isMacOS in afterEach when changed.
+// Mutable so tests can simulate either platform; reset a changed field in afterEach.
 export const Platform = {
     isMacOS: false,
+    isDesktopApp: true,
 };
 
 export class MockElement {
