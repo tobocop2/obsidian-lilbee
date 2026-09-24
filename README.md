@@ -190,7 +190,7 @@ https://github.com/user-attachments/assets/b168dd6f-2a3d-4aba-bde0-ecdd4ae35776
 
 Every chat is written to disk as you go, titled from your first question. The history button in the chat toolbar lists them all. Reopen one and the full transcript comes back. Rename and delete them from the same list.
 
-To try a different question from any point in a chat, fork it. The fork button on a question starts a new chat with every message before that question and puts the question in the input box, ready to edit. The fork button in the history list, or the **Fork current chat** command, copies the whole chat. The original chat does not change. You can fork only when no answer is in progress.
+To take a chat in a different direction from any answer, fork it. Right-click an answer to fork from it. The fork is a new chat with every message up to and including that answer, and the input box stays empty for your next question. The fork button in the history list, or the **Fork current chat** command, copies the whole chat. The original chat does not change. You can fork only when no answer is in progress.
 
 The save button in the chat toolbar writes the chat to a note in the `lilbee` folder of your vault. The note starts with the chat's title, model and dates, and each answer ends with its numbered sources. The save button in the history list does the same for any saved chat, without opening it. The export button writes the same note to a file anywhere on your computer. You pick the file in the save dialog. The export button is in the chat toolbar and in the history list, and the **Export current chat to a file** command does the same for the open chat.
 

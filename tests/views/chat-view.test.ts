@@ -7282,79 +7282,205 @@ describe("ChatView — forking a session", () => {
         return new Error(`Server responded ${status}: ${JSON.stringify({ detail })}`);
     }
 
+    /** Right-click a transcript bubble; the Menu it opened, or null. */
+    const BUBBLE_RECT = { left: 12, bottom: 34 };
+
+    /** The newest Menu when `act` opened one, else null. */
+    function menuOpenedBy(act: () => void): Menu | null {
+        const before = Menu.instances.length;
+        act();
+        return Menu.instances.length > before ? Menu.instances[Menu.instances.length - 1] : null;
+    }
+
+    /** Right-click a transcript bubble with the fields Chromium sends: detail 0, button 2, the pointer. */
+    function rightClick(bubble: MockElement, preventDefault = vi.fn()): Menu | null {
+        return contextMenu(bubble, 2, preventDefault);
+    }
+
+    /** The contextmenu Chromium fires for the menu key on a focused element: detail 0, button -1. */
+    function menuKeyContextMenu(bubble: MockElement, preventDefault = vi.fn()): Menu | null {
+        return contextMenu(bubble, -1, preventDefault);
+    }
+
+    function contextMenu(bubble: MockElement, button: number, preventDefault: () => void): Menu | null {
+        (bubble as unknown as { getBoundingClientRect: () => typeof BUBBLE_RECT }).getBoundingClientRect = () =>
+            BUBBLE_RECT;
+        const event = { detail: 0, button, clientX: 40, clientY: 50, currentTarget: bubble, preventDefault };
+        return menuOpenedBy(() => bubble.trigger("contextmenu", event));
+    }
+
+    /** Press a key on a focused transcript bubble. */
+    function pressKey(bubble: MockElement, key: string, shiftKey = false, preventDefault = vi.fn()): Menu | null {
+        (bubble as unknown as { getBoundingClientRect: () => typeof BUBBLE_RECT }).getBoundingClientRect = () =>
+            BUBBLE_RECT;
+        return menuOpenedBy(() => bubble.trigger("keydown", { key, shiftKey, preventDefault }));
+    }
+
+    /** Which bubbles open an answer menu on right-click. */
+    function menuBubbles(messagesEl: MockElement): boolean[] {
+        return messagesEl.children.map((bubble) => rightClick(bubble) !== null);
+    }
+
     async function clickFork(bubble: MockElement) {
-        bubble.find("lilbee-chat-fork")!.trigger("click");
+        rightClick(bubble)!.itemTitled(MESSAGES.LABEL_FORK_FROM_ANSWER)!.click();
         await tick();
         await tick();
     }
 
-    it("puts a fork action on each restored question and none on answers", async () => {
+    it("opens a fork menu on right-click of each restored answer and none on questions", async () => {
         const { messagesEl } = await resumed(makePlugin());
 
-        expect(messagesEl.children.map((b) => b.find("lilbee-chat-fork") !== null)).toEqual([true, false, true, false]);
-        expect(messagesEl.children[0].find("lilbee-chat-fork")!.getAttribute("aria-label")).toBe(
-            MESSAGES.LABEL_FORK_FROM_HERE,
-        );
-        expect(messagesEl.children[0].find("lilbee-chat-fork")!.getAttribute("data-icon")).toBe("git-fork");
+        expect(menuBubbles(messagesEl)).toEqual([false, true, false, true]);
     });
 
-    it("forks before the clicked question, opens the fork, and prefills that question", async () => {
+    it("shows the fork item at the pointer in place of the default context menu", async () => {
+        const { messagesEl } = await resumed(makePlugin());
+        const preventDefault = vi.fn();
+
+        const menu = rightClick(messagesEl.children[1], preventDefault)!;
+
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_FORK_FROM_ANSWER]);
+        expect(menu.menuItems[0].icon).toBe("git-fork");
+        expect(menu.visible).toBe(true);
+        expect(menu.position).toBeNull();
+        expect(preventDefault).toHaveBeenCalled();
+    });
+
+    it("makes each answer with a menu focusable and labelled, and leaves questions alone", async () => {
+        const { messagesEl } = await resumed(makePlugin());
+
+        expect(messagesEl.children.map((b) => b.getAttribute("tabindex"))).toEqual([null, "0", null, "0"]);
+        expect(messagesEl.children[1].getAttribute("aria-label")).toBe(MESSAGES.LABEL_ANSWER_ACTIONS_HINT);
+        expect(messagesEl.children[1].getAttribute("aria-haspopup")).toBeNull();
+        expect(messagesEl.children[1].getAttribute("role")).toBe("article");
+        expect(messagesEl.children[0].getAttribute("aria-label")).toBeNull();
+    });
+
+    it("leaves answers unfocusable on a server without the fork route", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionFork as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const { messagesEl } = await resumed(plugin);
+
+        expect(messagesEl.children.map((b) => b.getAttribute("tabindex"))).toEqual([null, null, null, null]);
+    });
+
+    const openByKeyboard: Array<[string, (bubble: MockElement, preventDefault: () => void) => Menu | null]> = [
+        ["the menu key's contextmenu", (bubble, preventDefault) => menuKeyContextMenu(bubble, preventDefault)],
+        ["Shift+F10", (bubble, preventDefault) => pressKey(bubble, "F10", true, preventDefault)],
+    ];
+
+    it.each(openByKeyboard)("opens the same menu below a focused answer on %s", async (_name, open) => {
+        const { messagesEl } = await resumed(makePlugin());
+        const preventDefault = vi.fn();
+
+        const menu = open(messagesEl.children[1], preventDefault)!;
+
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_FORK_FROM_ANSWER]);
+        expect(menu.position).toEqual({ x: BUBBLE_RECT.left, y: BUBBLE_RECT.bottom });
+        expect(preventDefault).toHaveBeenCalled();
+    });
+
+    it.each([
+        ...openByKeyboard,
+        ["a right-click", (bubble: MockElement, pd: () => void) => rightClick(bubble, pd)],
+    ] as Array<[string, (bubble: MockElement, preventDefault: () => void) => Menu | null]>)(
+        "follows the vault's native-menu setting and closes the in-window menu on Escape, on %s",
+        async (_name, open) => {
+            const { view, messagesEl } = await resumed(makePlugin());
+            (view.app.vault as any).getConfig = vi.fn().mockReturnValue(true);
+            expect(open(messagesEl.children[1], vi.fn())!.useNativeMenu).toBe(true);
+
+            (view.app.vault as any).getConfig = vi.fn().mockReturnValue(false);
+            const addListener = vi.spyOn(document, "addEventListener");
+            try {
+                const menu = open(messagesEl.children[1], vi.fn())!;
+                expect(menu.useNativeMenu).toBe(false);
+                const onKey = addListener.mock.calls.find(
+                    ([type, , capture]) => type === "keydown" && capture === true,
+                );
+                (onKey![1] as (e: KeyboardEvent) => void)({
+                    key: "Escape",
+                    preventDefault: vi.fn(),
+                } as unknown as KeyboardEvent);
+                expect(menu.visible).toBe(false);
+            } finally {
+                addListener.mockRestore();
+            }
+        },
+    );
+
+    it.each([
+        ["the menu key (the browser fires contextmenu for it)", "ContextMenu", false],
+        ["F10 without Shift", "F10", false],
+        ["another key", "Enter", true],
+    ])("opens no menu on %s", async (_name, key, shiftKey) => {
+        const { messagesEl } = await resumed(makePlugin());
+        const preventDefault = vi.fn();
+
+        expect(pressKey(messagesEl.children[1], key, shiftKey, preventDefault)).toBeNull();
+        expect(preventDefault).not.toHaveBeenCalled();
+    });
+
+    it("forks through the chosen answer, opens the fork, and leaves the input empty", async () => {
         const plugin = makePlugin();
         const { view, container, messagesEl } = await resumed(plugin);
         plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE.slice(0, 2), "Bees (fork 1)"));
-        const textarea = container.find("lilbee-chat-textarea")!;
-        const focus = vi.spyOn(textarea, "focus");
 
-        await clickFork(messagesEl.children[2]);
+        await clickFork(messagesEl.children[1]);
 
         expect(plugin.api.getSession).toHaveBeenLastCalledWith("s5");
         expect(plugin.api.forkSession).toHaveBeenCalledWith("s5", 2);
         expect(view.currentSessionId()).toBe("s6");
         expect(messagesEl.children).toHaveLength(2);
-        expect(messagesEl.children[0].textContent).toContain("q1");
-        expect(textarea.value).toBe("q2");
-        expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([2, 2]);
-        expect(focus).toHaveBeenCalled();
+        expect(messagesEl.children[1].textContent).toContain("a1");
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("");
         expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SESSION_FORKED("Bees (fork 1)"));
         expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_SESSION_RESUMED("Bees (fork 1)"));
     });
 
-    it("maps a question asked after a resume to its position in the saved transcript", async () => {
+    it("maps an answer given after a resume to its position in the saved transcript", async () => {
         const plugin = makePlugin();
         const { container, messagesEl } = await resumed(plugin);
         const afterQ3 = [...SOURCE, msg("user", "q3")];
+        const afterA3 = [...afterQ3, msg("assistant", "a3")];
         plugin.api.appendSessionMessage = vi
             .fn()
             .mockResolvedValueOnce(detailOf("s5", afterQ3))
-            .mockResolvedValueOnce(detailOf("s5", [...afterQ3, msg("assistant", "a3")]));
+            .mockResolvedValueOnce(detailOf("s5", afterA3));
         const { mockFn, done } = answer("a3");
         plugin.api.chatStream = mockFn;
         await send(container, "q3", done);
-        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", [...afterQ3, msg("assistant", "a3")]));
-        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE));
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", afterA3));
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", afterA3));
 
-        await clickFork(messagesEl.children[4]);
+        expect(menuBubbles(messagesEl)).toEqual([false, true, false, true, false, true]);
+        await clickFork(messagesEl.children[5]);
 
-        expect(plugin.api.forkSession).toHaveBeenCalledWith("s5", 4);
-        expect(container.find("lilbee-chat-textarea")!.value).toBe("q3");
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s5", 6);
+        expect(container.find("lilbee-chat-textarea")!.value).toBe("");
     });
 
-    it("maps the first question of a new chat to position 0", async () => {
+    it("maps the first answer of a new chat to a two-message fork", async () => {
         const plugin = makePlugin();
+        plugin.api.appendSessionMessage = vi
+            .fn()
+            .mockResolvedValueOnce(detailOf("s1", SOURCE.slice(0, 1)))
+            .mockResolvedValueOnce(detailOf("s1", SOURCE.slice(0, 2)));
         const { container, messagesEl } = await openView(plugin);
         const { mockFn, done } = answer("a1");
         plugin.api.chatStream = mockFn;
         await send(container, "q1", done);
         plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s1", SOURCE.slice(0, 2)));
-        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s2", []));
+        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s2", SOURCE.slice(0, 2)));
 
-        await clickFork(messagesEl.children[0]);
+        expect(menuBubbles(messagesEl)).toEqual([false, true]);
+        await clickFork(messagesEl.children[1]);
 
         expect(plugin.api.getSession).toHaveBeenCalledWith("s1");
-        expect(plugin.api.forkSession).toHaveBeenCalledWith("s1", 0);
+        expect(plugin.api.forkSession).toHaveBeenCalledWith("s1", 2);
     });
 
-    it("leaves a question without a fork action when its write failed", async () => {
+    it("opens no fork menu on an answer whose write failed", async () => {
         const plugin = makePlugin();
         plugin.api.appendSessionMessage = vi.fn().mockRejectedValue(new Error("busy"));
         const { container, messagesEl } = await openView(plugin);
@@ -7363,10 +7489,10 @@ describe("ChatView — forking a session", () => {
 
         await send(container, "q1", done);
 
-        expect(messagesEl.children[0].find("lilbee-chat-fork")).toBeNull();
+        expect(menuBubbles(messagesEl)).toEqual([false, false]);
     });
 
-    it("shows no fork action on a server without the fork route", async () => {
+    it("opens no fork menu on a server without the fork route", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionFork as ReturnType<typeof vi.fn>).mockReturnValue(false);
         const { container, messagesEl } = await resumed(plugin);
@@ -7375,41 +7501,39 @@ describe("ChatView — forking a session", () => {
 
         await send(container, "q3", done);
 
-        expect(messagesEl.findAll("lilbee-chat-fork")).toHaveLength(0);
+        expect(menuBubbles(messagesEl)).toEqual([false, false, false, false, false, false]);
     });
 
-    it("refuses to fork when the saved transcript no longer holds that question there", async () => {
+    it("refuses to fork when the saved transcript no longer holds that answer there", async () => {
         const plugin = makePlugin();
         const { messagesEl } = await resumed(plugin);
-        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", [msg("user", "q1"), msg("assistant", "a1")]));
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", SOURCE.slice(0, 2)));
 
-        await clickFork(messagesEl.children[2]);
+        await clickFork(messagesEl.children[3]);
 
         expect(plugin.api.forkSession).not.toHaveBeenCalled();
         expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
     });
 
-    it("refuses to fork when an answer with the same text sits at that position", async () => {
+    it("refuses to fork when a question with the same text sits at that position", async () => {
         const plugin = makePlugin();
         const { messagesEl } = await resumed(plugin);
-        plugin.api.getSession = vi
-            .fn()
-            .mockResolvedValue(detailOf("s5", [...SOURCE.slice(0, 2), msg("assistant", "q2")]));
+        plugin.api.getSession = vi.fn().mockResolvedValue(detailOf("s5", [...SOURCE.slice(0, 3), msg("user", "a2")]));
 
-        await clickFork(messagesEl.children[2]);
+        await clickFork(messagesEl.children[3]);
 
         expect(plugin.api.forkSession).not.toHaveBeenCalled();
         expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
     });
 
-    it("refuses to fork when a different question sits at that position", async () => {
+    it("refuses to fork when a different answer sits at that position", async () => {
         const plugin = makePlugin();
         const { messagesEl } = await resumed(plugin);
         plugin.api.getSession = vi
             .fn()
-            .mockResolvedValue(detailOf("s5", [...SOURCE.slice(0, 2), msg("user", "other")]));
+            .mockResolvedValue(detailOf("s5", [...SOURCE.slice(0, 3), msg("assistant", "other")]));
 
-        await clickFork(messagesEl.children[2]);
+        await clickFork(messagesEl.children[3]);
 
         expect(plugin.api.forkSession).not.toHaveBeenCalled();
         expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_POINT_MOVED);
@@ -7420,7 +7544,7 @@ describe("ChatView — forking a session", () => {
         const { messagesEl } = await resumed(plugin);
         plugin.api.getSession = vi.fn().mockRejectedValue(refusal(404, "Session 's5' not found"));
 
-        await clickFork(messagesEl.children[0]);
+        await clickFork(messagesEl.children[1]);
 
         expect(plugin.api.forkSession).not.toHaveBeenCalled();
         expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_NOT_FOUND);
@@ -7431,7 +7555,7 @@ describe("ChatView — forking a session", () => {
         const { messagesEl } = await resumed(plugin);
         plugin.api.getSession = vi.fn().mockRejectedValue(new Error("offline"));
 
-        await clickFork(messagesEl.children[0]);
+        await clickFork(messagesEl.children[1]);
 
         expect(plugin.api.forkSession).not.toHaveBeenCalled();
         expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_SESSION_FORK_FAILED("offline"));
@@ -7569,7 +7693,7 @@ describe("ChatView — forking a session", () => {
         expect(container.find("lilbee-chat-textarea")!.value).toBe("");
     });
 
-    it("refuses Fork from here while an answer streams, before reading the transcript", async () => {
+    it("refuses Fork from this answer while an answer streams, before reading the transcript", async () => {
         const plugin = makePlugin();
         const { container, messagesEl } = await resumed(plugin);
         plugin.api.getSession = vi.fn();
@@ -7579,7 +7703,7 @@ describe("ChatView — forking a session", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await tick();
 
-        await clickFork(messagesEl.children[0]);
+        await clickFork(messagesEl.children[1]);
 
         expect(plugin.api.getSession).not.toHaveBeenCalled();
         expect(plugin.api.forkSession).not.toHaveBeenCalled();
@@ -7640,17 +7764,6 @@ describe("ChatView — forking a session", () => {
         expect(view.currentSessionId()).toBe("s6");
         expect(messagesEl.children).toHaveLength(4);
         expect(container.find("lilbee-chat-textarea")!.value).toBe("");
-    });
-
-    it("opens the fork without a prefill when the input box is gone", async () => {
-        const plugin = makePlugin();
-        plugin.api.forkSession = vi.fn().mockResolvedValue(detailOf("s6", SOURCE.slice(0, 2)));
-        const { view } = await openView(plugin);
-        (view as any).textareaEl = null;
-
-        await view.forkSession("s5", 2, "q2");
-
-        expect(view.currentSessionId()).toBe("s6");
     });
 
     it("reports no current session on a fresh view", async () => {
