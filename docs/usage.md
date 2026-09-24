@@ -72,6 +72,8 @@ Open the command palette (`Cmd/Ctrl + P`) and type `lilbee`. Commands that need 
 | Command                                                    | What it does                                                                                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | **Open chat**                                              | Open the chat sidebar                                                                             |
+| **Fork current chat**                                      | Copy the whole open chat into a new one                                                           |
+| **Export current chat to a file**                          | Write the open chat to a file you choose in the system save dialog                                |
 | **Search knowledge base**                                  | Open the search modal for semantic search with live results                                       |
 | **Sync vault**                                             | Index new and changed files, drop deleted ones                                                    |
 | **Retry skipped documents**                                | Re-attempt files that produced no content on an earlier sync                                      |
@@ -110,6 +112,20 @@ The chat sidebar (**Open chat**, or the ribbon icon) is the main way to use lilb
 - **Stop** a streaming answer mid-flight (the send button becomes a stop button).
 - **Save** the conversation to your vault as a dated markdown file under `lilbee/`, or **Clear Chat** to start over.
 - **Inline progress.** Sync and indexing progress shows right in the chat, with a cancel option. If the server isn't reachable the input shows _Connecting…_ and then _Offline_.
+
+### Saved chats
+
+The history button in the chat toolbar lists every saved chat. Reopen one to resume it. Rename or delete it from the same list.
+
+To take a chat in a new direction from one answer, fork it. Right-click a saved answer and choose **Fork from this answer**. The fork keeps every message up to and including that answer. It opens with an empty input box. To reach the same menu from the keyboard, press `Tab` to focus an answer. Then press `Shift+F10`.
+
+To fork the whole chat instead of one answer, use the fork button in the history list or the **Fork current chat** command.
+
+**Save to vault** writes the chat as a note in the vault's `lilbee` folder: front matter, a section for each turn, and numbered sources. An unsaved chat, or a chat saved from an older server, gets the older, simpler format instead. **Export chat…** writes the same note to any file you choose in the system save dialog.
+
+Fork and export need lilbee 0.6.90b446 or newer.
+
+The lilbee server stores your chats on your machine, not in the cloud.
 
 ---
 
@@ -256,6 +272,8 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 
 Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, and Wiki are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
 
+Text and number fields save when you press Enter or leave the field. They save only when the value changed. A change that needs a re-index, such as chunk size, asks once for confirmation before it applies. Cancel puts the saved value back. A value the server refuses stays in the field, with the reason shown.
+
 ---
 
 ## Supported formats
@@ -291,6 +309,8 @@ Scanned PDFs and image-only pages are read with OCR (Tesseract), or with a local
 **Search toggle is disabled in chat.** Set an embedding model (Settings → Models). Search mode needs one.
 
 **A model won't download or is flagged.** Models incompatible with your hardware are marked in the catalog and blocked unless you override. A stuck download can be cancelled in the Task Center and retried; it resumes where it left off.
+
+**No fork option when I right-click an answer.** One of three things: the server is older than lilbee 0.6.90b446, the answer isn't saved yet, or you right-clicked a question instead of an answer.
 
 ---
 
