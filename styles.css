@@ -278,27 +278,19 @@
     border-radius: 16px 16px 4px 16px;
 }
 
-.lilbee-chat-fork {
-    display: flex;
-    margin-left: auto;
-    padding: 0;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    color: var(--text-faint);
-    cursor: pointer;
-}
-
-.lilbee-chat-fork:hover,
-.lilbee-chat-fork:focus-visible {
-    color: var(--text-normal);
-}
-
 .lilbee-chat-message.assistant {
     align-self: flex-start;
     background-color: color-mix(in srgb, var(--background-modifier-border) 40%, transparent);
     color: var(--text-normal);
     border-radius: 4px 16px 16px 16px;
+}
+
+.lilbee-chat-message.assistant[tabindex]:focus {
+    outline: none;
+}
+
+.lilbee-chat-message.assistant[tabindex]:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
 }
 
 .lilbee-chat-message-error {

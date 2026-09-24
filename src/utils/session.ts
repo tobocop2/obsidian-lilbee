@@ -83,7 +83,7 @@ export async function exportChatFile(
     }
 }
 
-/** Icon on every fork action: the sessions list rows and the chat's questions. */
+/** Icon on every fork action: the sessions list rows and the chat's answers. */
 export const FORK_ICON = "git-fork";
 
 /** Translate the plugin's chunk-type selection into a scope the server can parse. */
