@@ -1,5 +1,7 @@
 import { Notice, type Vault } from "obsidian";
 import { MESSAGES } from "../locales/en";
+import { node } from "../node";
+import { errorMessage } from "../utils";
 import { SEARCH_CHUNK_TYPE, type SearchChunkType } from "../types";
 
 /** The server's `SearchScope` vocabulary. It says "both" where the plugin says "all". */
@@ -36,6 +38,50 @@ export async function saveChatNote(vault: Vault, content: string): Promise<void>
 
 /** Icon on every "Save to vault" action: the chat toolbar and the sessions list rows. */
 export const SAVE_ICON = "save";
+
+/** Icon on every "Export chat" action: the chat toolbar and the sessions list rows. */
+export const EXPORT_ICON = "download";
+
+/** Bounds and fallback of the server's export file name. */
+const EXPORT_SLUG_MAX_LEN = 60;
+const EXPORT_ID_PREFIX_LEN = 8;
+const EXPORT_FALLBACK_STEM = "chat";
+
+/** Extension of an exported chat file. */
+export const CHAT_EXPORT_EXTENSION = "md";
+
+/** The server's default export name: `<title-slug>-<id prefix>.md`, without the id for an unsaved chat. */
+export function chatExportName(title: string, sessionId: string | null): string {
+    const slug = title
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\//g, "--")
+        .replace(/ /g, "-")
+        .replace(/[^a-z0-9-]/g, "")
+        .replace(/^-+|-+$/g, "");
+    const stem = slug.slice(0, EXPORT_SLUG_MAX_LEN).replace(/-+$/, "") || EXPORT_FALLBACK_STEM;
+    const base = sessionId ? `${stem}-${sessionId.slice(0, EXPORT_ID_PREFIX_LEN)}` : stem;
+    return `${base}.${CHAT_EXPORT_EXTENSION}`;
+}
+
+/** Ask where to export, then write `content()` there and say where; a cancel or a null content writes nothing. */
+export async function exportChatFile(
+    choosePath: (defaultName: string) => Promise<string | null>,
+    defaultName: string,
+    content: () => Promise<string | null>,
+): Promise<void> {
+    try {
+        const path = await choosePath(defaultName);
+        if (!path) return;
+        const text = await content();
+        if (text === null) return;
+        node.writeFileSync(path, text);
+        new Notice(MESSAGES.NOTICE_CHAT_EXPORTED(path));
+    } catch (err) {
+        new Notice(MESSAGES.ERROR_CHAT_EXPORT_FAILED(errorMessage(err, MESSAGES.ERROR_UNKNOWN)));
+    }
+}
 
 /** Icon on every fork action: the sessions list rows and the chat's questions. */
 export const FORK_ICON = "git-fork";

@@ -66,10 +66,13 @@ import {
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
 import {
+    EXPORT_ICON,
     FORK_ICON,
     SAVE_ICON,
+    chatExportName,
     chunkTypeFromScope,
     deriveSessionTitle,
+    exportChatFile,
     saveChatNote,
     scopeFromChunkType,
 } from "../utils/session";
@@ -128,13 +131,15 @@ interface Conversation {
     summary: string;
     /** Server-side session this chat appends to. Null until the first turn opens one. */
     sessionId: string | null;
+    /** The session's title as the server holds it. Null while the chat is unsaved. */
+    title: string | null;
     /** A session write for this chat failed, so the server's copy is missing a turn. */
     persistFailed: boolean;
 }
 
 /** A chat with nothing said yet and no saved session. */
 function emptyConversation(): Conversation {
-    return { history: [], summary: "", sessionId: null, persistFailed: false };
+    return { history: [], summary: "", sessionId: null, title: null, persistFailed: false };
 }
 
 /** The chat as shown, in the plain format used when the server's export cannot stand in for it. */
@@ -145,6 +150,13 @@ function transcriptMarkdown(history: readonly Message[]): string {
         lines.push(`**${label}**: ${msg.content}`, "");
     }
     return lines.join("\n");
+}
+
+/** True, after saying so, when `conversation` has nothing to save or export. */
+function nothingToSave(conversation: Conversation): boolean {
+    if (conversation.history.length > 0) return false;
+    new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
+    return true;
 }
 
 /** Per-message streaming state: accumulated text and the live reasoning DOM. */
@@ -408,6 +420,11 @@ export class ChatView extends ItemView {
         setIcon(saveBtn, SAVE_ICON);
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => void this.saveToVault());
+
+        const exportBtn = actions.createEl("button", { cls: "lilbee-chat-export" });
+        setIcon(exportBtn, EXPORT_ICON);
+        exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
+        exportBtn.addEventListener("click", () => void this.exportToFile());
 
         const clearBtn = actions.createEl("button", { cls: "lilbee-chat-clear" });
         setIcon(clearBtn, "eraser");
@@ -982,6 +999,10 @@ export class ChatView extends ItemView {
             startNew: () => this.startNewConversation(),
             fork: (id) => void this.forkSession(id),
             saveActive: () => void this.saveToVault(),
+            exportActive: () => void this.exportToFile(),
+            renamed: (id, title) => {
+                if (id === this.conversation.sessionId) this.conversation.title = title;
+            },
         }).open();
     }
 
@@ -1002,9 +1023,12 @@ export class ChatView extends ItemView {
         const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
         const created = await this.plugin.api.createSession(this.chatActive, scope);
         conversation.sessionId = created.meta.id;
+        conversation.title = created.meta.title;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
         try {
-            await this.plugin.api.renameSession(created.meta.id, deriveSessionTitle(firstText));
+            const title = deriveSessionTitle(firstText);
+            await this.plugin.api.renameSession(created.meta.id, title);
+            conversation.title = title;
         } catch {
             // A failed title write leaves the server's default; the transcript still persists.
         }
@@ -1022,8 +1046,10 @@ export class ChatView extends ItemView {
             // Sessions switched off server-side (404) is permanent: unbind so the chat
             // goes on in memory. A transient failure (busy server, timeout) drops only
             // this write; a gap in the transcript beats splitting the conversation.
-            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) conversation.sessionId = null;
-            else conversation.persistFailed = true;
+            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) {
+                conversation.sessionId = null;
+                conversation.title = null;
+            } else conversation.persistFailed = true;
         });
     }
 
@@ -1134,6 +1160,7 @@ export class ChatView extends ItemView {
     private showSession(detail: SessionDetail): void {
         this.clearChat();
         this.conversation.sessionId = detail.meta.id;
+        this.conversation.title = detail.meta.title;
         this.conversation.summary = detail.summary;
         this.hideEmptyState();
 
@@ -1712,20 +1739,33 @@ export class ChatView extends ItemView {
 
     private async saveToVault(): Promise<void> {
         const conversation = this.conversation;
-        if (conversation.history.length === 0) {
-            new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
-            return;
-        }
+        if (nothingToSave(conversation)) return;
+        const content = await this.conversationMarkdown(conversation);
+        if (content !== null) await saveChatNote(this.app.vault, content);
+    }
+
+    /** Write the open chat, as Save to vault would, to a file the user picks. An unsaved chat is named from its first question. */
+    async exportToFile(): Promise<void> {
+        const conversation = this.conversation;
+        if (nothingToSave(conversation)) return;
+        const title = conversation.title ?? deriveSessionTitle(conversation.history[0].content);
+        await exportChatFile(
+            (name) => this.plugin.chooseChatExportPath(name),
+            chatExportName(title, conversation.sessionId),
+            () => this.conversationMarkdown(conversation),
+        );
+    }
+
+    /** `conversation` as Save to vault writes it, or null after a notice saying why there is none. */
+    private async conversationMarkdown(conversation: Conversation): Promise<string | null> {
         const transcript = transcriptMarkdown(conversation.history);
-        let content: string;
         try {
-            content = await this.chatMarkdown(conversation, transcript);
+            return await this.chatMarkdown(conversation, transcript);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_EXPORT_FAILED(reason));
-            return;
+            return null;
         }
-        await saveChatNote(this.app.vault, content);
     }
 
     /** The server's export of `conversation` when the server holds all of it, else `transcript`. */
