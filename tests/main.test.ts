@@ -1353,6 +1353,96 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.serverSupportsSessionFork()).toBe(false);
         });
+
+        it("a save that changes neither the URL nor the mode does not re-request the server's health", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b446" },
+            });
+            await plugin.onload();
+            await flush();
+            // First save after onload establishes the previous-URL baseline.
+            await plugin.saveSettings();
+            await flush();
+            const health = plugin.api.health as ReturnType<typeof vi.fn>;
+            health.mockClear();
+
+            // Second save: nothing about the server changed.
+            await plugin.saveSettings();
+            await flush();
+
+            expect(health).not.toHaveBeenCalled();
+        });
+
+        it("an earlier switch's health answer cannot overwrite a later switch's, however late it arrives", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+
+            let resolveFirst!: (value: unknown) => void;
+            let resolveSecond!: (value: unknown) => void;
+            const firstResponse = new Promise((resolve) => {
+                resolveFirst = resolve;
+            });
+            const secondResponse = new Promise((resolve) => {
+                resolveSecond = resolve;
+            });
+            plugin.api.health = vi.fn().mockReturnValueOnce(firstResponse).mockReturnValueOnce(secondResponse);
+
+            // First save: point at a fork-capable server (still in flight).
+            plugin.settings.serverUrl = "http://127.0.0.1:8001";
+            const firstSave = plugin.saveSettings();
+            await flush();
+            // Second, later save: point at a server that is NOT fork-capable (also in flight).
+            plugin.settings.serverUrl = "http://127.0.0.1:8002";
+            const secondSave = plugin.saveSettings();
+            await flush();
+
+            // The SECOND (current) request resolves first...
+            resolveSecond({ isErr: () => false, isOk: () => true, value: { status: "ok", version: "0.6.90b420" } });
+            await flush();
+            // ...then the FIRST (stale) request resolves last, with a fork-capable version.
+            resolveFirst({ isErr: () => false, isOk: () => true, value: { status: "ok", version: "0.6.90b446" } });
+            await flush();
+            await Promise.all([firstSave, secondSave]);
+
+            // The stale, out-of-order answer must not win: the current server does not support fork.
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
+
+        it("a health-probe tick's answer is not overwritten by an earlier switch's stale response arriving later", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+
+            let resolveSwitch!: (value: unknown) => void;
+            const switchResponse = new Promise((resolve) => {
+                resolveSwitch = resolve;
+            });
+            plugin.api.health = vi.fn().mockReturnValueOnce(switchResponse);
+
+            // A switch's request starts (would report a fork-capable server) but is held back.
+            plugin.settings.serverUrl = "http://127.0.0.1:8003";
+            const save = plugin.saveSettings();
+            await flush();
+
+            // A probe tick fires next and resolves immediately, with a NON-fork-capable version.
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: { status: "ok", version: "0.6.90b420" },
+            });
+            await (plugin as any).probeServerHealth();
+
+            // The switch's stale, fork-capable response finally arrives, after the probe already answered.
+            resolveSwitch({ isErr: () => false, isOk: () => true, value: { status: "ok", version: "0.6.90b446" } });
+            await flush();
+            await save;
+
+            expect(plugin.serverSupportsSessionFork()).toBe(false);
+        });
     });
 
     describe("readCurrentToken() priority", () => {
