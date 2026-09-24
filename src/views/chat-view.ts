@@ -1046,8 +1046,10 @@ export class ChatView extends ItemView {
             // Sessions switched off server-side (404) is permanent: unbind so the chat
             // goes on in memory. A transient failure (busy server, timeout) drops only
             // this write; a gap in the transcript beats splitting the conversation.
-            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) conversation.sessionId = null;
-            else conversation.persistFailed = true;
+            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) {
+                conversation.sessionId = null;
+                conversation.title = null;
+            } else conversation.persistFailed = true;
         });
     }
 

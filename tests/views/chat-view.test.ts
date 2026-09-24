@@ -3711,6 +3711,20 @@ describe("ChatView — export chat to a file", () => {
         expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("bee-biology-s9.md");
     });
 
+    it("names the export from the first question once the server drops the session", async () => {
+        const plugin = makePlugin();
+        plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("busy"));
+        plugin.api.appendSessionMessage = vi
+            .fn()
+            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
+        const { view, container } = await chatWithAnswer(plugin);
+        expect(view.currentSessionId()).toBeNull();
+
+        await clickExport(container);
+
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello.md");
+    });
+
     it("names the export from the server's title when titling the new session failed", async () => {
         const plugin = makePlugin();
         plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("busy"));
