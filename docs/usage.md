@@ -119,9 +119,9 @@ The history button in the chat toolbar lists every saved chat. Reopen one to res
 
 To take a chat in a new direction from one answer, fork it. Right-click a saved answer and choose **Fork from this answer**. The fork keeps every message up to and including that answer. It opens with an empty input box. To reach the same menu from the keyboard, press `Tab` to focus an answer. Then press `Shift+F10`.
 
-To fork the whole chat instead of one answer, use the fork button in the history list or the **Fork current chat** command.
+To fork the whole chat instead of one answer, use the fork button in the history list or the **Fork current chat** command. Forking is refused while an answer is still streaming, or while another fork is already running.
 
-**Save to vault** writes the chat as a note in the vault's `lilbee` folder: front matter, a section for each turn, and numbered sources. An unsaved chat, or a chat saved from an older server, gets the older, simpler format instead. **Export chat…** writes the same note to any file you choose in the system save dialog.
+**Save to vault** writes the chat as a note in the vault's `lilbee` folder: front matter, a section for each turn, and numbered sources. An unsaved chat, or a chat saved from an older server, gets the older, simpler format instead. **Export chat…** writes the same note to any file you choose in the system save dialog. Each row in the history list has its own Save to vault and Export buttons, so you can save or export any saved chat without opening it.
 
 Fork and export need lilbee 0.6.90b446 or newer.
 
