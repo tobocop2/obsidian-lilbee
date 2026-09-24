@@ -7,7 +7,7 @@ import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, errorMessage, relativeTimeFromIso } from "../utils";
 import { displayLabelForRef } from "../utils/model-ref";
 import { applyConfig } from "../utils/reindex";
-import { FORK_ICON, SAVE_ICON, saveChatNote } from "../utils/session";
+import { EXPORT_ICON, FORK_ICON, SAVE_ICON, chatExportName, exportChatFile, saveChatNote } from "../utils/session";
 
 /** Hooks the chat view supplies so the modal can drive it without importing it. */
 export interface SessionsModalHooks {
@@ -19,6 +19,10 @@ export interface SessionsModalHooks {
     fork: (id: string) => void;
     /** Save the open chat to the vault the way the chat toolbar does. */
     saveActive: () => void;
+    /** Export the open chat to a file the way the chat toolbar does. */
+    exportActive: () => void;
+    /** A session was renamed here, so a chat view showing it can take the new title. */
+    renamed: (id: string, title: string) => void;
 }
 
 export class SessionsModal extends Modal {
@@ -193,6 +197,7 @@ export class SessionsModal extends Modal {
                 if (meta.id === this.hooks.activeId) this.hooks.saveActive();
                 else void this.saveToVault(meta);
             });
+            this.renderExportAction(actions, meta);
         }
 
         const deleteBtn = actions.createEl("button", { cls: "lilbee-session-delete" });
@@ -201,10 +206,33 @@ export class SessionsModal extends Modal {
         deleteBtn.addEventListener("click", () => void this.confirmDelete(meta));
     }
 
+    private renderExportAction(actions: HTMLElement, meta: SessionMeta): void {
+        const exportBtn = actions.createEl("button", { cls: "lilbee-session-export" });
+        setIcon(exportBtn, EXPORT_ICON);
+        exportBtn.setAttribute("aria-label", MESSAGES.LABEL_EXPORT_CHAT);
+        exportBtn.addEventListener("click", () => {
+            if (meta.id === this.hooks.activeId) this.hooks.exportActive();
+            else void this.exportToFile(meta);
+        });
+    }
+
     private async saveToVault(meta: SessionMeta): Promise<void> {
-        let content: string;
+        const content = await this.sessionMarkdown(meta);
+        if (content !== null) await saveChatNote(this.app.vault, content);
+    }
+
+    private async exportToFile(meta: SessionMeta): Promise<void> {
+        await exportChatFile(
+            (name) => this.plugin.chooseChatExportPath(name),
+            chatExportName(meta.title, meta.id),
+            () => this.sessionMarkdown(meta),
+        );
+    }
+
+    /** The server's markdown export of `meta`, or null after a notice saying why there is none. */
+    private async sessionMarkdown(meta: SessionMeta): Promise<string | null> {
         try {
-            content = await this.plugin.api.getSessionMarkdown(meta.id);
+            return await this.plugin.api.getSessionMarkdown(meta.id);
         } catch (err) {
             if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) {
                 new Notice(MESSAGES.ERROR_SESSION_EXPORT_NOT_FOUND);
@@ -212,9 +240,8 @@ export class SessionsModal extends Modal {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
                 new Notice(MESSAGES.ERROR_SESSION_EXPORT_FAILED(reason));
             }
-            return;
+            return null;
         }
-        await saveChatNote(this.app.vault, content);
     }
 
     private renderRenameField(row: HTMLElement, meta: SessionMeta): void {
@@ -250,6 +277,7 @@ export class SessionsModal extends Modal {
         try {
             await this.plugin.api.renameSession(meta.id, title);
             meta.title = title;
+            this.hooks.renamed(meta.id, title);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_RENAME_FAILED(reason));

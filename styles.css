@@ -553,6 +553,7 @@
 }
 
 .lilbee-chat-save,
+.lilbee-chat-export,
 .lilbee-chat-clear,
 .lilbee-chat-sessions,
 .lilbee-chat-gpu,
@@ -571,6 +572,7 @@
 }
 
 .lilbee-chat-save:hover,
+.lilbee-chat-export:hover,
 .lilbee-chat-clear:hover,
 .lilbee-chat-sessions:hover,
 .lilbee-chat-gpu:hover,
