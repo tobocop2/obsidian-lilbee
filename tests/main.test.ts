@@ -4300,7 +4300,7 @@ describe("LilbeePlugin", () => {
                 lilbeeVersion: "v0.6.66b507",
             });
             expect(plugin.serverSupportsSessions()).toBe(false);
-            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b420.dev724" });
+            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.91b1.dev5" });
             expect(plugin.serverSupportsSessions()).toBe(true);
             loadConfig.mockRestore();
         });
