@@ -47,3 +47,33 @@ describe("MIN_SERVER_VERSION", () => {
         expect(declared.minServerVersion).toBe(MIN_SERVER_VERSION);
     });
 });
+
+describe("isVersionOlder: PEP 440 ordering (dev < a < b < rc < final < post)", () => {
+    it.each([
+        // [current, latest, current is older than latest]
+        ["0.6.90b447", "0.6.90", true], // a final release ranks above its own betas
+        ["0.6.90", "0.6.90b447", false],
+        ["0.6.90rc1", "0.6.90b446", false], // rc ranks above beta
+        ["0.6.90b446", "0.6.90rc1", true],
+        ["0.6.91b1", "0.6.90", false], // a later release line ranks above an earlier final
+        ["0.6.90", "0.6.91b1", true],
+        ["0.6.90", "0.6.90.post1", true], // post ranks above final
+        ["0.6.90.post1", "0.6.90", false],
+        ["0.6.90b447.dev1", "0.6.90b447", true], // a dev preview has not shipped its own tag yet
+        ["0.6.90b447", "0.6.90b447.dev1", false],
+        ["0.6.90", "0.6.90", false], // ties are not older
+        // A final release is never older than any of the plugin's beta floors.
+        ["0.6.90", SESSIONS_MIN_SERVER_VERSION, false],
+        ["0.6.90", PLACEMENT_MIN_SERVER_VERSION, false],
+        ["0.6.90", SESSION_FORK_MIN_SERVER_VERSION, false],
+        ["0.6.90", SESSION_EXPORT_MIN_SERVER_VERSION, false],
+    ])("isVersionOlder(%s, %s) === %s", (current, latest, expected) => {
+        expect(isVersionOlder(current, latest)).toBe(expected);
+    });
+
+    it("fails open (not older) for a version PEP 440 cannot parse", () => {
+        expect(isVersionOlder("garbage", "0.6.90")).toBe(false);
+        expect(isVersionOlder("0.6.90", "garbage")).toBe(false);
+        expect(isVersionOlder("", "0.6.90")).toBe(false);
+    });
+});

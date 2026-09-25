@@ -1,23 +1,21 @@
+import { compare, valid } from "@renovatebot/pep440";
+
 /**
  * The plugin's minimum lilbee server version. The release workflow reads the
  * same floor from min-server-version.json; a test asserts the two agree.
  */
 
 /**
- * True when `current` orders strictly before `latest` under the release scheme
- * ("0.6.66b507", "0.6.90b420.dev722"): every numeric run compares in sequence,
- * missing runs count as zero. A dev build ahead of the newest release is not older.
+ * True when `current` orders strictly before `latest` under PEP 440 ordering
+ * (`.devN` < `aN` < `bN` < `rcN` < a final release < `.postN`), which is the
+ * scheme lilbee's own version strings follow. Release segments compare
+ * numerically, zero-padded to the longer length, so `0.6.90` equals `0.6.90.0`.
+ * A version PEP 440 cannot parse fails open: never "older", so an unknown or
+ * unparseable version never blocks a feature.
  */
 export function isVersionOlder(current: string, latest: string): boolean {
-    const runs = (v: string): number[] => (v.match(/\d+/g) ?? []).map(Number);
-    const a = runs(current);
-    const b = runs(latest);
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-        const x = a[i] ?? 0;
-        const y = b[i] ?? 0;
-        if (x !== y) return x < y;
-    }
-    return false;
+    if (!valid(current) || !valid(latest)) return false;
+    return compare(current, latest) < 0;
 }
 
 /** Whichever of the two versions orders later; ties keep `a`. */
