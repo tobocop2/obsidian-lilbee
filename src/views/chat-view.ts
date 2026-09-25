@@ -32,6 +32,7 @@ import type {
     Message,
     SearchChunkType,
     SessionDetail,
+    SessionExport,
     SessionMessageItem,
     Source,
     SSEEvent,
@@ -68,7 +69,6 @@ import {
     EXPORT_ICON,
     FORK_ICON,
     SAVE_ICON,
-    chatExportName,
     chunkTypeFromScope,
     deriveSessionTitle,
     exportChatFile,
@@ -131,8 +131,6 @@ interface Conversation {
     summary: string;
     /** Server-side session this chat appends to. Null until the first turn opens one. */
     sessionId: string | null;
-    /** The session's title as the server holds it. Null while the chat is unsaved. */
-    title: string | null;
     /** A session write for this chat failed, so the server's copy is missing a turn. */
     persistFailed: boolean;
 }
@@ -145,7 +143,7 @@ interface SessionOrigin {
 
 /** A chat with nothing said yet and no saved session. */
 function emptyConversation(): Conversation {
-    return { history: [], summary: "", sessionId: null, title: null, persistFailed: false };
+    return { history: [], summary: "", sessionId: null, persistFailed: false };
 }
 
 /** The chat as shown, in the plain format used when the server's export cannot stand in for it. */
@@ -1019,9 +1017,6 @@ export class ChatView extends ItemView {
             fork: (id) => void this.forkSession(id),
             saveActive: () => void this.saveToVault(),
             exportActive: () => void this.exportToFile(),
-            renamed: (id, title) => {
-                if (id === this.conversation.sessionId) this.conversation.title = title;
-            },
             writesSettled: () => this.persistQueue,
         }).open();
     }
@@ -1042,12 +1037,9 @@ export class ChatView extends ItemView {
         if (conversation.sessionId) return conversation.sessionId;
         const created = await this.plugin.api.createSession(origin.model, origin.scope);
         conversation.sessionId = created.meta.id;
-        conversation.title = created.meta.title;
         // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
         try {
-            const title = deriveSessionTitle(firstText);
-            await this.plugin.api.renameSession(created.meta.id, title);
-            conversation.title = title;
+            await this.plugin.api.renameSession(created.meta.id, deriveSessionTitle(firstText));
         } catch {
             // A failed title write leaves the server's default; the transcript still persists.
         }
@@ -1065,10 +1057,8 @@ export class ChatView extends ItemView {
             // Sessions switched off server-side (404) is permanent: unbind so the chat
             // goes on in memory. A transient failure (busy server, timeout) drops only
             // this write; a gap in the transcript beats splitting the conversation.
-            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) {
-                conversation.sessionId = null;
-                conversation.title = null;
-            } else conversation.persistFailed = true;
+            if (err instanceof Error && isHttpStatus(err, HTTP_STATUS.NOT_FOUND)) conversation.sessionId = null;
+            else conversation.persistFailed = true;
         });
     }
 
@@ -1211,7 +1201,6 @@ export class ChatView extends ItemView {
     private showSession(detail: SessionDetail): void {
         this.clearChat();
         this.conversation.sessionId = detail.meta.id;
-        this.conversation.title = detail.meta.title;
         this.conversation.summary = detail.summary;
         this.hideEmptyState();
 
@@ -1803,27 +1792,26 @@ export class ChatView extends ItemView {
     private async saveToVault(): Promise<void> {
         const conversation = this.conversation;
         if (nothingToSave(conversation)) return;
-        const content = await this.conversationMarkdown(conversation);
-        if (content !== null) await saveChatNote(this.app.vault, content);
+        const exported = await this.conversationExport(conversation);
+        if (exported !== null) await saveChatNote(this.app.vault, exported.markdown);
     }
 
-    /** Write the open chat, as Save to vault would, to a file the user picks. An unsaved chat is named from its first question. */
+    /** Write the open chat, as Save to vault would, to a file the user picks, under the server's file name when the server exports it. */
     async exportToFile(): Promise<void> {
         const conversation = this.conversation;
         if (nothingToSave(conversation)) return;
-        const title = conversation.title ?? deriveSessionTitle(conversation.history[0].content);
         await exportChatFile(
             (name) => this.plugin.chooseChatExportPath(name),
-            chatExportName(title, conversation.sessionId),
-            () => this.conversationMarkdown(conversation),
+            () => this.conversationExport(conversation),
+            conversation.sessionId,
         );
     }
 
     /** `conversation` as Save to vault writes it, or null after a notice saying why there is none. */
-    private async conversationMarkdown(conversation: Conversation): Promise<string | null> {
-        const transcript = transcriptMarkdown(conversation.history);
+    private async conversationExport(conversation: Conversation): Promise<SessionExport | null> {
+        const transcript: SessionExport = { markdown: transcriptMarkdown(conversation.history), fileName: null };
         try {
-            return await this.chatMarkdown(conversation, transcript);
+            return await this.chatExport(conversation, transcript);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_EXPORT_FAILED(reason));
@@ -1832,7 +1820,7 @@ export class ChatView extends ItemView {
     }
 
     /** The server's export of `conversation` when the server holds all of it, else `transcript`. */
-    private async chatMarkdown(conversation: Conversation, transcript: string): Promise<string> {
+    private async chatExport(conversation: Conversation, transcript: SessionExport): Promise<SessionExport> {
         // The export reads what the server holds, so queued turns land first.
         await this.persistQueue;
         const sessionId = conversation.sessionId;

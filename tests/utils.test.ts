@@ -305,14 +305,15 @@ describe("supportsSessionFork", () => {
 });
 
 describe("supportsSessionExport", () => {
-    it("rejects servers that have sessions but no markdown export route", () => {
+    it("rejects servers without the markdown export route or without its file name header", () => {
         expect(supportsSessionExport("0.6.90b420")).toBe(false);
         expect(supportsSessionExport("v0.6.90b445")).toBe(false);
+        expect(supportsSessionExport("0.6.90b446")).toBe(false);
         expect(supportsSessionExport("0.6.66b507")).toBe(false);
     });
 
-    it("accepts the first export build, a later dev build, and anything newer", () => {
-        expect(supportsSessionExport("0.6.90b446")).toBe(true);
+    it("accepts the first build that names the export file, a later dev build, and anything newer", () => {
+        expect(supportsSessionExport("0.6.90b447")).toBe(true);
         expect(supportsSessionExport("v0.6.91b1.dev5")).toBe(true);
         expect(supportsSessionExport("0.6.91b1")).toBe(true);
     });

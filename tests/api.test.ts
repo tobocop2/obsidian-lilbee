@@ -275,14 +275,16 @@ describe("session methods", () => {
         expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ message_count: 0 });
     });
 
-    it("getSessionMarkdown() GETs the markdown route and returns the body text", async () => {
+    it("getSessionMarkdown() GETs the markdown route and returns the body with the server's file name", async () => {
         const markdown = "---\ntitle: Bees\n---\n\n# Bees\n\n## User\n\nq\n";
-        fetchMock.mockResolvedValue({
-            ok: true,
-            json: () => Promise.resolve(null),
-            text: () => Promise.resolve(markdown),
-            body: null,
-        } as unknown as Response);
+        fetchMock.mockResolvedValue(
+            new Response(markdown, {
+                headers: {
+                    "Content-Disposition":
+                        "attachment; filename=\"_-3f2a1b2c.md\"; filename*=UTF-8''%C3%A9-3f2a1b2c.md",
+                },
+            }),
+        );
 
         const result = await client.getSessionMarkdown("a/../b");
 
@@ -290,7 +292,13 @@ describe("session methods", () => {
             `${BASE_URL}/api/sessions/a%2F..%2Fb/markdown`,
             expect.objectContaining({}),
         );
-        expect(result).toBe(markdown);
+        expect(result).toEqual({ markdown, fileName: "é-3f2a1b2c.md" });
+    });
+
+    it("getSessionMarkdown() has no file name when the server sends no Content-Disposition", async () => {
+        fetchMock.mockResolvedValue(new Response("# Bees"));
+
+        expect(await client.getSessionMarkdown("s1")).toEqual({ markdown: "# Bees", fileName: null });
     });
 
     it("forkSession() percent-encodes the source id", async () => {

@@ -2,7 +2,7 @@ import { Notice, type Vault } from "obsidian";
 import { MESSAGES } from "../locales/en";
 import { node } from "../node";
 import { errorMessage } from "../utils";
-import { SEARCH_CHUNK_TYPE, type SearchChunkType } from "../types";
+import { SEARCH_CHUNK_TYPE, type SearchChunkType, type SessionExport } from "../types";
 
 /** The server's `SearchScope` vocabulary. It says "both" where the plugin says "all". */
 export type SessionScope = "raw" | "wiki" | "both";
@@ -42,41 +42,25 @@ export const SAVE_ICON = "save";
 /** Icon on every "Export chat" action: the chat toolbar and the sessions list rows. */
 export const EXPORT_ICON = "download";
 
-/** Bounds and fallback of the server's export file name. */
-const EXPORT_SLUG_MAX_LEN = 60;
-const EXPORT_ID_PREFIX_LEN = 8;
-const EXPORT_FALLBACK_STEM = "chat";
-
 /** Extension of an exported chat file. */
 export const CHAT_EXPORT_EXTENSION = "md";
 
-/** The server's default export name: `<title-slug>-<id prefix>.md`, without the id for an unsaved chat. */
-export function chatExportName(title: string, sessionId: string | null): string {
-    const slug = title
-        .toLowerCase()
-        .replace(/\s+/g, " ")
-        .trim()
-        .replace(/\//g, "--")
-        .replace(/ /g, "-")
-        .replace(/[^a-z0-9-]/g, "")
-        .replace(/^-+|-+$/g, "");
-    const stem = slug.slice(0, EXPORT_SLUG_MAX_LEN).replace(/-+$/, "") || EXPORT_FALLBACK_STEM;
-    const base = sessionId ? `${stem}-${sessionId.slice(0, EXPORT_ID_PREFIX_LEN)}` : stem;
-    return `${base}.${CHAT_EXPORT_EXTENSION}`;
-}
+/** Stem of an exported chat's file name when the server names none. */
+const EXPORT_FALLBACK_STEM = "chat";
 
-/** Ask where to export, then write `content()` there and say where; a cancel or a null content writes nothing. */
+/** Get the export, ask where to write it under the server's file name, then write it and say where; a null export or a cancel writes nothing. */
 export async function exportChatFile(
     choosePath: (defaultName: string) => Promise<string | null>,
-    defaultName: string,
-    content: () => Promise<string | null>,
+    content: () => Promise<SessionExport | null>,
+    sessionId: string | null,
 ): Promise<void> {
     try {
-        const path = await choosePath(defaultName);
+        const exported = await content();
+        if (exported === null) return;
+        const stem = sessionId ? `${EXPORT_FALLBACK_STEM}-${sessionId}` : EXPORT_FALLBACK_STEM;
+        const path = await choosePath(exported.fileName ?? `${stem}.${CHAT_EXPORT_EXTENSION}`);
         if (!path) return;
-        const text = await content();
-        if (text === null) return;
-        node.writeFileSync(path, text);
+        node.writeFileSync(path, exported.markdown);
         new Notice(MESSAGES.NOTICE_CHAT_EXPORTED(path));
     } catch (err) {
         new Notice(MESSAGES.ERROR_CHAT_EXPORT_FAILED(errorMessage(err, MESSAGES.ERROR_UNKNOWN)));

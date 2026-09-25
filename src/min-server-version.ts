@@ -36,10 +36,11 @@ export const PLACEMENT_MIN_SERVER_VERSION = "0.6.90b420";
 export const SESSION_FORK_MIN_SERVER_VERSION = "0.6.90b446";
 
 /**
- * Oldest server with the /api/sessions/{id}/markdown route: release 0.6.90b446, which ships
- * lilbee #894. Kept out of MIN_SERVER_VERSION so older servers keep every other feature.
+ * Oldest server whose /api/sessions/{id}/markdown route names the file in a Content-Disposition
+ * header: release 0.6.90b447, which ships lilbee #902. Kept out of MIN_SERVER_VERSION so older
+ * servers keep every other feature.
  */
-export const SESSION_EXPORT_MIN_SERVER_VERSION = "0.6.90b446";
+export const SESSION_EXPORT_MIN_SERVER_VERSION = "0.6.90b447";
 
 /** The plugin's real floor: the later of the sessions and placement minimums; the fork and export floors stay out. */
 export const MIN_SERVER_VERSION = higherVersion(SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION);
