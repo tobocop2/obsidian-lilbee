@@ -69,6 +69,7 @@
     ]
   },
   "dependencies": {
+    "@renovatebot/pep440": "5.0.1",
     "fflate": "^0.8.3",
     "lilbee": "^0.6.100"
   },

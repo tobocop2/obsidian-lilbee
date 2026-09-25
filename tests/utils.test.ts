@@ -185,8 +185,9 @@ describe("isVersionOlder", () => {
         expect(isVersionOlder("0.6.90b420.dev722", "0.6.66b507")).toBe(false);
     });
 
-    it("treats a dev build on the right side as newer than its base release", () => {
-        expect(isVersionOlder("0.6.90b420", "0.6.90b420.dev722")).toBe(true);
+    it("treats a dev build as a preview that has not shipped its own tag yet", () => {
+        expect(isVersionOlder("0.6.90b420.dev722", "0.6.90b420")).toBe(true);
+        expect(isVersionOlder("0.6.90b420", "0.6.90b420.dev722")).toBe(false);
     });
 
     it("orders by the earliest differing run, so a higher build number on a lower release line still loses", () => {
@@ -199,14 +200,37 @@ describe("isVersionOlder", () => {
         expect(isVersionOlder("0.6.66b507", "0.6.66b507")).toBe(false);
     });
 
-    it("counts a missing run as zero", () => {
-        expect(isVersionOlder("0.6.66", "0.6.66b1")).toBe(true);
-        expect(isVersionOlder("0.6.66b1", "0.6.66")).toBe(false);
+    it("ranks a final release above its own betas, not below them", () => {
+        expect(isVersionOlder("0.6.66", "0.6.66b1")).toBe(false);
+        expect(isVersionOlder("0.6.66b1", "0.6.66")).toBe(true);
+        expect(isVersionOlder("0.6.90", "0.6.90b447")).toBe(false);
+        expect(isVersionOlder("0.6.90b447", "0.6.90")).toBe(true);
     });
 
-    it("treats a digitless version as zero, so anything real is newer", () => {
-        expect(isVersionOlder("", "0.6.74")).toBe(true);
+    it("ranks a later release above a final on a lower release line", () => {
+        expect(isVersionOlder("0.6.90", "0.6.91b1")).toBe(true);
+        expect(isVersionOlder("0.6.91b1", "0.6.90")).toBe(false);
+    });
+
+    it("ranks a release candidate above its betas and below its final", () => {
+        expect(isVersionOlder("0.6.90b446", "0.6.90rc1")).toBe(true);
+        expect(isVersionOlder("0.6.90rc1", "0.6.90")).toBe(true);
+    });
+
+    it("ranks a post-release above its final", () => {
+        expect(isVersionOlder("0.6.90", "0.6.90.post1")).toBe(true);
+        expect(isVersionOlder("0.6.90.post1", "0.6.90")).toBe(false);
+    });
+
+    it("zero-pads the shorter release segment instead of treating it as smaller", () => {
+        expect(isVersionOlder("0.6.90", "0.6.90.0")).toBe(false);
+        expect(isVersionOlder("0.6.90.0", "0.6.90")).toBe(false);
+    });
+
+    it("fails open (not older) when a version does not parse under PEP 440", () => {
+        expect(isVersionOlder("", "0.6.74")).toBe(false);
         expect(isVersionOlder("dev", "dev")).toBe(false);
+        expect(isVersionOlder("0.6.74", "not-a-version")).toBe(false);
     });
 });
 
@@ -218,6 +242,11 @@ describe("meetsVersionFloor", () => {
     it("accepts a version at or above the floor", () => {
         expect(meetsVersionFloor("0.6.90b420", "0.6.90b420")).toBe(true);
         expect(meetsVersionFloor("0.6.91b1", "0.6.90b420")).toBe(true);
+    });
+
+    it("accepts the final release of the floor's own line", () => {
+        expect(meetsVersionFloor("0.6.90", "0.6.90b420")).toBe(true);
+        expect(meetsVersionFloor("0.6.90rc1", "0.6.90b420")).toBe(true);
     });
 
     it("fails open when the version is unknown, regardless of the floor", () => {
@@ -233,10 +262,19 @@ describe("supportsSessions", () => {
         expect(supportsSessions("0.6.90b419")).toBe(false);
     });
 
-    it("accepts the first sessions build, its dev builds, and anything newer", () => {
+    it("accepts the first sessions build, a later dev build, and anything newer", () => {
         expect(supportsSessions("0.6.90b420")).toBe(true);
-        expect(supportsSessions("v0.6.90b420.dev724")).toBe(true);
+        expect(supportsSessions("v0.6.91b1.dev5")).toBe(true);
         expect(supportsSessions("0.6.91b1")).toBe(true);
+    });
+
+    it("accepts the final release of the floor's own line", () => {
+        expect(supportsSessions("0.6.90")).toBe(true);
+        expect(supportsSessions("0.6.90rc1")).toBe(true);
+    });
+
+    it("rejects a dev preview of the floor build, which has not shipped it yet", () => {
+        expect(supportsSessions("v0.6.90b420.dev724")).toBe(false);
     });
 
     it("fails open when the version is unknown", () => {
@@ -251,10 +289,14 @@ describe("supportsSessionFork", () => {
         expect(supportsSessionFork("0.6.66b507")).toBe(false);
     });
 
-    it("accepts the first fork build, its dev builds, and anything newer", () => {
+    it("accepts the first fork build, a later dev build, and anything newer", () => {
         expect(supportsSessionFork("0.6.90b446")).toBe(true);
-        expect(supportsSessionFork("v0.6.90b446.dev3")).toBe(true);
+        expect(supportsSessionFork("v0.6.91b1.dev5")).toBe(true);
         expect(supportsSessionFork("0.6.91b1")).toBe(true);
+    });
+
+    it("accepts the final release of the floor's own line", () => {
+        expect(supportsSessionFork("0.6.90")).toBe(true);
     });
 
     it("fails open when the version is unknown", () => {
@@ -269,10 +311,15 @@ describe("supportsSessionExport", () => {
         expect(supportsSessionExport("0.6.66b507")).toBe(false);
     });
 
-    it("accepts the first export build, its dev builds, and anything newer", () => {
+    it("accepts the first export build, a later dev build, and anything newer", () => {
         expect(supportsSessionExport("0.6.90b446")).toBe(true);
-        expect(supportsSessionExport("v0.6.90b446.dev3")).toBe(true);
+        expect(supportsSessionExport("v0.6.91b1.dev5")).toBe(true);
         expect(supportsSessionExport("0.6.91b1")).toBe(true);
+    });
+
+    it("accepts the final release of the floor's own line", () => {
+        expect(supportsSessionExport("0.6.90")).toBe(true);
+        expect(supportsSessionExport("0.6.90rc1")).toBe(true);
     });
 
     it("fails open when the version is unknown", () => {
@@ -287,10 +334,14 @@ describe("supportsPlacement", () => {
         expect(supportsPlacement("0.6.90b419")).toBe(false);
     });
 
-    it("accepts the first placement build, its dev builds, and anything newer", () => {
+    it("accepts the first placement build, a later dev build, and anything newer", () => {
         expect(supportsPlacement("0.6.90b420")).toBe(true);
-        expect(supportsPlacement("v0.6.90b420.dev724")).toBe(true);
+        expect(supportsPlacement("v0.6.91b1.dev5")).toBe(true);
         expect(supportsPlacement("0.6.91b1")).toBe(true);
+    });
+
+    it("accepts the final release of the floor's own line", () => {
+        expect(supportsPlacement("0.6.90")).toBe(true);
     });
 
     it("fails open when the version is unknown", () => {
