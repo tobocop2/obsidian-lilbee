@@ -4427,10 +4427,10 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
                 ...DEFAULT_SHARED_CONFIG,
-                lilbeeVersion: "v0.6.90b445",
+                lilbeeVersion: "v0.6.90b446",
             });
             expect(plugin.serverSupportsSessionExport()).toBe(false);
-            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b446" });
+            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b447" });
             expect(plugin.serverSupportsSessionExport()).toBe(true);
             loadConfig.mockRestore();
         });
@@ -4444,7 +4444,7 @@ describe("LilbeePlugin", () => {
             });
             await plugin.onload();
             await flush();
-            // 0.6.90b420 has sessions but not the markdown export route (floor: 0.6.90b446).
+            // 0.6.90b420 has sessions but not the markdown export route (floor: 0.6.90b447).
             // Failing open here is what lets Save to vault attempt the server export and 404.
             expect(plugin.serverSupportsSessionExport()).toBe(false);
         });

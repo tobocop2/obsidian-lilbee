@@ -12,6 +12,7 @@ import {
     HTTP_STATUS,
 } from "./types";
 import { ok, err, Result } from "./result";
+import { attachmentFileName } from "./utils/attachment";
 import { withIdleTimeout } from "./utils/idle";
 
 import type {
@@ -44,6 +45,7 @@ import type {
     ModelShowResponse,
     SessionDeleteResponse,
     SessionDetail,
+    SessionExport,
     SessionListResponse,
     SessionMeta,
     SessionRenameResponse,
@@ -70,6 +72,7 @@ import type {
     WikiPruneResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
+const CONTENT_DISPOSITION = "Content-Disposition";
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
 // In managed mode, the plugin's onload doesn't configure the API until
@@ -519,10 +522,10 @@ export class LilbeeClient {
         return (await res.json()) as SessionDetail;
     }
 
-    /** The session as a markdown document: front matter, one section per turn, numbered sources. */
-    async getSessionMarkdown(sessionId: string): Promise<string> {
+    /** The session as a markdown document (front matter, one section per turn, numbered sources) and its file name. */
+    async getSessionMarkdown(sessionId: string): Promise<SessionExport> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/markdown`);
-        return res.text();
+        return { markdown: await res.text(), fileName: attachmentFileName(res.headers.get(CONTENT_DISPOSITION)) };
     }
 
     /** The server takes no title here; `renameSession` is the only HTTP title write. */

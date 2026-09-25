@@ -433,6 +433,12 @@ export interface SessionDetail {
     summary: string;
 }
 
+/** A session's markdown export and the file name the server gives it; null when the server names none. */
+export interface SessionExport {
+    markdown: string;
+    fileName: string | null;
+}
+
 export interface SessionListResponse {
     sessions: SessionMeta[];
 }

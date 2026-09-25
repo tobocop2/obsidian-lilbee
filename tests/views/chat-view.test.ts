@@ -3311,7 +3311,7 @@ describe("ChatView — save to vault from the server's export", () => {
     it("writes the server's export of the saved chat", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ markdown: EXPORT, fileName: "bees-s1.md" });
         const { container, create } = await savedChat(plugin);
 
         await clickSave(container);
@@ -3324,7 +3324,7 @@ describe("ChatView — save to vault from the server's export", () => {
     it("waits for the chat's queued session writes before asking for the export", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ markdown: EXPORT, fileName: "bees-s1.md" });
         let release!: () => void;
         const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
         const { container } = await savedChat(plugin);
@@ -3366,7 +3366,7 @@ describe("ChatView — save to vault from the server's export", () => {
     it("exports the chat the save was asked for when a new chat starts during the wait", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ markdown: EXPORT, fileName: "bees-s1.md" });
         const { container, create, release } = await chatWithHeldWrite(plugin);
 
         await clickSave(container);
@@ -3382,7 +3382,7 @@ describe("ChatView — save to vault from the server's export", () => {
     it("exports the complete chat when a new chat starts while its answer's write is queued", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ markdown: EXPORT, fileName: "bees-s1.md" });
         const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
         const { container, create, release } = await chatWithHeldWrite(plugin, "Second reply");
 
@@ -3416,7 +3416,7 @@ describe("ChatView — save to vault from the server's export", () => {
     it("writes the chat as shown, and says the server's copy is incomplete, when a write failed", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ markdown: EXPORT, fileName: "bees-s1.md" });
         const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
         const saveTurn = append.getMockImplementation()!;
         append.mockImplementation((...args: unknown[]) =>
@@ -3440,7 +3440,7 @@ describe("ChatView — save to vault from the server's export", () => {
         sessionsHooks.length = 0;
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
-        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ markdown: EXPORT, fileName: "bees-s1.md" });
         const append = plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>;
         const saveTurn = append.getMockImplementation()!;
         append.mockImplementation((...args: unknown[]) =>
@@ -3522,7 +3522,7 @@ describe("ChatView — export chat to a file", () => {
         for (const dir of exportDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
     });
 
-    const EXPORT = "---\ntitle: Hello\n---\n\n# Hello\n";
+    const EXPORT = { markdown: "---\ntitle: Hello\n---\n\n# Hello\n", fileName: "héllo-s1.md" };
 
     function exportTarget(): string {
         const dir = mkdtempSync(join(tmpdir(), "lilbee-chat-export-"));
@@ -3565,7 +3565,7 @@ describe("ChatView — export chat to a file", () => {
         expect(btn.getAttribute("data-icon")).toBe(EXPORT_ICON);
     });
 
-    it("writes the server's export of the saved chat to the chosen file", async () => {
+    it("writes the server's export of the saved chat to the chosen file under the server's name", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
         plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
@@ -3575,12 +3575,26 @@ describe("ChatView — export chat to a file", () => {
 
         await clickExport(container);
 
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello-s1.md");
-        expect(readFileSync(target, "utf8")).toBe(EXPORT);
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("héllo-s1.md");
+        expect(readFileSync(target, "utf8")).toBe(EXPORT.markdown);
         expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_CHAT_EXPORTED(target)]);
     });
 
-    it("writes the chat as shown for an unsaved chat and names it from its title alone", async () => {
+    it("offers chat plus the session id when the server's export names no file", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue({ ...EXPORT, fileName: null });
+        const target = exportTarget();
+        (plugin.chooseChatExportPath as ReturnType<typeof vi.fn>).mockResolvedValue(target);
+        const { container } = await chatWithAnswer(plugin);
+
+        await clickExport(container);
+
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("chat-s1.md");
+        expect(readFileSync(target, "utf8")).toBe(EXPORT.markdown);
+    });
+
+    it("writes the chat as shown for an unsaved chat under a plain name", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessions as ReturnType<typeof vi.fn>).mockReturnValue(false);
         const target = exportTarget();
@@ -3589,19 +3603,19 @@ describe("ChatView — export chat to a file", () => {
 
         await clickExport(container);
 
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello.md");
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("chat.md");
         expect(readFileSync(target, "utf8")).toContain("**Assistant**: Reply");
     });
 
-    it("does nothing and says nothing when the dialog is cancelled", async () => {
+    it("writes nothing and says nothing when the dialog is cancelled", async () => {
         const plugin = makePlugin();
         (plugin.serverSupportsSessionExport as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        plugin.api.getSessionMarkdown = vi.fn().mockResolvedValue(EXPORT);
         const { container } = await chatWithAnswer(plugin);
 
         await clickExport(container);
 
         expect(plugin.chooseChatExportPath).toHaveBeenCalledTimes(1);
-        expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
         expect(Notice.instances).toEqual([]);
     });
 
@@ -3642,6 +3656,7 @@ describe("ChatView — export chat to a file", () => {
 
         await clickExport(container);
 
+        expect(plugin.chooseChatExportPath).not.toHaveBeenCalled();
         expect(() => readFileSync(target)).toThrow();
         expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_FAILED("disk on fire")]);
     });
@@ -3659,80 +3674,8 @@ describe("ChatView — export chat to a file", () => {
         await tick();
         await tick();
 
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello-s1.md");
-        expect(readFileSync(target, "utf8")).toBe(EXPORT);
-    });
-
-    it("names the export from the new title after the history list renames the open chat", async () => {
-        const plugin = makePlugin();
-        const { container } = await chatWithAnswer(plugin);
-        container.find("lilbee-chat-sessions")!.trigger("click");
-
-        sessionsHooks[0].renamed("s1", "Renamed chat");
-        sessionsHooks[0].renamed("s9", "Another chat");
-        await clickExport(container);
-
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("renamed-chat-s1.md");
-    });
-
-    it("names the export from the fork's title, as the server does", async () => {
-        const plugin = makePlugin();
-        const { view, container } = await openChat(plugin);
-        plugin.api.forkSession = vi.fn().mockResolvedValue({
-            meta: { id: "426e18c1-9d8e", title: "Hello (fork 1)", message_count: 2 },
-            messages: [
-                { role: "user", content: "Hello", sources: [], ts: "t" },
-                { role: "assistant", content: "Reply", sources: [], ts: "t" },
-            ],
-            summary: "",
-        });
-
-        await view.forkSession("s1");
-        await clickExport(container);
-
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello-fork-1-426e18c1.md");
-    });
-
-    it("names the export from the saved title of a resumed chat, not its first question", async () => {
-        const plugin = makePlugin();
-        const { container } = await openChat(plugin);
-        plugin.api.getSession = vi.fn().mockResolvedValue({
-            meta: { id: "s9", title: "Bee biology", message_count: 1 },
-            messages: [{ role: "user", content: "What are bees?", sources: [], ts: "t" }],
-            summary: "",
-        });
-        container.find("lilbee-chat-sessions")!.trigger("click");
-
-        sessionsHooks[0].resume("s9");
-        await tick();
-        await tick();
-        await clickExport(container);
-
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("bee-biology-s9.md");
-    });
-
-    it("names the export from the first question once the server drops the session", async () => {
-        const plugin = makePlugin();
-        plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("busy"));
-        plugin.api.appendSessionMessage = vi
-            .fn()
-            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
-        const { view, container } = await chatWithAnswer(plugin);
-        expect(view.currentSessionId()).toBeNull();
-
-        await clickExport(container);
-
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("hello.md");
-    });
-
-    it("names the export from the server's title when titling the new session failed", async () => {
-        const plugin = makePlugin();
-        plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("busy"));
-        const { container } = await chatWithAnswer(plugin);
-
-        await clickExport(container);
-
-        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("untitled-chat-s1.md");
+        expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("héllo-s1.md");
+        expect(readFileSync(target, "utf8")).toBe(EXPORT.markdown);
     });
 
     it("exports the open chat when the command asks for it", async () => {
@@ -6088,7 +6031,6 @@ describe("ChatView — chat sessions", () => {
 
         expect(append).toHaveBeenCalledWith("s1", "assistant", "a1", []);
         expect(cleared.sessionId).toBeNull();
-        expect(cleared.title).toBeNull();
     });
 
     it("a chat's queued create carries the model and scope from when its question was sent", async () => {

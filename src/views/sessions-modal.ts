@@ -1,13 +1,13 @@
 import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { isHttpStatus } from "../api";
-import { HTTP_STATUS, type SessionMeta } from "../types";
+import { HTTP_STATUS, type SessionExport, type SessionMeta } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, errorMessage, relativeTimeFromIso } from "../utils";
 import { displayLabelForRef } from "../utils/model-ref";
 import { applyConfig } from "../utils/reindex";
-import { EXPORT_ICON, FORK_ICON, SAVE_ICON, chatExportName, exportChatFile, saveChatNote } from "../utils/session";
+import { EXPORT_ICON, FORK_ICON, SAVE_ICON, exportChatFile, saveChatNote } from "../utils/session";
 
 /** Hooks the chat view supplies so the modal can drive it without importing it. */
 export interface SessionsModalHooks {
@@ -21,8 +21,6 @@ export interface SessionsModalHooks {
     saveActive: () => void;
     /** Export the open chat to a file the way the chat toolbar does. */
     exportActive: () => void;
-    /** A session was renamed here, so a chat view showing it can take the new title. */
-    renamed: (id: string, title: string) => void;
     /** Settles once the chat view's queued session writes have finished. */
     writesSettled: () => Promise<void>;
 }
@@ -220,20 +218,20 @@ export class SessionsModal extends Modal {
     }
 
     private async saveToVault(meta: SessionMeta): Promise<void> {
-        const content = await this.sessionMarkdown(meta);
-        if (content !== null) await saveChatNote(this.app.vault, content);
+        const exported = await this.sessionExport(meta);
+        if (exported !== null) await saveChatNote(this.app.vault, exported.markdown);
     }
 
     private async exportToFile(meta: SessionMeta): Promise<void> {
         await exportChatFile(
             (name) => this.plugin.chooseChatExportPath(name),
-            chatExportName(meta.title, meta.id),
-            () => this.sessionMarkdown(meta),
+            () => this.sessionExport(meta),
+            meta.id,
         );
     }
 
     /** The server's markdown export of `meta`, or null after a notice saying why there is none. */
-    private async sessionMarkdown(meta: SessionMeta): Promise<string | null> {
+    private async sessionExport(meta: SessionMeta): Promise<SessionExport | null> {
         try {
             await this.hooks.writesSettled();
             return await this.plugin.api.getSessionMarkdown(meta.id);
@@ -283,7 +281,6 @@ export class SessionsModal extends Modal {
             await this.hooks.writesSettled();
             await this.plugin.api.renameSession(meta.id, title);
             meta.title = title;
-            this.hooks.renamed(meta.id, title);
         } catch (err) {
             const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.ERROR_SESSION_RENAME_FAILED(reason));

@@ -123,7 +123,7 @@ To fork the whole chat instead of one answer, use the fork button in the history
 
 **Save to vault** writes the chat as a note in the vault's `lilbee` folder: front matter, a section for each turn, and numbered sources. An unsaved chat, or a chat saved from an older server, gets the older, simpler format instead. **Export chat…** writes the same note to any file you choose in the system save dialog. Each row in the history list has its own Save to vault and Export buttons, so you can save or export any saved chat without opening it.
 
-Fork and export need lilbee 0.6.90b446 or newer.
+Fork needs lilbee 0.6.90b446 or newer. Save to vault from the server's export and **Export chat…** need lilbee 0.6.90b447 or newer, which also gives the exported file its name. With an older server, the history list has no Save to vault or Export buttons, and Save to vault and **Export chat…** in the chat write the older, simpler format.
 
 The lilbee server stores your chats on your machine, not in the cloud.
 

@@ -43,7 +43,9 @@ function makePlugin(sessions: SessionMeta[] = []) {
             renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "Renamed" }),
             deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
             updateConfig: vi.fn().mockResolvedValue({}),
-            getSessionMarkdown: vi.fn().mockResolvedValue("# exported"),
+            getSessionMarkdown: vi
+                .fn()
+                .mockResolvedValue({ markdown: "# exported", fileName: "bee-questions-3f2a1b2c.md" }),
         },
         settings: { serverMode: "managed" },
         serverSupportsSessionFork: vi.fn().mockReturnValue(true),
@@ -60,7 +62,6 @@ function makeHooks(overrides: Partial<SessionsModalHooks> = {}): SessionsModalHo
         fork: vi.fn(),
         saveActive: vi.fn(),
         exportActive: vi.fn(),
-        renamed: vi.fn(),
         writesSettled: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };
@@ -281,7 +282,7 @@ describe("SessionsModal", () => {
             return join(dir, "chat.md");
         }
 
-        it("writes the row's session from the server's export to the chosen file and stays open", async () => {
+        it("writes the row's session from the server's export, under the server's file name, and stays open", async () => {
             const plugin = makePlugin([makeSession({ id: "3f2a1b2c-9d8e", title: "What is a bee?" })]);
             const target = exportTarget();
             plugin.chooseChatExportPath.mockResolvedValue(target);
@@ -294,20 +295,34 @@ describe("SessionsModal", () => {
 
             expect(exportBtn.getAttribute("aria-label")).toBe(MESSAGES.LABEL_EXPORT_CHAT);
             expect(exportBtn.getAttribute("data-icon")).toBe(EXPORT_ICON);
-            expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("what-is-a-bee-3f2a1b2c.md");
+            expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("bee-questions-3f2a1b2c.md");
             expect(readFileSync(target, "utf8")).toBe("# exported");
             expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_CHAT_EXPORTED(target)]);
             expect(closeSpy).not.toHaveBeenCalled();
         });
 
-        it("asks the server for nothing when the dialog is cancelled", async () => {
+        it("offers chat plus the row's session id when the server's export names no file", async () => {
+            const plugin = makePlugin([makeSession({ id: "3f2a1b2c-9d8e" })]);
+            plugin.api.getSessionMarkdown.mockResolvedValue({ markdown: "# exported", fileName: null });
+            const target = exportTarget();
+            plugin.chooseChatExportPath.mockResolvedValue(target);
+            const { el } = await openModal(plugin, makeHooks());
+
+            el.find("lilbee-session-export")!.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(plugin.chooseChatExportPath).toHaveBeenCalledWith("chat-3f2a1b2c-9d8e.md");
+            expect(readFileSync(target, "utf8")).toBe("# exported");
+        });
+
+        it("writes nothing and says nothing when the dialog is cancelled", async () => {
             const plugin = makePlugin([makeSession()]);
             const { el } = await openModal(plugin, makeHooks());
 
             el.find("lilbee-session-export")!.trigger("click");
             await vi.runAllTimersAsync();
 
-            expect(plugin.api.getSessionMarkdown).not.toHaveBeenCalled();
+            expect(plugin.chooseChatExportPath).toHaveBeenCalledTimes(1);
             expect(Notice.instances).toEqual([]);
         });
 
@@ -334,6 +349,7 @@ describe("SessionsModal", () => {
             await vi.runAllTimersAsync();
 
             expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_SESSION_EXPORT_NOT_FOUND]);
+            expect(plugin.chooseChatExportPath).not.toHaveBeenCalled();
             expect(() => readFileSync(target)).toThrow();
         });
     });
@@ -516,7 +532,6 @@ describe("SessionsModal", () => {
 
             expect(plugin.api.renameSession).toHaveBeenCalledWith("s1", "Renamed");
             expect(collectTexts(el)).toContain("Renamed");
-            expect(hooks.renamed).toHaveBeenCalledExactlyOnceWith("s1", "Renamed");
         });
 
         it("discards an empty title without writing", async () => {
@@ -582,7 +597,6 @@ describe("SessionsModal", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("Could not rename"))).toBe(true);
             expect(collectTexts(el)).toContain("What is a bee?");
-            expect(hooks.renamed).not.toHaveBeenCalled();
         });
     });
 
