@@ -6,7 +6,7 @@ TypeScript, bundled with esbuild, and tested with Vitest.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - npm
 
 ## Getting Started
