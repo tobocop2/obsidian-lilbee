@@ -211,6 +211,7 @@ export const KV_CACHE_TYPE = {
 } as const satisfies Record<string, KvCacheType>;
 
 export const CONFIG_KEY = {
+    TOP_K: "top_k",
     RAG_SYSTEM_PROMPT: "rag_system_prompt",
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",
     CHAT_MODE: "chat_mode",
@@ -690,7 +691,6 @@ export interface StorageMoveTarget {
 
 export interface LilbeeSettings {
     serverUrl: string;
-    topK: number;
     serverMode: ServerMode;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
@@ -733,9 +733,6 @@ export interface LilbeeSettings {
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverUrl: "http://127.0.0.1:7433",
-    // Match the server's default retrieval depth (core config top_k = 12) so the
-    // plugin and a bare `lilbee serve` behave identically out of the box.
-    topK: 12,
     serverMode: "managed",
     ragSystemPrompt: "",
     generalSystemPrompt: "",
@@ -1108,11 +1105,34 @@ export interface ConfigFieldSchema {
     group: string;
     help: string;
     choices: string[] | null;
+    /** Absent on a server that predates the flag. */
+    advanced?: boolean;
 }
 
 export interface ConfigSchemaResponse {
     fields: ConfigFieldSchema[];
 }
+
+/** The layer that supplies a setting's value, from `GET /api/config/sources`. */
+export type SettingSource = "env" | "user" | "profile" | "built_in" | "auto";
+
+export const SETTING_SOURCE = {
+    ENV: "env",
+    USER: "user",
+    PROFILE: "profile",
+    BUILT_IN: "built_in",
+    AUTO: "auto",
+} as const satisfies Record<string, SettingSource>;
+
+export interface ConfigSourcesResponse {
+    sources: Record<string, SettingSource>;
+}
+
+/** Prefix of the environment variable that sets a server setting. */
+export const SERVER_ENV_PREFIX = "LILBEE_";
+
+/** Writable settings `POST /api/config/reset` refuses: no default folder, and a provider switch. */
+export const UNRESETTABLE_CONFIG_KEYS: ReadonlySet<string> = new Set(["documents_dir", "llm_provider"]);
 
 export interface EmbeddingModelResponse {
     model: string;

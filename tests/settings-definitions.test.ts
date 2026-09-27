@@ -8,6 +8,8 @@ import { App, MockElement, Setting, setApiVersion } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
 import { DEFAULT_SETTINGS, CAPABILITY, MEMORY_CONFIG_KEY, SERVER_MODE, type LilbeeSettings } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import { PILL_CLS } from "../src/components/pill";
+import configSchema from "./fixtures/config-schema.json";
 import { formatDiskSize } from "../src/utils";
 import { err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
@@ -72,6 +74,8 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, overrides: Record<st
             config: vi.fn().mockResolvedValue({ memory_enabled: true, memory_auto_extract: false }),
             configDefaults: vi.fn().mockRejectedValue(new Error("offline")),
             configSchema: vi.fn().mockRejectedValue(new Error("offline")),
+            configSources: vi.fn().mockResolvedValue(null),
+            resetConfig: vi.fn().mockResolvedValue(null),
             updateConfig: vi.fn().mockResolvedValue({}),
             catalog: vi.fn().mockRejectedValue(new Error("offline")),
             installedModels: vi.fn().mockResolvedValue({ models: [] }),
@@ -153,6 +157,10 @@ function renderDefinitions(items: Definition[], container: MockElement): string[
             names.push(...renderDefinitions(item.items ?? [], container));
             continue;
         }
+        if (item.type === "page") {
+            names.push(item.name ?? "", ...renderDefinitions(item.items ?? [], container));
+            continue;
+        }
         if (item.name !== undefined && item.name !== "") names.push(item.name);
         if (item.render) {
             const setting = new Setting(container);
@@ -213,6 +221,11 @@ async function namesFromDisplay(tab: LilbeeSettingTab): Promise<string[]> {
     }
     const rows = seen.filter((row) => !insideOwnSection(row.el)).map((row) => row.name);
     return [...rows, ...summaries(tab.containerEl as unknown as MockElement)];
+}
+
+/** The Ingest group as the tab declares it now. */
+function ingestGroup(tab: LilbeeSettingTab): Definition {
+    return (tab.getSettingDefinitions() as Definition[]).find((item) => item.heading === MESSAGES.LABEL_INGEST)!;
 }
 
 function makeTab(settings: Partial<LilbeeSettings> = {}, overrides: Record<string, unknown> = {}) {
@@ -398,15 +411,71 @@ describe("declarative setting definitions", () => {
         const tab = makeTab();
         tab.getSettingDefinitions();
         expect(tab.plugin.api.config).not.toHaveBeenCalled();
-        expect(tab.plugin.api.configDefaults).not.toHaveBeenCalled();
+        expect(tab.plugin.api.configSources).not.toHaveBeenCalled();
         expect(tab.plugin.api.getCapability).not.toHaveBeenCalled();
+    });
+
+    it("puts the rows the schema flags advanced behind a More settings page in their own group", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ ingest_processes: 0, chunk_size: 512 });
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        await vi.waitFor(() => {
+            expect(tab.plugin.api.configSchema).toHaveBeenCalled();
+            expect(ingestGroup(tab).items!.some((item) => item.type === "page")).toBe(true);
+        });
+
+        const group = ingestGroup(tab);
+        const page = group.items!.find((item) => item.type === "page")!;
+        const pageRows = collectNames(page.items ?? []);
+        expect(pageRows).toContain(MESSAGES.LABEL_INGEST_PROCESSES);
+        expect(pageRows).not.toContain(MESSAGES.LABEL_CHUNK_SIZE);
+        expect(collectNames(group.items!.filter((item) => item.type !== "page"))).toContain(MESSAGES.LABEL_CHUNK_SIZE);
+        expect(page.name).toBe(MESSAGES.LABEL_MORE_SETTINGS(pageRows.length));
+        expect(page.visible!()).toBe(true);
+    });
+
+    it("hides the More settings page while the server reports none of its rows", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        const fleetPage = (): Definition | undefined =>
+            (tab.getSettingDefinitions() as Definition[])
+                .find((item) => item.heading === MESSAGES.LABEL_FLEET)!
+                .items!.find((item) => item.type === "page");
+        await vi.waitFor(() => {
+            expect(fleetPage()).toBeDefined();
+        });
+        // Every Fleet row waits for the server to report its key.
+        expect(fleetPage()!.visible!()).toBe(false);
+    });
+
+    it("marks a user-set row with its source pill on the definitions path", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512, max_distance: 0.75 });
+        (tab.plugin.api.configSources as ReturnType<typeof vi.fn>).mockResolvedValue({
+            sources: { chunk_size: "user", max_distance: "built_in" },
+        });
+        // The first pass loads the server state; the rebuild it asks for draws the rows the server reports.
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        await vi.waitFor(() => {
+            expect(tab.plugin.api.configSources).toHaveBeenCalled();
+            expect(tab.plugin.api.config).toHaveBeenCalled();
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const container = new MockElement("div");
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        await vi.waitFor(() => {
+            expect(container.findAll(PILL_CLS.SOURCE).map((el) => el.textContent)).toEqual([MESSAGES.PILL_SOURCE_USER]);
+        });
     });
 
     it("loads the server state once the tab actually renders", () => {
         const tab = makeTab();
         renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
         expect(tab.plugin.api.config).toHaveBeenCalled();
-        expect(tab.plugin.api.configDefaults).toHaveBeenCalled();
+        expect(tab.plugin.api.configSources).toHaveBeenCalled();
         expect(tab.plugin.api.getCapability).toHaveBeenCalled();
     });
 

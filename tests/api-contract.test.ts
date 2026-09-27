@@ -196,6 +196,8 @@ const INVOCATIONS: Record<string, unknown[]> = {
     config: [],
     configDefaults: [],
     configSchema: [],
+    configSources: [],
+    resetConfig: [["top_k"]],
     updateConfig: [{}],
     gpuStatsStream: [],
     warmStream: [],
@@ -239,6 +241,7 @@ const NON_NETWORK = new Set([
     // already recorded, because they all funnel through fetchWithRetry.
     "fetchWithRetry",
     "fetchResult",
+    "jsonOrNullWhenMissing",
     "parseSSE",
     "assertOk",
     "authHeaders",

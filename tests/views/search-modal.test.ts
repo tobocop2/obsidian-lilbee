@@ -9,16 +9,18 @@ vi.mock("../../src/views/results", () => ({
 }));
 
 import { SearchModal } from "../../src/views/search-modal";
+import { MESSAGES } from "../../src/locales/en";
 import { renderDocumentResult } from "../../src/views/results";
 
 function makePlugin(): LilbeePlugin {
     return {
         api: {
             search: vi.fn(),
+            // The server's own top_k, which a search sends because the route's own default ignores it.
+            config: vi.fn().mockResolvedValue({ top_k: 5 }),
         },
         settings: {
             serverUrl: "http://localhost:7433",
-            topK: 5,
             searchChunkType: "all" as const,
             wikiEnabled: true,
         },
@@ -110,6 +112,39 @@ describe("SearchModal", () => {
 
             await vi.advanceTimersByTimeAsync(300);
             expect(plugin.api.search).toHaveBeenCalledWith("hello", 5, "all");
+        });
+
+        it("sends the server's own top_k, so a profile's or user's value reaches the search", async () => {
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ top_k: 30 });
+            (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
+
+            input.value = "hello";
+            input.trigger("input");
+            await vi.advanceTimersByTimeAsync(300);
+            expect(plugin.api.search).toHaveBeenCalledWith("hello", 30, "all");
+        });
+
+        it("names no top_k when the server config reports none", async () => {
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
+
+            input.value = "hello";
+            input.trigger("input");
+            await vi.advanceTimersByTimeAsync(300);
+            expect(plugin.api.search).toHaveBeenCalledWith("hello", undefined, "all");
+        });
+
+        it("shows the connection error when the server config cannot be read", async () => {
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
+
+            input.value = "hello";
+            input.trigger("input");
+            await vi.advanceTimersByTimeAsync(300);
+            expect(plugin.api.search).not.toHaveBeenCalled();
+            expect(modal.contentEl.find("lilbee-empty-state")!.textContent).toBe(MESSAGES.ERROR_SEARCH_CONNECT);
         });
 
         it("resets debounce timer on rapid input events", async () => {

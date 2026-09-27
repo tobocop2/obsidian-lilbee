@@ -1399,7 +1399,7 @@ export class ChatView extends ItemView {
             for await (const event of this.plugin.api.chatStream(
                 text,
                 conversation.history.slice(0, -1),
-                this.plugin.settings.topK,
+                undefined,
                 this.streamController.signal,
                 undefined,
                 this.plugin.settings.searchChunkType,

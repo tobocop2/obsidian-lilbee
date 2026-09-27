@@ -23,6 +23,7 @@ import type {
     CatalogResponse,
     ConfigResponse,
     ConfigSchemaResponse,
+    ConfigSourcesResponse,
     CrawlerStatusField,
     CrawlerStatusResponse,
     ConfigUpdateResponse,
@@ -878,6 +879,31 @@ export class LilbeeClient {
         return (await res.json()) as ConfigSchemaResponse;
     }
 
+    /** The layer that supplies each setting; null on a server without the route. */
+    async configSources(): Promise<ConfigSourcesResponse | null> {
+        return this.jsonOrNullWhenMissing<ConfigSourcesResponse>(`${this.baseUrl}/api/config/sources`);
+    }
+
+    /** Remove the user's value for each key so it falls back to the next source; null on a server without the route. */
+    async resetConfig(keys: string[]): Promise<ConfigUpdateResponse | null> {
+        return this.jsonOrNullWhenMissing<ConfigUpdateResponse>(`${this.baseUrl}/api/config/reset`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ keys }),
+        });
+    }
+
+    /** The JSON body, or null when the server answers 404 because it predates the route. */
+    private async jsonOrNullWhenMissing<T>(url: string, init?: RequestInit): Promise<T | null> {
+        try {
+            const res = await this.fetchWithRetry(url, init);
+            return (await res.json()) as T;
+        } catch (e) {
+            if (e instanceof Error && isHttpStatus(e, HTTP_STATUS.NOT_FOUND)) return null;
+            throw e;
+        }
+    }
+
     async configDefaults(): Promise<Record<string, unknown>> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config/defaults`);
         return (await res.json()) as Record<string, unknown>;
@@ -1007,15 +1033,11 @@ export class LilbeeClient {
      * browse list should render its written pages as before instead of failing.
      */
     async wikiStubs(): Promise<WikiStub[]> {
-        try {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/stubs`, {
+        return (
+            (await this.jsonOrNullWhenMissing<WikiStub[]>(`${this.baseUrl}/api/wiki/stubs`, {
                 headers: this.authHeaders(),
-            });
-            return (await res.json()) as WikiStub[];
-        } catch (e) {
-            if (e instanceof Error && isHttpStatus(e, HTTP_STATUS.NOT_FOUND)) return [];
-            throw e;
-        }
+            })) ?? []
+        );
     }
 
     /**

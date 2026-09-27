@@ -16,6 +16,13 @@ export interface ServerWritePlugin extends RebuildPlugin {
     };
 }
 
+/** The slice of the plugin a settings reset needs. */
+export interface ServerResetPlugin extends ServerWritePlugin {
+    api: ServerWritePlugin["api"] & {
+        resetConfig: (keys: string[]) => Promise<ConfigUpdateResponse | null>;
+    };
+}
+
 /** An embedding swap and the sync it needs, for a caller that runs the sync later. */
 export interface DeferredEmbeddingSwap {
     result: Result<SetModelResponse, Error>;
@@ -42,6 +49,14 @@ export async function applyConfig(
 ): Promise<ConfigUpdateResponse> {
     const response = await plugin.api.updateConfig(updates);
     startReindexSync(plugin, response.reindex_required);
+    return response;
+}
+
+/** Remove the user's value for each key, and rebuild the index when the fallback values invalidate it.
+ *  Null when the server predates the reset route. */
+export async function resetConfig(plugin: ServerResetPlugin, keys: string[]): Promise<ConfigUpdateResponse | null> {
+    const response = await plugin.api.resetConfig(keys);
+    if (response !== null) startReindexSync(plugin, response.reindex_required);
     return response;
 }
 

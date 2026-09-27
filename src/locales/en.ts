@@ -284,11 +284,13 @@ export const MESSAGES = {
     DESC_CRAWL_EXCLUDE_PATTERNS:
         "Regex patterns that skip URLs at link-discovery during recursive crawls. One per line. Blank = no filtering.",
     LABEL_RESET_TO_DEFAULT: "Reset to default",
+    PILL_SOURCE_USER: "set by you",
+    LABEL_MORE_SETTINGS: (count: number) => `More settings (${count})`,
     LABEL_RESET_ALL_SETTINGS: "Reset server-backed settings to defaults",
     DESC_RESET_ALL_SETTINGS:
-        "Restore every server-backed setting below to its default. API keys and local plugin preferences are preserved.",
+        "Remove your value for every server-backed setting below, so each one falls back to its default. API keys and local plugin preferences are preserved.",
     CONFIRM_RESET_ALL_SETTINGS:
-        "Reset every server-backed setting to its default? API keys and local plugin preferences are preserved.",
+        "Remove your value for every server-backed setting? Each one falls back to its default. API keys and local plugin preferences are preserved.",
     BUTTON_RESET_ALL: "Reset all",
     LABEL_ADVANCED: "Advanced",
     LABEL_STORE_CONTENT_IN_VAULT: STORE_CONTENT_IN_VAULT_LABEL,
