@@ -446,9 +446,18 @@ export class CatalogModal extends Modal {
         void this.fetchPage();
     }
 
+    private pageLimit(query: string): number {
+        return query ? SEARCH_PAGE_SIZE : PAGE_SIZE;
+    }
+
+    /** True until a page's worth of native rows is loaded; hosted rows lead the listing. */
+    private needsNativeRows(): boolean {
+        return this.hasMore && localRowsOnly(this.entries).length < this.pageLimit(this.fetchedQuery);
+    }
+
     private catalogParams(query: string): Parameters<typeof this.plugin.api.catalog>[0] {
         const params: Parameters<typeof this.plugin.api.catalog>[0] = {
-            limit: query ? SEARCH_PAGE_SIZE : PAGE_SIZE,
+            limit: this.pageLimit(query),
             offset: this.offset,
             sort: this.filterSort,
         };
@@ -488,6 +497,7 @@ export class CatalogModal extends Modal {
         this.catalogController = controller;
 
         let superseded = false;
+        let applied = false;
         try {
             const result = await this.plugin.api.catalog({
                 ...this.catalogParams(query),
@@ -499,12 +509,14 @@ export class CatalogModal extends Modal {
                 new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
             } else {
                 this.applyPage(result.value);
+                applied = true;
             }
         } finally {
             this.isFetching = false;
             this.catalogController = null;
         }
-        if (superseded && !this.modalClosed) await this.fetchPage();
+        if (this.modalClosed) return;
+        if (superseded || (applied && this.needsNativeRows())) await this.fetchPage();
     }
 
     private renderResults(): void {

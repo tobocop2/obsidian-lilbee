@@ -708,10 +708,10 @@ describe("CatalogModal", () => {
 
         it("restarts the result set when a scroll lands a new search term before the debounce", async () => {
             const plugin = makePlugin();
-            const first = makeEntry({ display_name: "A" });
+            const firstPage = Array.from({ length: 20 }, (_, i) => makeEntry({ display_name: `A${i}` }));
             const second = makeEntry({ display_name: "B" });
             plugin.api.catalog
-                .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first], has_more: true }))
+                .mockResolvedValueOnce(ok({ total: 21, limit: 20, offset: 0, models: firstPage, has_more: true }))
                 .mockResolvedValueOnce(ok({ total: 1, limit: 1, offset: 0, models: [second], has_more: false }));
             const modal = await openModal(plugin);
             const search = contentEl(modal).find("lilbee-catalog-search")! as unknown as {
@@ -814,8 +814,6 @@ describe("CatalogModal", () => {
                 .mockResolvedValueOnce(ok({ total: 40, limit: 20, offset: 0, models: shortPage, has_more: true }))
                 .mockResolvedValueOnce(ok({ total: 40, limit: 20, offset: 20, models: [], has_more: false }));
             const modal = await openModal(plugin);
-            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
-            (modal as any).onScroll();
             await tick();
             await tick();
             expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
@@ -831,8 +829,6 @@ describe("CatalogModal", () => {
                     ok({ total: 40, limit: 20, offset: 20, models: [makeEntry()], has_more: false }),
                 );
             const modal = await openModal(plugin);
-            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
-            (modal as any).onScroll();
             await tick();
             await tick();
             expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
@@ -963,6 +959,166 @@ describe("CatalogModal", () => {
             expect(calls(plugin)[0].search).toBeUndefined();
             expect(repos(modal)).toEqual([llamaRow.hf_repo]);
             modal.close();
+        });
+    });
+
+    describe("hosted rows ahead of the native rows", () => {
+        const HOSTED_ROWS = 41;
+
+        function hostedRow(i: number): CatalogEntry {
+            const ollama = i >= 38;
+            return makeEntry({
+                hf_repo: ollama ? `ollama/model-${i}` : `gemini/model-${i}`,
+                display_name: `Hosted ${i}`,
+                source: ollama ? "ollama" : "frontier",
+                provider: ollama ? "Ollama" : "Gemini",
+                key_status: ollama ? null : "ready",
+                installed: true,
+            });
+        }
+
+        function nativeRow(i: number, overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+            return makeEntry({ hf_repo: `owner/native-${i}-GGUF`, display_name: `Native ${i}`, ...overrides });
+        }
+
+        /** The server's window: hosted rows first, then native rows, `limit` per page. */
+        function serverPages(
+            plugin: ReturnType<typeof makePlugin>,
+            native: CatalogEntry[],
+            { hosted = HOSTED_ROWS, nativeHasMore = true } = {},
+        ): void {
+            const rows = [...Array.from({ length: hosted }, (_, i) => hostedRow(i)), ...native];
+            plugin.api.catalog.mockImplementation((params: { offset: number; limit: number }) => {
+                const { offset, limit } = params;
+                const models = rows.slice(offset, offset + limit);
+                const has_more = nativeHasMore || offset + limit < rows.length;
+                return Promise.resolve(ok({ total: null, limit, offset, models, has_more }));
+            });
+        }
+
+        async function settle(): Promise<void> {
+            for (let i = 0; i < 10; i++) await tick();
+        }
+
+        function offsets(plugin: ReturnType<typeof makePlugin>): number[] {
+            return plugin.api.catalog.mock.calls.map((c: unknown[]) => (c[0] as { offset: number }).offset);
+        }
+
+        it("shows native chat models when hosted rows fill the first page", async () => {
+            const plugin = makePlugin();
+            serverPages(
+                plugin,
+                Array.from({ length: 60 }, (_, i) => nativeRow(i)),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            await settle();
+
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-empty")).toBeNull();
+            expect(content.findAll("lilbee-model-card").length).toBeGreaterThanOrEqual(20);
+            // Stops once a page's worth of native rows is loaded, though the server has more.
+            expect(offsets(plugin)).toEqual([0, 20, 40, 60]);
+            modal.close();
+        });
+
+        it("keeps the hosted rows for the Hosted sub-tab", async () => {
+            const plugin = makePlugin();
+            serverPages(
+                plugin,
+                Array.from({ length: 60 }, (_, i) => nativeRow(i)),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            await settle();
+            (modal as any).switchSubTab("hosted");
+
+            expect(contentEl(modal).findAll("lilbee-frontier-row")).toHaveLength(HOSTED_ROWS);
+            modal.close();
+        });
+
+        it("fills the Discover rails and the Library from native rows behind the hosted ones", async () => {
+            const plugin = makePlugin();
+            serverPages(plugin, [
+                nativeRow(0, { featured: true, compat: "supported", fit: "fits" }),
+                nativeRow(1, { installed: true }),
+                ...Array.from({ length: 30 }, (_, i) => nativeRow(i + 2, { downloads: 100 - i })),
+            ]);
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            await settle();
+            const names = collectTexts(contentEl(modal));
+            expect(names).toContain("Native 0");
+            expect(names).toContain("Native 1");
+            expect(names).toContain("Native 2");
+            expect(names).not.toContain(MESSAGES.RAIL_NO_ITEMS);
+
+            (modal as any).switchMainTab(CATALOG_TAB.LIBRARY);
+            await settle();
+            expect(collectTexts(contentEl(modal))).toContain("Native 1");
+            modal.close();
+        });
+
+        it("fills a search to its own page size", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            // 70 hosted rows leave 30 native rows after two pages: enough for a browse page, not a search page.
+            serverPages(
+                plugin,
+                Array.from({ length: 120 }, (_, i) => nativeRow(i)),
+                { hosted: 70 },
+            );
+            plugin.api.catalog.mockClear();
+            const box = contentEl(modal).find("lilbee-catalog-search")! as unknown as {
+                value: string;
+                trigger(event: string): void;
+            };
+            box.value = "model";
+            box.trigger("input");
+            (modal as any).resetAndFetch();
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 50, 100]);
+            modal.close();
+        });
+
+        it("stops when the server has no more rows", async () => {
+            const plugin = makePlugin();
+            serverPages(plugin, [nativeRow(0)], { nativeHasMore: false });
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20, 40]);
+            expect(collectTexts(contentEl(modal))).toContain("Native 0");
+            modal.close();
+        });
+
+        it("stops on a failed page", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog
+                .mockResolvedValueOnce(
+                    ok({ total: null, limit: 20, offset: 0, models: [hostedRow(0)], has_more: true }),
+                )
+                .mockResolvedValue(err(new Error("boom")));
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20]);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_LOAD_CATALOG);
+            modal.close();
+        });
+
+        it("stops when the modal closes mid-fill", async () => {
+            const plugin = makePlugin();
+            const second = deferred<Result<CatalogResponse, Error>>();
+            plugin.api.catalog
+                .mockResolvedValueOnce(
+                    ok({ total: null, limit: 20, offset: 0, models: [hostedRow(0)], has_more: true }),
+                )
+                .mockReturnValueOnce(second.promise);
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            modal.close();
+            second.settle(ok({ total: null, limit: 20, offset: 20, models: [hostedRow(1)], has_more: true }));
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20]);
         });
     });
 
