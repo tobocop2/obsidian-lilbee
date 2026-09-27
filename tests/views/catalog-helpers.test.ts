@@ -476,6 +476,15 @@ describe("catalog-helpers", () => {
             expect(freshRail(rows).map((r) => r.hf_repo)).toEqual(["n/rest"]);
         });
 
+        it("freshRail excludes hosted rows even when unfeatured and most-downloaded", () => {
+            const rows = [
+                row({ hf_repo: "n/native", downloads: 1 }),
+                row({ hf_repo: "n/ollama", source: CATALOG_SOURCE.OLLAMA, downloads: 999 }),
+                row({ hf_repo: "n/frontier", source: CATALOG_SOURCE.FRONTIER, downloads: 500 }),
+            ];
+            expect(freshRail(rows).map((r) => r.hf_repo)).toEqual(["n/native"]);
+        });
+
         it("safely handles a query that finds nothing", async () => {
             const docMock = {
                 querySelector: vi.fn().mockReturnValue(null),

@@ -276,15 +276,15 @@ Battle-tested managers are supported too, so you don't have to switch model mana
 
 Pick whichever fits how you already work, and mix all three freely.
 
-Open the catalog's Hosted tab. Pick one Ollama model for embedding and another for chat, and the whole pipeline runs on Ollama:
+Open the catalog's Providers tab. Pick one Ollama model for embedding and another for chat, and the whole pipeline runs on Ollama:
 
-<!-- demo: ollama | tutorial/#ollama | point lilbee at a running Ollama server and pick its models for both embedding and chat from the Hosted tab, then add a PDF and get a cited answer served by Ollama -->
+<!-- demo: ollama | tutorial/#ollama | point lilbee at a running Ollama server and pick its models for both embedding and chat from the Providers tab, then add a PDF and get a cited answer served by Ollama -->
 
 https://github.com/user-attachments/assets/34e954fb-7307-4dd3-8426-c8e37c503a98
 
 The same flow works with LM Studio's local server:
 
-<!-- demo: lmstudio | tutorial/#lmstudio | the same flow with LM Studio's local server: its embedder and chat model picked from the Hosted tab, indexing a PDF and answering with citations -->
+<!-- demo: lmstudio | tutorial/#lmstudio | the same flow with LM Studio's local server: its embedder and chat model picked from the Providers tab, indexing a PDF and answering with citations -->
 
 https://github.com/user-attachments/assets/561e5666-1e1c-403a-9c18-9603a2bb400f
 
@@ -306,9 +306,9 @@ By default everything stays on your machine: server, models, index, vault.
 
 Some roles benefit from a cloud model, such as vision OCR or long-context summarization. Settings → Advanced lets you key in an API endpoint for one role while the rest stay local. A persistent indicator shows whenever a cloud model is the active backend, so it's clear when chunks are leaving the machine.
 
-With your own key, hosted frontier models appear under the catalog's Hosted tab too. Pick a free-tier Gemini model for chat and keep embedding local. The answer comes from Gemini and still cites your own documents:
+With your own key, hosted frontier models appear under the catalog's Providers tab too. Pick a free-tier Gemini model for chat and keep embedding local. The answer comes from Gemini and still cites your own documents:
 
-<!-- demo: gemini | tutorial/#gemini | pick a free-tier Gemini model for chat from the Hosted tab while embedding stays local, then get an answer from Gemini that still cites your manual -->
+<!-- demo: gemini | tutorial/#gemini | pick a free-tier Gemini model for chat from the Providers tab while embedding stays local, then get an answer from Gemini that still cites your manual -->
 
 https://github.com/user-attachments/assets/9ca80ff0-ca6a-46b1-82a6-f4184d17d5cf
 
