@@ -535,6 +535,14 @@ const GENERATION_FIELDS: GenerationField[] = [
     },
 ];
 
+/** What `null` means for a boolean config key on a server that predates the field: the
+ * value that server's own behavior implies. Both currently released fields default to
+ * on, so a legacy server's missing choice still reads as its real, running state. */
+const NULL_BOOLEAN_DEFAULT: Readonly<Record<string, boolean>> = {
+    enable_ocr: true,
+    flash_attention: true,
+};
+
 export class LilbeeSettingTab extends PluginSettingTab {
     private versionSettingEl: HTMLElement | null = null;
     /** Set by the update ribbon icon and the reminder: keep the version row in view across re-renders. */
@@ -2000,6 +2008,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         for (const [key, toggle] of this.serverConfigToggles) {
             const v = cfg[key];
             if (typeof v === "boolean") this.setValueSilently(() => toggle.setValue(v));
+            else if (v === null && key in NULL_BOOLEAN_DEFAULT) {
+                this.setValueSilently(() => toggle.setValue(NULL_BOOLEAN_DEFAULT[key]));
+            }
         }
         for (const [key, slider] of this.serverConfigSliders) {
             const v = cfg[key];
@@ -2488,6 +2499,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 key: "ocr_language",
                 name: MESSAGES.LABEL_OCR_LANGUAGE,
                 desc: MESSAGES.DESC_OCR_LANGUAGE,
+            }),
+            this.toggleRow({
+                key: "enable_ocr",
+                name: MESSAGES.LABEL_ENABLE_OCR,
+                desc: MESSAGES.DESC_ENABLE_OCR,
+            }),
+            this.toggleRow({
+                key: "force_ocr",
+                name: MESSAGES.LABEL_FORCE_OCR,
+                desc: MESSAGES.DESC_FORCE_OCR,
             }),
             this.numberRow(
                 {

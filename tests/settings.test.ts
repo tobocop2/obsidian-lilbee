@@ -3640,6 +3640,80 @@ describe("managed mode settings", () => {
         });
     });
 
+    describe("Enable OCR and Force OCR toggles", () => {
+        it("enable_ocr toggle PATCHes the config", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_ENABLE_OCR)!(false);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ enable_ocr: false });
+        });
+
+        it("force_ocr toggle PATCHes the config", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_FORCE_OCR)!(true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ force_ocr: true });
+        });
+    });
+
+    describe("a nullable boolean config key fills its toggle from what null means for that key", () => {
+        async function toggleAfterConfig(
+            plugin: ReturnType<typeof makePlugin>,
+            key: string,
+            cfg: Record<string, unknown>,
+        ): Promise<ReturnType<typeof vi.fn>> {
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const toggle = (tab as any).serverConfigToggles.get(key);
+            const setValueSpy = vi.spyOn(toggle, "setValue");
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue(cfg);
+            await (tab as any).loadServerDefaults();
+            await new Promise((r) => setTimeout(r, 0));
+            return setValueSpy;
+        }
+
+        it("shows Enable OCR as On when an older server sends enable_ocr: null", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const setValueSpy = await toggleAfterConfig(plugin, "enable_ocr", { enable_ocr: null });
+            expect(setValueSpy).toHaveBeenCalledWith(true);
+        });
+
+        it("shows Enable OCR as Off when the server sends a real false", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const setValueSpy = await toggleAfterConfig(plugin, "enable_ocr", { enable_ocr: false });
+            expect(setValueSpy).toHaveBeenCalledWith(false);
+        });
+
+        it("shows Flash attention as On when an older server sends flash_attention: null", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const setValueSpy = await toggleAfterConfig(plugin, "flash_attention", { flash_attention: null });
+            expect(setValueSpy).toHaveBeenCalledWith(true);
+        });
+
+        it("flipping Enable OCR after a null fill still writes a real boolean", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ enable_ocr: null });
+            await (tab as any).loadServerDefaults();
+            await new Promise((r) => setTimeout(r, 0));
+
+            await toggleByName.get(MESSAGES.LABEL_ENABLE_OCR)!(false);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ enable_ocr: false });
+        });
+    });
+
     describe("text settings commit on Enter or on leaving the box, never per keystroke", () => {
         const confirmsOpened = (): number => vi.mocked(ConfirmModal).mock.calls.length;
         const updatedNotices = (name: string): number =>

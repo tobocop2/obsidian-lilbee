@@ -225,7 +225,7 @@ export const MESSAGES = {
     TOOLTIP_MODE_CHAT: "Chat with the model directly: no vault retrieval.",
     TOOLTIP_ROLE_CHAT: "Chat model: writes the answers.",
     TOOLTIP_ROLE_EMBED: "Embedding model: indexes your notes so search can find them.",
-    TOOLTIP_ROLE_VISION: "Vision model: reads scanned or image-only PDFs. Optional.",
+    TOOLTIP_ROLE_VISION: "Vision model: the OCR engine for scanned pages. Optional; Tesseract runs OCR without it.",
     TOOLTIP_ROLE_RERANK: "Reranker: reorders search hits for sharper relevance. Optional.",
     LABEL_GEN_TEMPERATURE: "Creativity",
     LABEL_GEN_TOP_P: "Top P",
@@ -353,7 +353,7 @@ export const MESSAGES = {
     LABEL_VISION_DISABLED: "(disabled)",
     LABEL_VISION_HOSTED_GROUP: "Hosted via LiteLLM",
     DESC_VISION_MODEL:
-        "Used to read scanned PDFs when OCR fails. Separate from the chat model: vision models run only on image-only documents.",
+        "OCR engine for scanned pages; pages with a good text layer are never OCR'd. Empty uses Tesseract. Separate from the chat model.",
     NOTICE_VISION_UPDATED: "lilbee: vision model updated",
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",
@@ -602,9 +602,10 @@ export const MESSAGES = {
         "Spawn every worker process when the lilbee server starts instead of on first use. Trades 1–3 seconds of cold-start per role for first-call latency.",
     DESC_WORKER_POOL_MAX_IDLE:
         "Shut a worker down after this many seconds idle to free RAM/VRAM. 0 disables idle reaping",
-    DESC_TESSERACT_TIMEOUT: "Per-page Tesseract timeout in seconds (used when no vision model is set)",
+    DESC_TESSERACT_TIMEOUT:
+        "Per-page Tesseract timeout in seconds, for pages that need OCR when no vision model is set",
     DESC_VISION_LOAD_BUDGET:
-        "Outer wall-clock budget for the vision-OCR pool drain in seconds. Includes load grace plus per-page time",
+        "Outer wall-clock budget for the vision-OCR pool drain in seconds, for the pages that need OCR. Includes load grace plus per-page time",
     DESC_CANDIDATE_MULTIPLIER: "Candidate-pool multiplier over top_k before reranking",
     DESC_MIN_RELEVANCE_SCORE: "Minimum RRF relevance score for hybrid search results (0.0 = no filter)",
     DESC_MAX_CONTEXT_SOURCES: "Maximum unique sources contributing chunks to a single answer",
@@ -977,7 +978,6 @@ export const MESSAGES = {
         `${name} is inside ${archive}. Showing the archive in the file explorer.`,
     LABEL_STATUS_CHAT_MODEL: "Chat model",
     LABEL_STATUS_OCR: "OCR",
-    STATUS_VALUE_OCR_AUTO: "Auto",
     STATUS_VALUE_OCR_ON: "On",
     STATUS_VALUE_OCR_OFF: "Off",
     LABEL_STATUS_ARCHITECTURE: "Architecture",
@@ -1115,6 +1115,11 @@ export const MESSAGES = {
     LABEL_OCR_LANGUAGE: "OCR languages",
     DESC_OCR_LANGUAGE:
         "Languages to expect when reading scanned pages, one per line. Three-letter codes, for example eng or deu.",
+    LABEL_ENABLE_OCR: "Enable OCR",
+    DESC_ENABLE_OCR: "OCR for scanned PDFs: picks native text or OCR per page. Off disables OCR entirely.",
+    LABEL_FORCE_OCR: "Force OCR",
+    DESC_FORCE_OCR:
+        "OCR every page of every future ingest, for example to re-OCR scans with a bad text layer. Turn it off again once that ingest is done.",
     // Wiki
     LABEL_WIKI_AUTO_UPDATE: "Update the wiki after ingesting",
     DESC_WIKI_AUTO_UPDATE:
@@ -1359,7 +1364,7 @@ export const MESSAGES = {
     LABEL_EMBED_REPLICAS: "Embedding replicas",
     DESC_EMBED_REPLICAS: "How many embedding workers to run while indexing. 0 lets lilbee pick (one per GPU).",
     LABEL_VISION_REPLICAS: "Vision replicas",
-    DESC_VISION_REPLICAS: "How many OCR workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    DESC_VISION_REPLICAS: "How many workers OCR pages while indexing. 0 lets lilbee pick (one per GPU).",
     LABEL_GPU_DEVICES: "Visible GPUs",
     DESC_GPU_DEVICES:
         "Restrict lilbee to specific GPUs by index, comma separated (for example 0,1). Leave empty to use all.",

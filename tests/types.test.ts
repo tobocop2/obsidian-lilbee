@@ -246,7 +246,7 @@ describe("ModelsResponse interface", () => {
 describe("StatusResponse interface", () => {
     it("holds config, document_count, sources, and total_chunks", () => {
         const s: StatusResponse = {
-            config: { model: "llama3" },
+            config: { chat_model: "llama3" },
             document_count: 1,
             sources: [{ filename: "a.md", chunk_count: 3 }],
             total_chunks: 3,

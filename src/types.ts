@@ -312,7 +312,8 @@ export interface SetModelResponse {
 }
 
 export interface StatusResponse {
-    config: Record<string, string>;
+    /** `enable_ocr` is a plain boolean on a server with mixed-mode OCR; an older server sends null. */
+    config: { chat_model: string; enable_ocr?: boolean | null; [key: string]: unknown };
     document_count: number;
     /** Held-out files, capped by the server; `skipped_total` is the real count. */
     skipped?: SkippedSource[];
