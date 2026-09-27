@@ -1426,6 +1426,7 @@ export const MESSAGES = {
     LABEL_AGENT_SUPPORTED: "Supported agents",
     BUTTON_AGENT_RESCAN: "Rescan",
     LABEL_AGENT_CHOICE: "Coding agent",
+    LABEL_AGENT_PICKER: "Agent",
     DESC_AGENT_CHOICE: "The agent lilbee connects to your models. Installed agents appear here.",
     AGENT_OPTION_NONE: "None",
     LABEL_AGENT_KEEP_FRESH: "Keep the agent connected",

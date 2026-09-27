@@ -469,6 +469,30 @@
     text-align: center;
 }
 
+/* A settings row's extra DOM on Obsidian 1.13+: wraps below the name and control, full width. */
+.setting-item:has(> .lilbee-setting-extras:not(:empty)) {
+    flex-wrap: wrap;
+}
+
+.lilbee-setting-extras {
+    flex-basis: 100%;
+    min-width: 0;
+}
+
+.lilbee-setting-extras:empty {
+    display: none;
+}
+
+/* A row that only hosts extras: no empty name, description or control band above them. */
+.lilbee-extras-only-row > .setting-item-info,
+.lilbee-extras-only-row > .setting-item-control {
+    display: none;
+}
+
+.lilbee-extras-only-row .lilbee-uninstall-callout {
+    margin-top: 0;
+}
+
 .lilbee-models-container {
     margin-top: var(--size-4-3, 12px);
 }

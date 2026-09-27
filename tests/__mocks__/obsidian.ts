@@ -223,6 +223,9 @@ export class MockElement {
     }
 
     querySelector(selector: string): MockElement | null {
+        // Direct-child class selector: ":scope > .some-class"
+        const direct = /^:scope > \.([\w-]+)$/.exec(selector);
+        if (direct) return this.children.find((child) => child.classList.contains(direct[1])) ?? null;
         // Simple class selector support: ".some-class"
         if (selector.startsWith(".")) {
             return this.find(selector.slice(1));
@@ -280,6 +283,13 @@ export class MockElement {
 
     detach(): void {
         this.remove();
+    }
+
+    /** Obsidian's helper: the listed nodes become the only children, in order. */
+    setChildrenInPlace(nodes: MockElement[]): void {
+        for (const child of this.children) child.parentElement = null;
+        this.children = [];
+        for (const node of nodes) this.insertBefore(node, null);
     }
 
     scrollIntoView(_opts?: unknown): void {

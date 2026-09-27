@@ -9,7 +9,7 @@ import { LilbeeSettingTab } from "../src/settings";
 import { DEFAULT_SETTINGS, CAPABILITY, MEMORY_CONFIG_KEY, SERVER_MODE, type LilbeeSettings } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { formatDiskSize } from "../src/utils";
-import { err } from "../src/result";
+import { err, ok } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import type LilbeePlugin from "../src/main";
@@ -137,29 +137,54 @@ type Definition = {
     type?: string;
     heading?: string;
     name?: string;
+    desc?: string;
     aliases?: string[];
     items?: Definition[];
     visible?: () => boolean;
     render?: (setting: Setting, group: { listEl: MockElement }) => void;
 };
 
-/** Walk the definitions the way Obsidian does: skip hidden items, run every render callback. */
-function renderDefinitions(items: Definition[], container: MockElement): string[] {
+/** One render callback run, kept so a test can re-run it on the same Setting as a reconcile does. */
+type RenderedRow = { setting: Setting; rerender: () => void };
+
+/**
+ * Walk the definitions the way Obsidian does: skip hidden items, run every render callback, then
+ * keep only the rows' own elements in each group's list, as Obsidian's renderer does after every pass.
+ */
+function renderDefinitions(items: Definition[], container: MockElement, rendered: RenderedRow[] = []): string[] {
     const names: string[] = [];
+    const settings: Setting[] = [];
     for (const item of items) {
         if (item.visible !== undefined && !item.visible()) continue;
         if (item.type === "group" || item.type === "list") {
             if (item.heading !== undefined) names.push(item.heading);
-            names.push(...renderDefinitions(item.items ?? [], container));
+            const listEl = container.createDiv({ cls: "setting-group" });
+            names.push(...renderDefinitions(item.items ?? [], listEl, rendered));
             continue;
         }
         if (item.name !== undefined && item.name !== "") names.push(item.name);
         if (item.render) {
             const setting = new Setting(container);
-            item.render(setting, { listEl: container });
+            setting.setName(item.name ?? "").setDesc(item.desc ?? "");
+            const render = item.render;
+            const rerender = () => render(setting, { listEl: container });
+            rerender();
+            settings.push(setting);
+            rendered.push({ setting, rerender });
         }
     }
+    if (container.classList.contains("setting-group")) {
+        container.setChildrenInPlace(settings.map((s) => s.settingEl as unknown as MockElement));
+    }
     return names;
+}
+
+/** The settings row that holds *el*, or null when the element sits outside every row. */
+function rowOf(el: MockElement | null): MockElement | null {
+    for (let node = el; node; node = node.parentElement) {
+        if (node.classList.contains("setting-item")) return node;
+    }
+    return null;
 }
 
 /** Every name in the tree, whether or not the row is visible right now. */
@@ -314,26 +339,91 @@ describe("declarative setting definitions", () => {
         expect(declared).not.toContain(MESSAGES.LABEL_UNINSTALL_SERVER);
     });
 
-    it("renders the model pickers into the group, not into a row", () => {
+    it("keeps the model pickers inside their row, where the group pass leaves them", () => {
         const tab = makeTab();
         const container = new MockElement("div");
         renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
-        expect(container.find("lilbee-models-container")).toBeTruthy();
+        expect(rowOf(container.find("lilbee-models-container"))).toBeTruthy();
     });
 
-    it("renders the coding-agent body into the group", () => {
+    it("keeps the coding-agent body inside its row", () => {
         const tab = makeTab();
         const container = new MockElement("div");
         renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
-        expect(container.find("lilbee-agent-body")).toBeTruthy();
+        expect(rowOf(container.find("lilbee-agent-body"))).toBeTruthy();
     });
 
-    it("renders the storage report and the uninstall callout", () => {
+    it("keeps the storage report and the uninstall callout inside their rows", () => {
         const tab = makeTab();
         const container = new MockElement("div");
         renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
-        expect(container.find("lilbee-storage-report")).toBeTruthy();
-        expect(container.find("lilbee-uninstall-callout")).toBeTruthy();
+        expect(rowOf(container.find("lilbee-storage-report"))).toBeTruthy();
+        expect(rowOf(container.find("lilbee-uninstall-callout"))).toBeTruthy();
+    });
+
+    it("marks the callout's row as extras only, so no blank row shows above the callout", () => {
+        const tab = makeTab();
+        const container = new MockElement("div");
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        expect(rowOf(container.find("lilbee-uninstall-callout"))?.classList.contains("lilbee-extras-only-row")).toBe(
+            true,
+        );
+        expect(rowOf(container.find("lilbee-storage-report"))?.classList.contains("lilbee-extras-only-row")).toBe(
+            false,
+        );
+    });
+
+    it("names the coding-agent row once, with the picker inside it under its own label", async () => {
+        const tab = makeTab();
+        tab.plugin.api.getAgentConfigIndex = vi.fn().mockResolvedValue(ok({ clients: [] }));
+        const names: string[] = [];
+        const original = Setting.prototype.setName;
+        Setting.prototype.setName = function (name: string) {
+            names.push(name);
+            return original.call(this, name);
+        };
+        try {
+            renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        } finally {
+            Setting.prototype.setName = original;
+        }
+        expect(names.filter((name) => name === MESSAGES.LABEL_AGENT_CHOICE)).toHaveLength(1);
+        expect(names).toContain(MESSAGES.LABEL_AGENT_PICKER);
+    });
+
+    it("finds a row's extras only among the row's own children", () => {
+        const tab = makeTab();
+        const setting = new Setting(new MockElement("div"));
+        const nested = (setting.infoEl as unknown as MockElement).createDiv("lilbee-setting-extras");
+        const extras = (tab as any).rowExtras(setting) as MockElement;
+        expect(extras).not.toBe(nested);
+        expect(extras.parentElement).toBe(setting.settingEl);
+        expect((tab as any).rowExtras(setting)).toBe(extras);
+    });
+
+    it("leaves the uninstall warning to the callout, so the sentence shows once", () => {
+        const tab = makeTab();
+        const group = (tab.getSettingDefinitions() as Definition[]).find((d) => d.heading === MESSAGES.LABEL_UNINSTALL);
+        expect(group?.items?.[0].desc).toBe("");
+        const container = new MockElement("div");
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        expect(container.find("lilbee-uninstall-callout")?.find("lilbee-uninstall-callout-mark")).toBeTruthy();
+    });
+
+    it("keeps one models container across a re-render, and points Refresh at that one", async () => {
+        const tab = makeTab();
+        const container = new MockElement("div");
+        const rendered: RenderedRow[] = [];
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container, rendered);
+        for (const row of rendered) row.rerender();
+
+        const containers = container.findAll("lilbee-models-container");
+        expect(containers).toHaveLength(1);
+        expect(rowOf(containers[0])).toBeTruthy();
+        expect(container.findAll("lilbee-uninstall-callout")).toHaveLength(1);
+        expect((tab as any).modelsContainerEl).toBe(containers[0]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     it("sizes the uninstall row from the storage report the first time it renders", () => {
@@ -357,11 +447,18 @@ describe("declarative setting definitions", () => {
         }
     });
 
-    it("renders the update progress panel beside the version row", () => {
+    it("keeps the update progress panel inside the version row", () => {
         const tab = makeTab();
         const container = new MockElement("div");
         renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
-        expect(container.find("lilbee-update-progress")).toBeTruthy();
+        expect(rowOf(container.find("lilbee-update-progress"))).toBeTruthy();
+    });
+
+    it("keeps the update progress panel inside the install row", () => {
+        const tab = makeTab({}, { isServerInstalled: () => false });
+        const container = new MockElement("div");
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        expect(rowOf(container.find("lilbee-update-progress"))).toBeTruthy();
     });
 
     it("renders the bug feedback links", () => {
