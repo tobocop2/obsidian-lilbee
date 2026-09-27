@@ -194,14 +194,9 @@ export function yourCollectionRail(entries: CatalogEntry[]): CatalogEntry[] {
         .slice(0, DISCOVER_RAIL_LIMIT);
 }
 
-/**
- * Most-downloaded rows the picks rail did not already claim.
- *
- * Featured rows are excluded so Fresh shows what For You did not; without that
- * the two rails render the same trending models twice.
- */
+/** Most-downloaded native rows the picks rail did not already claim. */
 export function freshRail(entries: CatalogEntry[]): CatalogEntry[] {
-    return entries
+    return localRowsOnly(entries)
         .filter((e) => !e.featured)
         .sort((a, b) => b.downloads - a.downloads)
         .slice(0, DISCOVER_RAIL_LIMIT);

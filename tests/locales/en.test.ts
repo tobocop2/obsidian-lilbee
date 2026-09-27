@@ -90,6 +90,14 @@ describe("MESSAGES", () => {
         });
     });
 
+    describe("TAB_ constants", () => {
+        it("names the catalog sub-tabs by what they hold, not where models run", () => {
+            expect(MESSAGES.TAB_LOCAL).toBe("Native");
+            expect(MESSAGES.TAB_FRONTIER).toBe("Providers");
+            expect(MESSAGES.MODEL_PICKER_LOCAL_HEADING).toBe("Native");
+        });
+    });
+
     describe("TITLE_ constants", () => {
         it("has all title constants", () => {
             expect(MESSAGES.TITLE_SEARCH).toBe("Search knowledge base");
