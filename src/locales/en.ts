@@ -209,7 +209,7 @@ export const MESSAGES = {
     RAIL_NO_ITEMS: "Nothing here yet.",
     RAIL_FOR_YOU_HELP: "Featured models picked for your active chat task.",
     RAIL_YOUR_COLLECTION_HELP: "Models you've already pulled, across every task.",
-    RAIL_FRESH_HELP: "The most-downloaded models in the catalog right now.",
+    RAIL_FRESH_HELP: "The most-downloaded models you can download right now.",
     PILL_KEY_READY: "Ready",
     PILL_KEY_NEEDS_KEY: "Needs key",
     MODEL_PICKER_TITLE_CHAT: "Pick chat model",

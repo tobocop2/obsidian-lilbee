@@ -1731,7 +1731,7 @@ describe("CatalogModal", () => {
             expect(frontierTab?.style.display).toBe("");
         });
 
-        it("Local tab renders only local rows even when frontier rows are present", async () => {
+        it("Native tab renders only local rows even when frontier rows are present", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok(
@@ -1780,7 +1780,7 @@ describe("CatalogModal", () => {
             expect(content.findAll("lilbee-key-status-pill-needs-key").length).toBe(1);
         });
 
-        it("Hosted tab renders local-server provider headings ahead of frontier ones", async () => {
+        it("Providers tab renders local-server provider headings ahead of frontier ones", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok(
@@ -1880,7 +1880,7 @@ describe("CatalogModal", () => {
             expect(Notice.instances.length).toBeGreaterThan(0);
         });
 
-        it("re-renders when switching back to the Local tab", async () => {
+        it("re-renders when switching back to the Native tab", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok(
