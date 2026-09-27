@@ -438,6 +438,8 @@ export const MESSAGES = {
     LABEL_SWITCH_TO_GRID: "Switch to grid view",
     LABEL_VIEW_TOGGLE_CTA: "Switch to list view for the full catalog",
     LABEL_NO_MODELS_FOUND: "No models match your filters.",
+    LABEL_NO_MODELS_LOADED_YET: "No matching models in the part of the catalog loaded so far.",
+    BUTTON_LOAD_MORE: "Load more",
     LABEL_DETAIL_VARIANTS: "Size variants",
     LABEL_DETAIL_DESCRIPTION: "Description",
     LABEL_DETAIL_DOWNLOADS: "Downloads",

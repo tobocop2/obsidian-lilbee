@@ -51,6 +51,8 @@ const PAGE_SIZE = 20;
 // Page size for search; matches are spread across the hub.
 const SEARCH_PAGE_SIZE = 50;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
+// Follow-up fetches per fill: five pages cover 45 hosted rows (three pages, as measured) and two native pages.
+const MAX_FILL_FOLLOW_UPS = 4;
 const DRAWER_BREAKPOINT_PX = 800;
 const DRAWER_FOCUS_DEBOUNCE_MS = 30;
 
@@ -67,6 +69,13 @@ const SUB_TAB = {
     LOCAL: "local",
     HOSTED: "hosted",
 } as const satisfies Record<string, SubTab>;
+
+/** What started a fill: opening or filtering the view, or a Load more click. */
+type FillTrigger = "auto" | "load-more";
+const FILL_TRIGGER = {
+    AUTO: "auto",
+    LOAD_MORE: "load-more",
+} as const satisfies Record<string, FillTrigger>;
 
 const TASK_SECTION_LABEL: Record<ModelTask, string> = {
     [MODEL_TASK.CHAT]: MESSAGES.LABEL_SECTION_CHAT,
@@ -105,6 +114,10 @@ export class CatalogModal extends Modal {
     // The query the offset was fetched under.
     private fetchedQuery = "";
     private hasMore = false;
+    // Hosted rows lead the listing; true when the last page had room for rows after them.
+    private pastHostedRows = false;
+    // The fill stopped while the server still had rows; the results offer Load more.
+    private canLoadMore = false;
     private isFetching = false;
     private fetchGeneration = 0;
     private catalogController: AbortController | null = null;
@@ -435,6 +448,7 @@ export class CatalogModal extends Modal {
 
     private clearResults(): void {
         this.entries = [];
+        this.canLoadMore = false;
         if (this.resultsEl) this.resultsEl.empty();
     }
 
@@ -446,20 +460,42 @@ export class CatalogModal extends Modal {
         void this.fetchPage();
     }
 
+    private pageLimit(query: string): number {
+        return query ? SEARCH_PAGE_SIZE : PAGE_SIZE;
+    }
+
+    /** The server has rows the active view may need: the hosted prefix, then one page of native rows. */
+    private wantsMoreRows(): boolean {
+        if (!this.hasMore) return false;
+        if (!this.pastHostedRows) return true;
+        return localRowsOnly(this.entries).length < this.pageLimit(this.fetchedQuery);
+    }
+
+    /** The Library's installed-only pages past the hosted rows are sparse: they load only on request, until one adds a row. */
+    private mayFetchAutomatically(followUps: number, trigger: FillTrigger, addedRows: number): boolean {
+        if (followUps <= 0) return false;
+        if (!(this.pastHostedRows && this.activeTab === CATALOG_TAB.LIBRARY)) return true;
+        return trigger === FILL_TRIGGER.LOAD_MORE && addedRows === 0;
+    }
+
     private catalogParams(query: string): Parameters<typeof this.plugin.api.catalog>[0] {
         const params: Parameters<typeof this.plugin.api.catalog>[0] = {
-            limit: query ? SEARCH_PAGE_SIZE : PAGE_SIZE,
+            limit: this.pageLimit(query),
             offset: this.offset,
             sort: this.filterSort,
         };
         if (this.filterTask) params.task = this.filterTask;
         if (this.filterSize) params.size = this.filterSize;
         if (query) params.search = query;
+        if (this.activeTab === CATALOG_TAB.LIBRARY) params.installed = true;
         return params;
     }
 
-    private applyPage(response: CatalogResponse): void {
+    /** Returns the number of native rows the page added. */
+    private applyPage(response: CatalogResponse): number {
         this.hasMore = response.has_more;
+        this.canLoadMore = false;
+        this.pastHostedRows = hostedRowsOnly(response.models).length < response.limit;
         // Filtered by task again; some servers and frontier providers tag rows loosely.
         const filtered = this.filterTask ? response.models.filter((m) => m.task === this.filterTask) : response.models;
         this.entries.push(...filtered);
@@ -468,9 +504,10 @@ export class CatalogModal extends Modal {
 
         this.updateHostedTabVisibility();
         this.renderResults();
+        return localRowsOnly(filtered).length;
     }
 
-    private async fetchPage(): Promise<void> {
+    private async fetchPage(followUps = MAX_FILL_FOLLOW_UPS, trigger: FillTrigger = FILL_TRIGGER.AUTO): Promise<void> {
         if (this.isFetching) return;
         const query = this.filterSearch;
         // The offset belongs to one query; a different term restarts the result set.
@@ -488,6 +525,7 @@ export class CatalogModal extends Modal {
         this.catalogController = controller;
 
         let superseded = false;
+        let added: number | null = null;
         try {
             const result = await this.plugin.api.catalog({
                 ...this.catalogParams(query),
@@ -498,19 +536,46 @@ export class CatalogModal extends Modal {
             } else if (result.isErr()) {
                 new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
             } else {
-                this.applyPage(result.value);
+                added = this.applyPage(result.value);
             }
         } finally {
             this.isFetching = false;
             this.catalogController = null;
         }
-        if (superseded && !this.modalClosed) await this.fetchPage();
+        if (this.modalClosed) return;
+        if (superseded) return this.fetchPage();
+        if (added !== null) await this.continueFill(followUps, trigger, added);
+    }
+
+    private async continueFill(followUps: number, trigger: FillTrigger, addedRows: number): Promise<void> {
+        if (!this.wantsMoreRows()) return;
+        if (this.mayFetchAutomatically(followUps, trigger, addedRows)) return this.fetchPage(followUps - 1, trigger);
+        this.canLoadMore = true;
+        this.renderResults();
     }
 
     private renderResults(): void {
         if (!this.resultsEl) return;
         this.resultsEl.empty();
+        this.renderActiveView();
+        // Hosted rows lead the listing, so the Hosted sub-tab is complete once shown.
+        if (this.canLoadMore && this.currentTab !== SUB_TAB.HOSTED) this.renderLoadMore(this.resultsEl);
+    }
 
+    private renderLoadMore(parent: HTMLElement): void {
+        const btn = parent.createEl("button", { cls: "lilbee-catalog-load-more", text: MESSAGES.BUTTON_LOAD_MORE });
+        btn.addEventListener("click", () => void this.fetchPage(MAX_FILL_FOLLOW_UPS, FILL_TRIGGER.LOAD_MORE));
+    }
+
+    /** Empty-state text: nothing matches only once the server has no more rows. */
+    private renderEmpty(parent: HTMLElement): void {
+        parent.createDiv({
+            cls: "lilbee-catalog-empty",
+            text: this.hasMore ? MESSAGES.LABEL_NO_MODELS_LOADED_YET : MESSAGES.LABEL_NO_MODELS_FOUND,
+        });
+    }
+
+    private renderActiveView(): void {
         if (this.activeTab === CATALOG_TAB.DISCOVER) {
             this.renderDiscoverTab();
             return;
@@ -532,10 +597,7 @@ export class CatalogModal extends Modal {
         if (!this.resultsEl) return;
         const localEntries = localRowsOnly(this.entries);
         if (localEntries.length === 0) {
-            this.resultsEl.createDiv({
-                cls: "lilbee-catalog-empty",
-                text: MESSAGES.LABEL_NO_MODELS_FOUND,
-            });
+            this.renderEmpty(this.resultsEl);
             return;
         }
         if (this.viewMode === CATALOG_VIEW_MODE.GRID) {
@@ -593,10 +655,7 @@ export class CatalogModal extends Modal {
         // Hosted rows are installed=true server-side; the Library is the on-disk view.
         const installed = localRowsOnly(this.entries).filter((e) => e.installed);
         if (installed.length === 0) {
-            this.resultsEl.createDiv({
-                cls: "lilbee-catalog-empty",
-                text: MESSAGES.LABEL_NO_MODELS_FOUND,
-            });
+            this.renderEmpty(this.resultsEl);
             return;
         }
         if (this.viewMode === CATALOG_VIEW_MODE.GRID) {
