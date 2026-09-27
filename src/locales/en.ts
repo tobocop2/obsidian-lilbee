@@ -13,6 +13,12 @@ import {
     type ServerVariant,
     type WorkerRole,
     LOG_FILE,
+    PROFILE_EFFECT,
+    type ProfileEffect,
+    PROFILE_FOLDER,
+    type ProfileFolder,
+    PROFILE_STATUS,
+    type ProfileStatus,
 } from "../types";
 
 /** The toggle a user flips to move lilbee content in or out of the vault. */
@@ -1478,6 +1484,90 @@ export const MESSAGES = {
     BUTTON_AGENT_NOT_NOW: "Not now",
     BUTTON_AGENT_CONNECT: (agent: string): string => `Connect ${agent}`,
     BUTTON_AGENT_CONNECT_NONE: "Connect",
+    LABEL_PROFILE_SECTION: "Profile",
+    DESC_PROFILE_SECTION:
+        "Settings for ingest, OCR, chunking and search. Models, hardware and API keys stay as they are.",
+    DESC_PROFILE_PICK: "Choosing a profile shows what it changes before anything changes.",
+    PROFILE_TESTED_ON: (text: string): string => `Tested on: ${text}`,
+    PROFILE_CHANGES_TITLE: "Your changes",
+    PROFILE_CHANGES_HELP: (name: string): string => `These values of yours override ${name}.`,
+    PROFILE_CHANGES_NONE: (name: string): string => `No values of yours override ${name}.`,
+    PROFILE_COL_SETTING: "Setting",
+    PROFILE_COL_YOURS: "Your value",
+    PROFILE_COL_PROFILE: "Profile value",
+    PROFILE_COL_NOW: "Now",
+    PROFILE_COL_AFTER: "After",
+    PROFILE_COL_COST: "Cost",
+    PROFILE_VALUE_ON: "on",
+    PROFILE_VALUE_OFF: "off",
+    PROFILE_VALUE_NONE: "none",
+    BUTTON_PROFILE_UPDATE: (name: string): string => `Update ${name}`,
+    BUTTON_PROFILE_SAVE_AS: "Save as new profile",
+    BUTTON_PROFILE_DISCARD: "Discard my changes",
+    BUTTON_PROFILE_REAPPLY: (name: string): string => `Re-apply ${name}`,
+    BUTTON_PROFILE_MANAGE: "Manage profiles",
+    BUTTON_PROFILE_APPLY: "Apply",
+    BUTTON_PROFILE_APPLY_REINDEX: "Apply and reindex",
+    BUTTON_PROFILE_SAVE: "Save",
+    BUTTON_PROFILE_DUPLICATE: "Duplicate",
+    BUTTON_PROFILE_RENAME: "Rename",
+    BUTTON_PROFILE_DELETE: "Delete",
+    BUTTON_PROFILE_EXPORT: "Export",
+    BUTTON_PROFILE_IMPORT: "Import profile",
+    PROFILE_APPLY_TITLE: (name: string): string => `Switch to ${name}?`,
+    PROFILE_APPLY_CHANGES: "Changes",
+    PROFILE_APPLY_KEEPS: "Keeps your values",
+    PROFILE_APPLY_UNTOUCHED: (count: number): string =>
+        `${count} other settings, such as models, hardware and API keys, stay as they are.`,
+    PROFILE_APPLY_NOTHING: "Nothing changes; lilbee records the profile's name.",
+    PROFILE_APPLY_REINDEX: (count: number): string =>
+        count === 1 ? "One change rebuilds the index." : `${count} changes rebuild the index.`,
+    PROFILE_SAVE_TITLE: "Save as a new profile",
+    PROFILE_SAVE_EXPLAIN: (name: string): string =>
+        `The new profile holds ${name}'s values and your changes. This vault switches to it, and your changes stop showing as yours.`,
+    PROFILE_DUPLICATE_TITLE: (name: string): string => `Duplicate ${name}`,
+    PROFILE_RENAME_TITLE: (name: string): string => `Rename ${name}`,
+    PROFILE_IMPORT_TITLE: (file: string): string => `Import ${file}`,
+    PLACEHOLDER_PROFILE_NAME: "Profile name",
+    LABEL_PROFILE_SAVE_TO: "Save to",
+    PROFILE_LIBRARY_TITLE: "Profiles",
+    PROFILE_ACTIVE_MARK: "in use",
+    PROFILE_SHADOWED: (folder: string): string => `Hidden by the profile of the same name in ${folder}`,
+    PROFILE_BROKEN: (reason: string): string => `Broken: ${reason}`,
+    LABEL_PROFILE_FILTER: "lilbee profile",
+    CONFIRM_DELETE_PROFILE: (name: string): string =>
+        `Delete ${name}? Projects that use it keep the copy recorded when they applied it.`,
+    CONFIRM_PROFILE_DISCARD_REINDEX: (name: string): string =>
+        `The index was built with values you discarded. Rebuild it so search uses ${name}'s values?`,
+    PLACEHOLDER_PICK_PROFILE: "Pick a profile",
+    NOTICE_PROFILES_UNSUPPORTED: "This lilbee server has no profiles. Update lilbee to use them.",
+    NOTICE_PROFILE_APPLIED: (name: string): string => `Switched to ${name}.`,
+    NOTICE_PROFILE_SAVED: (name: string, path: string): string => `Saved ${name} to ${path}.`,
+    NOTICE_PROFILE_UPDATED: (name: string): string => `Updated ${name}.`,
+    NOTICE_PROFILE_DISCARDED: (name: string): string => `Your values are gone; ${name}'s values show through.`,
+    NOTICE_PROFILE_NOTHING_TO_DISCARD: "You have no values of profile settings to discard.",
+    NOTICE_PROFILE_DUPLICATED: (name: string): string => `Made ${name}.`,
+    NOTICE_PROFILE_RENAMED: (name: string): string => `Renamed to ${name}.`,
+    NOTICE_PROFILE_DELETED: (name: string): string => `Deleted ${name}.`,
+    NOTICE_PROFILE_EXPORTED: (path: string): string => `Exported the profile to ${path}.`,
+    NOTICE_PROFILE_IMPORTED: (name: string): string => `Imported ${name}.`,
+    ERROR_PROFILE_LOAD: (reason: string): string => `Could not read the profiles: ${reason}`,
+    ERROR_PROFILE_ACTION: (reason: string): string => `The profile change failed: ${reason}`,
+    ERROR_PROFILE_READ: (reason: string): string => `Could not read the profile file: ${reason}`,
+    ERROR_PROFILE_WRITE: (reason: string): string => `Could not write the profile file: ${reason}`,
+    ERROR_PROFILE_TOO_LARGE: (kilobytes: number): string =>
+        `The file is over ${kilobytes} KB, too large for a profile file.`,
+    ERROR_PROFILE_INVALID: (problems: string): string => `This is not a profile lilbee can use: ${problems}`,
+    COMMAND_PROFILE_CHOOSE: "Choose profile",
+    COMMAND_PROFILE_SAVE_AS: "Save settings as a new profile",
+    COMMAND_PROFILE_UPDATE: "Update the active profile with my changes",
+    COMMAND_PROFILE_DISCARD: "Discard my profile changes",
+    COMMAND_PROFILE_MANAGE: "Manage profiles",
+    COMMAND_PROFILE_IMPORT: "Import profile",
+    COMMAND_PROFILE_EXPORT: "Export profile",
+    COMMAND_PROFILE_DUPLICATE: "Duplicate profile",
+    COMMAND_PROFILE_RENAME: "Rename profile",
+    COMMAND_PROFILE_DELETE: "Delete profile",
 } as const;
 
 /** Product names for the agent clients; the wire values are lowercase ids. */
@@ -1546,3 +1636,32 @@ export const CATALOG_FILTERS = {
         [FILTERS.SORT.SIZE_DESC, MESSAGES.LABEL_SIZE_DESC],
     ] as const,
 } as const;
+
+/** Where each profile folder is, in the words of the library and the save dialogs. */
+export const PROFILE_FOLDER_LABELS: Readonly<Record<ProfileFolder, string>> = {
+    [PROFILE_FOLDER.PROJECT]: "This vault",
+    [PROFILE_FOLDER.GLOBAL]: "All projects",
+    [PROFILE_FOLDER.BUILTIN]: "Built-in",
+};
+
+/** The Profile group's line about the active profile's folder. */
+export const PROFILE_FOLDER_NOTES: Readonly<Record<ProfileFolder, string>> = {
+    [PROFILE_FOLDER.PROJECT]: "Saved in this vault.",
+    [PROFILE_FOLDER.GLOBAL]: "Saved for all projects.",
+    [PROFILE_FOLDER.BUILTIN]: "A built-in profile that ships with lilbee.",
+};
+
+/** What the active profile's file state means for this vault; empty when it is current. */
+export const PROFILE_STATUS_NOTES: Readonly<Record<ProfileStatus, string>> = {
+    [PROFILE_STATUS.CURRENT]: "",
+    [PROFILE_STATUS.CHANGED]: "Its file changed since it was applied; apply it again to use the file.",
+    [PROFILE_STATUS.MISSING]: "Its file is gone; the copy recorded on apply stays in use.",
+    [PROFILE_STATUS.BROKEN]: "Its file is broken; the copy recorded on apply stays in use.",
+};
+
+/** The Cost cell of a profile change; a change that applies at once needs no label. */
+export const PROFILE_EFFECT_LABELS: Readonly<Record<ProfileEffect, string>> = {
+    [PROFILE_EFFECT.REINDEX]: "reindex",
+    [PROFILE_EFFECT.NEW_FILES_ONLY]: "new files only",
+    [PROFILE_EFFECT.NOW]: "",
+};

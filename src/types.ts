@@ -1134,6 +1134,151 @@ export const SERVER_ENV_PREFIX = "LILBEE_";
 /** Writable settings `POST /api/config/reset` refuses: no default folder, and a provider switch. */
 export const UNRESETTABLE_CONFIG_KEYS: ReadonlySet<string> = new Set(["documents_dir", "llm_provider"]);
 
+/** The profile folder a profile file lives in, highest precedence first. */
+export type ProfileFolder = "project" | "global" | "builtin";
+
+export const PROFILE_FOLDER = {
+    PROJECT: "project",
+    GLOBAL: "global",
+    BUILTIN: "builtin",
+} as const satisfies Record<string, ProfileFolder>;
+
+/** The folders a profile can be written to, the default first. */
+export const PROFILE_SAVE_TARGETS: readonly ProfileFolder[] = [PROFILE_FOLDER.GLOBAL, PROFILE_FOLDER.PROJECT];
+
+/** The folders whose profiles the user can rename and delete. */
+export const PROFILE_OWNED_FOLDERS: ReadonlySet<ProfileFolder> = new Set(PROFILE_SAVE_TARGETS);
+
+/** How the applied profile's file compares with the copy recorded on apply. */
+export type ProfileStatus = "current" | "changed" | "missing" | "broken";
+
+export const PROFILE_STATUS = {
+    CURRENT: "current",
+    CHANGED: "changed",
+    MISSING: "missing",
+    BROKEN: "broken",
+} as const satisfies Record<string, ProfileStatus>;
+
+/** When a changed profile value takes effect. */
+export type ProfileEffect = "reindex" | "new_files_only" | "now";
+
+export const PROFILE_EFFECT = {
+    REINDEX: "reindex",
+    NEW_FILES_ONLY: "new_files_only",
+    NOW: "now",
+} as const satisfies Record<string, ProfileEffect>;
+
+/** How the Apply modal closed. */
+export type ApplyChoice = "apply" | "apply_reindex" | "cancel";
+
+export const APPLY_CHOICE = {
+    APPLY: "apply",
+    APPLY_REINDEX: "apply_reindex",
+    CANCEL: "cancel",
+} as const satisfies Record<string, ApplyChoice>;
+
+/** The server's cap on a profile file, which the plugin checks before reading one. */
+export const PROFILE_MAX_BYTES = 256 * 1024;
+
+export interface ProfileAuthor {
+    name: string;
+    github: string | null;
+}
+
+/** One profile file from `GET /api/profiles`; `error` names why a broken file cannot be used. */
+export interface ProfileEntry {
+    name: string;
+    folder: ProfileFolder;
+    path: string;
+    valid: boolean;
+    error: string | null;
+    shadowed_by: ProfileFolder | null;
+    description: string | null;
+    authors: ProfileAuthor[];
+    credit: string | null;
+    tested_on: string | null;
+    evidence: string | null;
+    min_lilbee: string | null;
+    values: Record<string, unknown>;
+}
+
+export interface ProfileListResponse {
+    profiles: ProfileEntry[];
+}
+
+/** A profile setting you set, and the value and source it falls back to without you. */
+export interface ProfileChangeRow {
+    key: string;
+    yours: unknown;
+    profile_value: unknown;
+    profile_source: SettingSource;
+    effect: ProfileEffect;
+}
+
+export interface ActiveProfileResponse {
+    name: string;
+    status: ProfileStatus;
+    error: string | null;
+    values: Record<string, unknown>;
+    /** Absent on a server that predates it; the Profile group falls back to the diff's kept list. */
+    changes?: ProfileChangeRow[];
+    profile: ProfileEntry | null;
+}
+
+/** One setting a profile apply changes, and when the change takes effect. */
+export interface ProfileDiffRow {
+    key: string;
+    current: unknown;
+    current_source: SettingSource;
+    new: unknown;
+    effect: ProfileEffect;
+}
+
+/** What applying a profile changes; `kept` names the user's values it leaves in place. */
+export interface ProfileDiffResponse {
+    name: string;
+    changes: ProfileDiffRow[];
+    kept: string[];
+    untouched_count: number;
+}
+
+export interface ProfileApplyResponse {
+    name: string;
+    changes: ProfileDiffRow[];
+    reindex_required: boolean;
+    new_files_only: string[];
+}
+
+/** A profile file an operation wrote or removed. */
+export interface ProfileLocationResponse {
+    name: string;
+    folder: ProfileFolder;
+    path: string;
+}
+
+/** A saved profile and the user's settings it took over. */
+export interface ProfileSaveResponse extends ProfileLocationResponse {
+    absorbed: string[];
+}
+
+export interface ProfileDiscardResponse {
+    dropped: string[];
+    /** Absent on a server that predates it; treated as no reindex needed. */
+    reindex_required?: boolean;
+}
+
+export interface ProfileValidationResponse {
+    name: string;
+    valid: boolean;
+    problems: string[];
+}
+
+/** A profile as a clean file; `filename` is the download's name, null when the server gives none. */
+export interface ExportedProfile {
+    filename: string | null;
+    content: string;
+}
+
 export interface EmbeddingModelResponse {
     model: string;
 }

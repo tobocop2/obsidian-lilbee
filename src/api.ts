@@ -24,6 +24,17 @@ import type {
     ConfigResponse,
     ConfigSchemaResponse,
     ConfigSourcesResponse,
+    ActiveProfileResponse,
+    ExportedProfile,
+    ProfileApplyResponse,
+    ProfileDiffResponse,
+    ProfileDiscardResponse,
+    ProfileEntry,
+    ProfileFolder,
+    ProfileListResponse,
+    ProfileLocationResponse,
+    ProfileSaveResponse,
+    ProfileValidationResponse,
     CrawlerStatusField,
     CrawlerStatusResponse,
     ConfigUpdateResponse,
@@ -891,6 +902,92 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ keys }),
         });
+    }
+
+    /** Every profile, highest precedence first; null on a server without profiles. */
+    async listProfiles(): Promise<ProfileListResponse | null> {
+        return this.jsonOrNullWhenMissing<ProfileListResponse>(`${this.baseUrl}/api/profiles`);
+    }
+
+    /** The project's applied profile and the state of its file. */
+    async activeProfile(): Promise<ActiveProfileResponse> {
+        return this.profileJson<ActiveProfileResponse>("/api/profiles/active");
+    }
+
+    async getProfile(name: string): Promise<ProfileEntry> {
+        return this.profileJson<ProfileEntry>(this.profilePath(name));
+    }
+
+    /** What applying the profile changes and which of the user's values it keeps. */
+    async profileDiff(name: string): Promise<ProfileDiffResponse> {
+        return this.profileJson<ProfileDiffResponse>(this.profilePath(name, "/diff"));
+    }
+
+    async applyProfile(name: string): Promise<ProfileApplyResponse> {
+        return this.profileJson<ProfileApplyResponse>(this.profilePath(name, "/apply"), "POST");
+    }
+
+    /** Save the project's settings as a new profile and switch the project to it. */
+    async saveProfile(name: string, target: ProfileFolder): Promise<ProfileSaveResponse> {
+        return this.profileJson<ProfileSaveResponse>("/api/profiles", "POST", { name, target });
+    }
+
+    /** Write the project's settings into its profile, which *name* must pick. */
+    async updateProfile(name: string): Promise<ProfileSaveResponse> {
+        return this.profileJson<ProfileSaveResponse>(this.profilePath(name), "PUT");
+    }
+
+    /** Remove the user's values of profile settings so the profile's values show through. */
+    async discardProfileChanges(): Promise<ProfileDiscardResponse> {
+        return this.profileJson<ProfileDiscardResponse>("/api/profiles/discard", "POST");
+    }
+
+    async duplicateProfile(name: string, newName: string, target: ProfileFolder): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>(this.profilePath(name, "/duplicate"), "POST", {
+            new_name: newName,
+            target,
+        });
+    }
+
+    async renameProfile(name: string, newName: string): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>(this.profilePath(name), "PATCH", { new_name: newName });
+    }
+
+    async deleteProfile(name: string): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>(this.profilePath(name), "DELETE");
+    }
+
+    async exportProfile(name: string): Promise<ExportedProfile> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}${this.profilePath(name, "/export")}`);
+        return { content: await res.text(), filename: attachmentFileName(res.headers.get(CONTENT_DISPOSITION)) };
+    }
+
+    async importProfile(content: string, filename: string, target: ProfileFolder): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>("/api/profiles/import", "POST", { content, filename, target });
+    }
+
+    /** Every problem with a profile file's text, as a profile in *folder*. */
+    async validateProfile(
+        content: string,
+        filename: string,
+        folder: ProfileFolder,
+    ): Promise<ProfileValidationResponse> {
+        return this.profileJson<ProfileValidationResponse>("/api/profiles/validate", "POST", {
+            content,
+            filename,
+            folder,
+        });
+    }
+
+    private profilePath(name: string, suffix = ""): string {
+        return `/api/profiles/${encodeURIComponent(name)}${suffix}`;
+    }
+
+    private async profileJson<T>(path: string, method = "GET", body?: Record<string, unknown>): Promise<T> {
+        const init: RequestInit =
+            body === undefined ? { method } : { method, headers: JSON_HEADERS, body: JSON.stringify(body) };
+        const res = await this.fetchWithRetry(`${this.baseUrl}${path}`, init);
+        return (await res.json()) as T;
     }
 
     /** The JSON body, or null when the server answers 404 because it predates the route. */

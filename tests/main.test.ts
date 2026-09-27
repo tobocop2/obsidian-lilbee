@@ -209,6 +209,30 @@ vi.mock("../src/views/confirm-modal", () => ({
     ConfirmModal: vi.fn(),
 }));
 
+const profileFlows = vi.hoisted(() => ({
+    chooseProfile: vi.fn(),
+    saveProfileAs: vi.fn(),
+    updateProfile: vi.fn(),
+    discardProfileChanges: vi.fn(),
+    importProfile: vi.fn(),
+    exportProfile: vi.fn(),
+    duplicateProfile: vi.fn(),
+    renameProfile: vi.fn(),
+    deleteProfile: vi.fn(),
+    pickProfileFor: vi.fn(),
+    activeProfileName: vi.fn(),
+    libraryOpen: vi.fn(),
+}));
+vi.mock("../src/profiles", async (importOriginal) => {
+    const { libraryOpen: _libraryOpen, ...flows } = profileFlows;
+    return { ...(await importOriginal<typeof import("../src/profiles")>()), ...flows };
+});
+vi.mock("../src/views/profile-library-modal", () => ({
+    ProfileLibraryModal: function (this: { open: () => void }) {
+        this.open = profileFlows.libraryOpen;
+    },
+}));
+
 /** What the ServerBinary mock reports as installed and returns from ensure. */
 const INSTALLED = {
     path: "/fake/bin/lilbee",
@@ -570,11 +594,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all thirty-two commands", async () => {
+        it("adds all forty-two commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(32);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(42);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -11152,5 +11176,82 @@ describe("wiki enablement", () => {
         expect(plugin.wikiEnabled).toBe(true);
         plugin.settings.wikiEnabled = false;
         expect(plugin.wikiEnabled).toBe(false);
+    });
+});
+
+describe("profile commands", () => {
+    const PROFILE_COMMANDS = [
+        "profile-choose",
+        "profile-save-as",
+        "profile-update",
+        "profile-discard",
+        "profile-manage",
+        "profile-import",
+        "profile-export",
+        "profile-duplicate",
+        "profile-rename",
+        "profile-delete",
+    ];
+
+    async function commands() {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
+        const byId = (id: string) => calls.find((c) => c[0]?.id === id)![0];
+        return { plugin, byId };
+    }
+
+    beforeEach(() => {
+        for (const flow of Object.values(profileFlows)) flow.mockReset();
+    });
+
+    it("registers one palette entry per profile action, each offered only while the server is ready", async () => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
+        for (const id of PROFILE_COMMANDS) expect(byId(id).checkCallback(true), id).toBe(false);
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        for (const id of PROFILE_COMMANDS) expect(byId(id).checkCallback(true), id).toBe(true);
+        expect(Object.values(profileFlows).every((flow) => flow.mock.calls.length === 0)).toBe(true);
+    });
+
+    it.each([
+        ["profile-choose", "apply", "chooseProfile"],
+        ["profile-export", "export", "exportProfile"],
+        ["profile-duplicate", "duplicate", "duplicateProfile"],
+        ["profile-rename", "rename", "renameProfile"],
+        ["profile-delete", "delete", "deleteProfile"],
+    ] as const)("%s picks a profile the %s action takes, then runs it", async (id, action, flow) => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        byId(id).checkCallback(false);
+        expect(profileFlows.pickProfileFor).toHaveBeenCalledWith(plugin, action, expect.any(Function));
+        const run = profileFlows.pickProfileFor.mock.calls[0][2] as (entry: { name: string }) => void;
+        run({ name: "Court filings" });
+        expect(profileFlows[flow]).toHaveBeenCalledWith(plugin, "Court filings");
+    });
+
+    it.each([
+        ["profile-save-as", "saveProfileAs"],
+        ["profile-update", "updateProfile"],
+        ["profile-discard", "discardProfileChanges"],
+    ] as const)("%s runs on the active profile, and not at all when there is none", async (id, flow) => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        profileFlows.activeProfileName.mockResolvedValueOnce("Default").mockResolvedValueOnce(null);
+        byId(id).checkCallback(false);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(profileFlows[flow]).toHaveBeenCalledWith(plugin, "Default");
+        byId(id).checkCallback(false);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(profileFlows[flow]).toHaveBeenCalledTimes(1);
+    });
+
+    it("manage opens the library and import runs the import", async () => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        byId("profile-manage").checkCallback(false);
+        byId("profile-import").checkCallback(false);
+        expect(profileFlows.libraryOpen).toHaveBeenCalled();
+        expect(profileFlows.importProfile).toHaveBeenCalledWith(plugin);
     });
 });

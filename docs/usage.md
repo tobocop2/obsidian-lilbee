@@ -93,6 +93,13 @@ Open the command palette (`Cmd/Ctrl + P`) and type `lilbee`. Commands that need 
 | **Generate wiki for current file**                         | Write a wiki page from the active file _(wiki enabled)_                                           |
 | **Review wiki drafts**                                     | Open the drafts review queue _(wiki enabled)_                                                     |
 | **Run wiki lint**                                          | Check wiki pages for stale or broken citations _(wiki enabled)_                                   |
+| **Choose profile**                                         | Pick a profile, see what it changes, then apply it                                                |
+| **Save settings as a new profile**                         | Save this vault's settings as a profile, for this vault or for all projects                       |
+| **Update the active profile with my changes**              | Write your values into the profile this vault uses _(your own profiles only)_                     |
+| **Discard my profile changes**                             | Remove your values so the profile's values show through                                           |
+| **Manage profiles**                                        | Open the profile library                                                                          |
+| **Duplicate profile** / **Rename profile** / **Delete profile** | Copy a profile under a new name; rename or delete one of your own                            |
+| **Export profile** / **Import profile**                    | Write a profile to a file, or copy a profile file in                                              |
 | **Take over the managed lilbee server**                    | Reclaim the shared server for this vault _(managed mode, when another vault holds it)_            |
 
 You can also right-click any file or folder in the file explorer and choose **Add to lilbee**.
@@ -259,6 +266,7 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 
 | Section                     | Covers                                                                                                                                                                                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Profile**                 | The profile this vault uses: a named set of ingest, OCR, chunking and search settings. Shows its description, who made it and what it was tested on, where it is saved, and your values that override it, with their reindex cost. **Save as new profile** and **Manage profiles** are always there; **Update** and **Discard my changes** show only when you have changes. Shows only when the server has profiles. |
 | **Connection**              | Server mode (managed/external), re-run setup wizard. Managed: status, start/stop/restart, shared directory, adopt an existing data dir, disk usage, version & updates. External: server URL + test, session token, reset to managed.                                                    |
 | **Models**                  | Active chat, embedding, vision, and reranker models; refresh; open the catalog.                                                                                                                                                                                                         |
 | **Search & Retrieval**      | **Results count** (default 12), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). All three are server settings. They apply to every client of this server, and each row has a reset. |
@@ -275,6 +283,12 @@ Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, an
 A server-backed row that you set shows a **set by you** pill. A row that a `LILBEE_*` environment variable sets shows the variable's name, because that value wins over anything you set in Obsidian. A value from the profile or the built-in default shows no pill. The server flags some settings as advanced; each section shows those in a closed **More settings** fold at its end.
 
 Text and number fields save when you press Enter or leave the field. They save only when the value changed. A change that needs a re-index, such as chunk size, asks once for confirmation before it applies. Cancel puts the saved value back. A value the server refuses stays in the field, with the reason shown.
+
+### Profiles
+
+A profile is a named set of ingest, OCR, chunking and search settings. It never holds models, hardware or API keys. Choosing a profile in the **Profile** dropdown opens a dialog that lists what changes, the cost of each change, and your values it keeps. Nothing changes until you pick **Apply**. When a change needs a reindex, **Apply and reindex** also rebuilds the index. Apply never changes a value you set. **Discard my changes** removes your values so the profile's values show through; if the index was built with a value you discarded, lilbee asks before rebuilding it.
+
+**Manage profiles** lists every profile with its folder: this vault, all projects, or built-in. A profile in this vault hides a profile of the same name saved for all projects, and the library marks the hidden one. Built-in profiles are read-only; duplicate one to change it. Every save asks where the profile goes: this vault or all projects. An older lilbee server has no profiles, so the Profile group does not show.
 
 ---
 

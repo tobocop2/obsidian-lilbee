@@ -1,0 +1,500 @@
+{
+  "active_applied": {
+    "body": {
+      "changes": [
+        {
+          "effect": "reindex",
+          "key": "chunk_size",
+          "profile_source": "profile",
+          "profile_value": 384,
+          "yours": 500
+        }
+      ],
+      "error": null,
+      "name": "Notes and markdown",
+      "profile": {
+        "authors": [],
+        "credit": null,
+        "description": "Short notes in Markdown, such as an Obsidian vault.",
+        "error": null,
+        "evidence": null,
+        "folder": "builtin",
+        "min_lilbee": null,
+        "name": "Notes and markdown",
+        "path": "<package>/builtin/notes-and-markdown.toml",
+        "shadowed_by": null,
+        "tested_on": null,
+        "valid": true,
+        "values": {
+          "chunk_overlap": 64,
+          "chunk_size": 384,
+          "enable_ocr": false
+        }
+      },
+      "status": "current",
+      "values": {
+        "chunk_overlap": 64,
+        "chunk_size": 384,
+        "enable_ocr": false
+      }
+    },
+    "status": 200
+  },
+  "active_default": {
+    "body": {
+      "changes": [
+        {
+          "effect": "reindex",
+          "key": "chunk_size",
+          "profile_source": "built_in",
+          "profile_value": 512,
+          "yours": 500
+        }
+      ],
+      "error": null,
+      "name": "Default",
+      "profile": {
+        "authors": [],
+        "credit": null,
+        "description": "lilbee's built-in settings, for a mixed collection of documents.",
+        "error": null,
+        "evidence": null,
+        "folder": "builtin",
+        "min_lilbee": null,
+        "name": "Default",
+        "path": "<package>/builtin/default.toml",
+        "shadowed_by": null,
+        "tested_on": null,
+        "valid": true,
+        "values": {}
+      },
+      "status": "current",
+      "values": {}
+    },
+    "status": 200
+  },
+  "active_saved": {
+    "body": {
+      "changes": [
+        {
+          "effect": "reindex",
+          "key": "chunk_overlap",
+          "profile_source": "profile",
+          "profile_value": 64,
+          "yours": 80
+        }
+      ],
+      "error": null,
+      "name": "My notes",
+      "profile": {
+        "authors": [],
+        "credit": null,
+        "description": null,
+        "error": null,
+        "evidence": null,
+        "folder": "project",
+        "min_lilbee": null,
+        "name": "My notes",
+        "path": "<project>/profiles/my-notes.toml",
+        "shadowed_by": null,
+        "tested_on": null,
+        "valid": true,
+        "values": {
+          "chunk_overlap": 64,
+          "chunk_size": 500,
+          "enable_ocr": false
+        }
+      },
+      "status": "current",
+      "values": {
+        "chunk_overlap": 64,
+        "chunk_size": 500,
+        "enable_ocr": false
+      }
+    },
+    "status": 200
+  },
+  "apply": {
+    "body": {
+      "changes": [
+        {
+          "current": 100,
+          "current_source": "built_in",
+          "effect": "reindex",
+          "key": "chunk_overlap",
+          "new": 64
+        },
+        {
+          "current": null,
+          "current_source": "auto",
+          "effect": "new_files_only",
+          "key": "enable_ocr",
+          "new": false
+        }
+      ],
+      "name": "Notes and markdown",
+      "new_files_only": [
+        "enable_ocr"
+      ],
+      "reindex_required": true
+    },
+    "status": 200
+  },
+  "delete": {
+    "body": {
+      "folder": "global",
+      "name": "Old scans",
+      "path": "<global>/profiles/old-scans.toml"
+    },
+    "status": 200
+  },
+  "diff": {
+    "body": {
+      "changes": [
+        {
+          "current": 100,
+          "current_source": "built_in",
+          "effect": "reindex",
+          "key": "chunk_overlap",
+          "new": 64
+        },
+        {
+          "current": null,
+          "current_source": "auto",
+          "effect": "new_files_only",
+          "key": "enable_ocr",
+          "new": false
+        }
+      ],
+      "kept": [
+        "chunk_size"
+      ],
+      "name": "Notes and markdown",
+      "untouched_count": 116
+    },
+    "status": 200
+  },
+  "diff_active": {
+    "body": {
+      "changes": [],
+      "kept": [
+        "chunk_size"
+      ],
+      "name": "Notes and markdown",
+      "untouched_count": 116
+    },
+    "status": 200
+  },
+  "diff_saved": {
+    "body": {
+      "changes": [],
+      "kept": [
+        "chunk_overlap"
+      ],
+      "name": "My notes",
+      "untouched_count": 116
+    },
+    "status": 200
+  },
+  "discard": {
+    "body": {
+      "dropped": [
+        "chunk_overlap"
+      ],
+      "reindex_required": true
+    },
+    "status": 200
+  },
+  "duplicate": {
+    "body": {
+      "folder": "global",
+      "name": "Scans",
+      "path": "<global>/profiles/scans.toml"
+    },
+    "status": 200
+  },
+  "error_builtin": {
+    "body": {
+      "detail": "Default ships with lilbee and cannot be changed; duplicate it instead",
+      "status_code": 400
+    },
+    "status": 400
+  },
+  "error_clash": {
+    "body": {
+      "detail": "A profile named Old scans already exists: <global>/profiles/old-scans.toml",
+      "status_code": 409
+    },
+    "status": 409
+  },
+  "error_missing": {
+    "body": {
+      "detail": "No profile named 'No such profile'",
+      "status_code": 404
+    },
+    "status": 404
+  },
+  "error_no_route": {
+    "body": {
+      "detail": "Not Found",
+      "status_code": 404
+    },
+    "status": 404
+  },
+  "error_reserved": {
+    "body": {
+      "detail": "Reserved name: active cannot name a profile",
+      "status_code": 400
+    },
+    "status": 400
+  },
+  "error_too_large": {
+    "body": {
+      "detail": "The file is over 256 KB, too large for a profile file",
+      "status_code": 400
+    },
+    "status": 400
+  },
+  "export": {
+    "body": "[profile]\nname = \"Old scans\"\ndescription = \"Scanned paper records, where most pages are images of text.\"\nformat = 1\n\n[values]\nocr_strategy = \"scanned_pages\"\nlayout_detection = true\n",
+    "content_disposition": "attachment; filename=\"old-scans.toml\"; filename*=UTF-8''old-scans.toml",
+    "status": 200
+  },
+  "import": {
+    "body": {
+      "folder": "global",
+      "name": "Old scans",
+      "path": "<global>/profiles/old-scans.toml"
+    },
+    "status": 200
+  },
+  "list": {
+    "body": {
+      "profiles": [
+        {
+          "authors": [
+            {
+              "github": "janedoe",
+              "name": "Jane Doe"
+            }
+          ],
+          "credit": "by Jane Doe (@janedoe)",
+          "description": "Scanned US court PDFs with dense tables.",
+          "error": null,
+          "evidence": null,
+          "folder": "project",
+          "min_lilbee": null,
+          "name": "Court filings",
+          "path": "<project>/profiles/court-filings.toml",
+          "shadowed_by": null,
+          "tested_on": "4,000 scanned county court filings, 1990-2010",
+          "valid": true,
+          "values": {
+            "chunk_size": 768,
+            "table_extraction": true
+          }
+        },
+        {
+          "authors": [],
+          "credit": null,
+          "description": null,
+          "error": "Profiles cannot set chat_model",
+          "evidence": null,
+          "folder": "global",
+          "min_lilbee": null,
+          "name": "broken",
+          "path": "<global>/profiles/broken.toml",
+          "shadowed_by": null,
+          "tested_on": null,
+          "valid": false,
+          "values": {}
+        },
+        {
+          "authors": [
+            {
+              "github": "janedoe",
+              "name": "Jane Doe"
+            }
+          ],
+          "credit": "by Jane Doe (@janedoe)",
+          "description": "Scanned US court PDFs with dense tables.",
+          "error": null,
+          "evidence": null,
+          "folder": "global",
+          "min_lilbee": null,
+          "name": "Court filings",
+          "path": "<global>/profiles/court-filings.toml",
+          "shadowed_by": "project",
+          "tested_on": "4,000 scanned county court filings, 1990-2010",
+          "valid": true,
+          "values": {
+            "chunk_size": 768,
+            "table_extraction": true
+          }
+        },
+        {
+          "authors": [],
+          "credit": null,
+          "description": "Source code and its docs, where images are not text to search.",
+          "error": null,
+          "evidence": null,
+          "folder": "builtin",
+          "min_lilbee": null,
+          "name": "Code repository",
+          "path": "<package>/builtin/code-repository.toml",
+          "shadowed_by": null,
+          "tested_on": null,
+          "valid": true,
+          "values": {
+            "enable_ocr": false
+          }
+        },
+        {
+          "authors": [],
+          "credit": null,
+          "description": "lilbee's built-in settings, for a mixed collection of documents.",
+          "error": null,
+          "evidence": null,
+          "folder": "builtin",
+          "min_lilbee": null,
+          "name": "Default",
+          "path": "<package>/builtin/default.toml",
+          "shadowed_by": null,
+          "tested_on": null,
+          "valid": true,
+          "values": {}
+        },
+        {
+          "authors": [],
+          "credit": null,
+          "description": "Short notes in Markdown, such as an Obsidian vault.",
+          "error": null,
+          "evidence": null,
+          "folder": "builtin",
+          "min_lilbee": null,
+          "name": "Notes and markdown",
+          "path": "<package>/builtin/notes-and-markdown.toml",
+          "shadowed_by": null,
+          "tested_on": null,
+          "valid": true,
+          "values": {
+            "chunk_overlap": 64,
+            "chunk_size": 384,
+            "enable_ocr": false
+          }
+        },
+        {
+          "authors": [],
+          "credit": null,
+          "description": "Academic papers with two-column pages and results tables.",
+          "error": null,
+          "evidence": null,
+          "folder": "builtin",
+          "min_lilbee": null,
+          "name": "Research papers",
+          "path": "<package>/builtin/research-papers.toml",
+          "shadowed_by": null,
+          "tested_on": null,
+          "valid": true,
+          "values": {
+            "layout_detection": true,
+            "table_extraction": true
+          }
+        },
+        {
+          "authors": [],
+          "credit": null,
+          "description": "Scanned paper records, where most pages are images of text.",
+          "error": null,
+          "evidence": null,
+          "folder": "builtin",
+          "min_lilbee": null,
+          "name": "Scanned archive",
+          "path": "<package>/builtin/scanned-archive.toml",
+          "shadowed_by": null,
+          "tested_on": null,
+          "valid": true,
+          "values": {
+            "layout_detection": true,
+            "ocr_strategy": "scanned_pages"
+          }
+        }
+      ]
+    },
+    "status": 200
+  },
+  "rename": {
+    "body": {
+      "folder": "global",
+      "name": "Old scans",
+      "path": "<global>/profiles/old-scans.toml"
+    },
+    "status": 200
+  },
+  "save_as": {
+    "body": {
+      "absorbed": [
+        "chunk_size"
+      ],
+      "folder": "project",
+      "name": "My notes",
+      "path": "<project>/profiles/my-notes.toml"
+    },
+    "status": 200
+  },
+  "show": {
+    "body": {
+      "authors": [
+        {
+          "github": "janedoe",
+          "name": "Jane Doe"
+        }
+      ],
+      "credit": "by Jane Doe (@janedoe)",
+      "description": "Scanned US court PDFs with dense tables.",
+      "error": null,
+      "evidence": null,
+      "folder": "project",
+      "min_lilbee": null,
+      "name": "Court filings",
+      "path": "<project>/profiles/court-filings.toml",
+      "shadowed_by": null,
+      "tested_on": "4,000 scanned county court filings, 1990-2010",
+      "valid": true,
+      "values": {
+        "chunk_size": 768,
+        "table_extraction": true
+      }
+    },
+    "status": 200
+  },
+  "update": {
+    "body": {
+      "absorbed": [
+        "chunk_overlap"
+      ],
+      "folder": "project",
+      "name": "My notes",
+      "path": "<project>/profiles/my-notes.toml"
+    },
+    "status": 200
+  },
+  "validate_bad": {
+    "body": {
+      "name": "bad",
+      "problems": [
+        "Profiles cannot set chat_model"
+      ],
+      "valid": false
+    },
+    "status": 200
+  },
+  "validate_ok": {
+    "body": {
+      "name": "Old scans",
+      "problems": [],
+      "valid": true
+    },
+    "status": 200
+  }
+}

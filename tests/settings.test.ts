@@ -157,6 +157,8 @@ function makePlugin(
         // A server without the schema, sources and reset routes, as the oldest supported server is.
         configSchema: vi.fn().mockRejectedValue(new Error(`${SERVER_STATUS_PREFIX} 404: Not Found`)),
         configSources: vi.fn().mockResolvedValue(null),
+        // A server without profiles, as every server before them is.
+        listProfiles: vi.fn().mockResolvedValue(null),
         resetConfig: vi.fn().mockResolvedValue(null),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: true }))),

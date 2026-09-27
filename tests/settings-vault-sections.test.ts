@@ -81,6 +81,8 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
             configDefaults: vi.fn().mockRejectedValue(new Error("offline")),
             configSchema: vi.fn().mockRejectedValue(new Error("offline")),
             configSources: vi.fn().mockResolvedValue(null),
+            // A server without profiles, as every server before them is.
+            listProfiles: vi.fn().mockResolvedValue(null),
             resetConfig: vi.fn().mockResolvedValue(null),
             updateConfig: vi.fn(),
             catalog: vi.fn().mockRejectedValue(new Error("offline")),

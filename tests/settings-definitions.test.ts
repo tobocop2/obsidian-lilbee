@@ -15,6 +15,7 @@ import { err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import type LilbeePlugin from "../src/main";
+import { ACTIVE_APPLIED, DIFF_ACTIVE, LIST } from "./profile-fixtures";
 
 const DEFINITIONS_VERSION = "1.13.0";
 const LEGACY_VERSION = "1.12.0";
@@ -75,6 +76,8 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, overrides: Record<st
             configDefaults: vi.fn().mockRejectedValue(new Error("offline")),
             configSchema: vi.fn().mockRejectedValue(new Error("offline")),
             configSources: vi.fn().mockResolvedValue(null),
+            // A server without profiles, as every server before them is.
+            listProfiles: vi.fn().mockResolvedValue(null),
             resetConfig: vi.fn().mockResolvedValue(null),
             updateConfig: vi.fn().mockResolvedValue({}),
             catalog: vi.fn().mockRejectedValue(new Error("offline")),
@@ -286,8 +289,9 @@ describe("declarative setting definitions", () => {
         expect(missing).toEqual([]);
 
         // And nothing is declared that no row backs, so search never lands on a setting that is not there.
-        // The coding-agent entry is the exception: it stands for a body that rebuilds itself.
-        const shown = new Set([...displayed, MESSAGES.LABEL_AGENT_CHOICE]);
+        // The coding-agent entry and the Profile group are the exceptions: each stands for a body that rebuilds
+        // itself, and the Profile group draws nothing against this server, which has no profiles.
+        const shown = new Set([...displayed, MESSAGES.LABEL_AGENT_CHOICE, MESSAGES.LABEL_PROFILE_SECTION]);
         const phantom = [...declared].filter((name) => name !== "" && !shown.has(name));
         expect(phantom).toEqual([]);
     });
@@ -725,5 +729,94 @@ describe("refreshing the tab", () => {
         setApiVersion(LEGACY_VERSION);
         const tab = makeTab();
         expect(() => (tab as any).setRowVisible(null, true)).not.toThrow();
+    });
+});
+
+describe("the Profile group", () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    /** A tab on a server that serves profiles. */
+    function profileTab() {
+        const tab = makeTab();
+        Object.assign(tab.plugin.api, {
+            listProfiles: vi.fn().mockResolvedValue(LIST),
+            activeProfile: vi.fn().mockResolvedValue(ACTIVE_APPLIED),
+            profileDiff: vi.fn().mockResolvedValue(DIFF_ACTIVE),
+        });
+        return tab;
+    }
+
+    const profileGroupOf = (tab: LilbeeSettingTab) =>
+        (tab.getSettingDefinitions() as Definition[]).find((item) => item.heading === MESSAGES.LABEL_PROFILE_SECTION)!;
+
+    afterEach(() => setApiVersion(DEFINITIONS_VERSION));
+
+    it("comes first after the feedback row, hidden until the server answers with profiles", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = profileTab();
+        const items = tab.getSettingDefinitions() as Definition[];
+        expect(items[1].heading).toBe(MESSAGES.LABEL_PROFILE_SECTION);
+        expect(items[1].visible!()).toBe(false);
+        renderDefinitions(items, new MockElement());
+        await settle();
+        expect(tab.plugin.api.listProfiles).toHaveBeenCalled();
+        expect(items[1].visible!()).toBe(true);
+    });
+
+    it("stays hidden on a server without profiles", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = makeTab();
+        const container = new MockElement();
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        await settle();
+        expect(profileGroupOf(tab).visible!()).toBe(false);
+        expect(renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement())).not.toContain(
+            MESSAGES.LABEL_PROFILE_SECTION,
+        );
+    });
+
+    it("draws the group's body into the group once it shows", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = profileTab();
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement());
+        await settle();
+        const container = new MockElement();
+        renderDefinitions([profileGroupOf(tab)], container);
+        expect(container.find("lilbee-profile-body")?.find("lilbee-profile-description")?.textContent).toBe(
+            ACTIVE_APPLIED.profile!.description,
+        );
+        expect(container.find("setting-item-heading")).toBeNull();
+    });
+
+    it("draws its heading and body at the top of display() before 1.13", async () => {
+        setApiVersion(LEGACY_VERSION);
+        const tab = profileTab();
+        tab.display();
+        await settle();
+        const root = tab.containerEl as unknown as MockElement;
+        const section = root.find("lilbee-profile-section")!;
+        expect(section.find("setting-item-heading")?.textContent).toBe(MESSAGES.LABEL_PROFILE_SECTION);
+        expect(section.find("lilbee-profile-changes-help")?.textContent).toBe(
+            MESSAGES.PROFILE_CHANGES_HELP("Notes and markdown"),
+        );
+        const firstHeading = root.findAll("setting-item-heading")[0];
+        expect(firstHeading.textContent).toBe(MESSAGES.LABEL_PROFILE_SECTION);
+    });
+
+    it("draws nothing before 1.13 on a server without profiles", async () => {
+        setApiVersion(LEGACY_VERSION);
+        const tab = makeTab();
+        tab.display();
+        await settle();
+        const section = (tab.containerEl as unknown as MockElement).find("lilbee-profile-section")!;
+        expect(section.find("lilbee-profile-body")!.children).toHaveLength(0);
+    });
+
+    it("rebuilds the tab after a profile change", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = profileTab();
+        const refresh = vi.spyOn(tab, "refresh");
+        (tab as unknown as { profileGroup: { onChanged: () => void } }).profileGroup.onChanged();
+        expect(refresh).toHaveBeenCalled();
     });
 });

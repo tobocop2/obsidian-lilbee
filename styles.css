@@ -1189,6 +1189,63 @@
     color: var(--text-normal);
 }
 
+.lilbee-pill-reindex {
+    background: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-profile-folder,
+.lilbee-pill-profile-active {
+    margin-left: 8px;
+    vertical-align: middle;
+    background: var(--background-modifier-hover);
+    color: var(--text-muted);
+}
+
+.lilbee-pill-profile-active {
+    background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    color: var(--text-normal);
+}
+
+/* Profiles */
+
+.lilbee-profile-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4px 0 12px;
+    font-size: var(--font-ui-small);
+}
+
+.lilbee-profile-table th,
+.lilbee-profile-table td {
+    padding: 4px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-profile-name {
+    width: 100%;
+}
+
+.lilbee-profile-name-error {
+    color: var(--text-error);
+    min-height: 1em;
+}
+
+.lilbee-profile-library-row {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-profile-library-name {
+    font-weight: 600;
+}
+
+.lilbee-profile-library-actions {
+    display: flex;
+    gap: 8px;
+}
+
 /* Section Headings */
 
 .lilbee-catalog-section-heading {

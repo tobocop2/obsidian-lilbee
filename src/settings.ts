@@ -75,6 +75,7 @@ import { CatalogModal } from "./views/catalog-modal";
 import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
 import { ModelPickerModal } from "./views/model-picker-modal";
 import { ConfirmModal } from "./views/confirm-modal";
+import { ProfileGroup } from "./components/profile-group";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
 import { UninstallModal } from "./views/uninstall-modal";
@@ -631,10 +632,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfig: ConfigResponse | null = null;
     /** Capabilities the connected server reports; null until the first probe lands. */
     private capabilities: Record<string, boolean> | null = null;
+    private profileGroup: ProfileGroup;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
         this.plugin = plugin;
+        this.profileGroup = new ProfileGroup(
+            plugin,
+            () => this.refresh(),
+            () => this.refreshVisibility(),
+        );
     }
 
     display(): void {
@@ -860,6 +867,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
         this.renderBugFeedback(containerEl);
 
+        this.profileGroup.mount(containerEl.createDiv({ cls: "lilbee-profile-section" }), true);
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
         this.renderChatSettings(containerEl);
@@ -896,6 +904,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.renderBugFeedback(setting.descEl);
                 },
             }),
+            this.defProfile(),
             this.groupOf(undefined, this.rowsConnection()),
             ...this.defsModels(),
             this.groupOf(MESSAGES.LABEL_CHAT_SECTION, this.rowsChatSettings()),
@@ -938,6 +947,25 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.loadConfigSources();
         this.loadConfigChoices();
         void this.applyCapabilityGating();
+        void this.profileGroup.load();
+    }
+
+    /** The Profile group; hidden until the server answers with profiles, so an older server never shows it. */
+    private defProfile(): SettingDefinitionGroup {
+        return {
+            type: "group",
+            heading: MESSAGES.LABEL_PROFILE_SECTION,
+            cls: "lilbee-profile-section",
+            items: [
+                this.definitionOf({
+                    name: "",
+                    desc: MESSAGES.DESC_PROFILE_SECTION,
+                    searchable: false,
+                    apply: (_setting, container) => this.profileGroup.mount(container, false),
+                }),
+            ],
+            visible: () => this.profileGroup.visible(),
+        };
     }
 
     private generationHeading(): string {

@@ -29,6 +29,7 @@ src/
   session-token.ts   # Discovers / holds the server session token
   vault-registry.ts  # Per-vault registry under the shared root; the server's own OS locks enforce one-server-at-a-time
   task-queue.ts      # Background job queue that feeds the Task Center
+  profiles.ts        # Profile flows (apply, save, import, export) shared by Settings, the library and commands
   wiki-sync.ts       # Mirrors wiki pages into the vault as markdown
   storage-stats.ts   # Disk-usage reporting for the shared install
   utils.ts, utils/   # Shared helpers (e.g. model-ref parsing)

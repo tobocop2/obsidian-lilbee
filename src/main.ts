@@ -148,6 +148,22 @@ import { StatusModal } from "./views/status-modal";
 import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
+import {
+    activeProfileName,
+    chooseProfile,
+    deleteProfile,
+    discardProfileChanges,
+    duplicateProfile,
+    exportProfile,
+    importProfile,
+    pickProfileFor,
+    PROFILE_ACTION,
+    renameProfile,
+    saveProfileAs,
+    updateProfile,
+} from "./profiles";
+import type { ProfileAction } from "./profiles";
+import { ProfileLibraryModal } from "./views/profile-library-modal";
 
 const BYTES_PER_MB = 1_000_000;
 
@@ -467,6 +483,7 @@ export default class LilbeePlugin extends Plugin {
         // but nothing fires when the ingest finishes (pill would never clear).
         this.taskQueue.onChange(() => this.schedulePendingSyncHint());
         this.registerCommands();
+        this.registerProfileCommands();
 
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu: Menu, file: TAbstractFile) => {
@@ -1894,6 +1911,79 @@ export default class LilbeePlugin extends Plugin {
                 return true;
             },
         });
+    }
+
+    /** One palette entry per profile action, each offered only while the server is ready. */
+    private registerProfileCommands(): void {
+        for (const command of this.profileCommands()) {
+            this.addCommand({
+                id: command.id,
+                name: command.name,
+                checkCallback: (checking) => {
+                    if (!this.isLilbeeReady()) return false;
+                    if (!checking) command.run();
+                    return true;
+                },
+            });
+        }
+    }
+
+    /** The profile commands: an action on a picked profile, on the active one, or on no profile. */
+    private profileCommands(): Array<{ id: string; name: string; run: () => void }> {
+        const pick = (action: ProfileAction, run: (name: string) => unknown) => (): void =>
+            void pickProfileFor(this, action, (entry) => void run(entry.name));
+        const withActive = (run: (name: string) => unknown) => (): void =>
+            void activeProfileName(this).then((name) => {
+                if (name !== null) void run(name);
+            });
+        return [
+            {
+                id: "profile-choose",
+                name: MESSAGES.COMMAND_PROFILE_CHOOSE,
+                run: pick(PROFILE_ACTION.APPLY, (name) => chooseProfile(this, name)),
+            },
+            {
+                id: "profile-save-as",
+                name: MESSAGES.COMMAND_PROFILE_SAVE_AS,
+                run: withActive((name) => saveProfileAs(this, name)),
+            },
+            {
+                id: "profile-update",
+                name: MESSAGES.COMMAND_PROFILE_UPDATE,
+                run: withActive((name) => updateProfile(this, name)),
+            },
+            {
+                id: "profile-discard",
+                name: MESSAGES.COMMAND_PROFILE_DISCARD,
+                run: withActive((name) => discardProfileChanges(this, name)),
+            },
+            {
+                id: "profile-manage",
+                name: MESSAGES.COMMAND_PROFILE_MANAGE,
+                run: () => new ProfileLibraryModal(this).open(),
+            },
+            { id: "profile-import", name: MESSAGES.COMMAND_PROFILE_IMPORT, run: () => void importProfile(this) },
+            {
+                id: "profile-export",
+                name: MESSAGES.COMMAND_PROFILE_EXPORT,
+                run: pick(PROFILE_ACTION.EXPORT, (name) => exportProfile(this, name)),
+            },
+            {
+                id: "profile-duplicate",
+                name: MESSAGES.COMMAND_PROFILE_DUPLICATE,
+                run: pick(PROFILE_ACTION.DUPLICATE, (name) => duplicateProfile(this, name)),
+            },
+            {
+                id: "profile-rename",
+                name: MESSAGES.COMMAND_PROFILE_RENAME,
+                run: pick(PROFILE_ACTION.RENAME, (name) => renameProfile(this, name)),
+            },
+            {
+                id: "profile-delete",
+                name: MESSAGES.COMMAND_PROFILE_DELETE,
+                run: pick(PROFILE_ACTION.DELETE, (name) => deleteProfile(this, name)),
+            },
+        ];
     }
 
     /**
