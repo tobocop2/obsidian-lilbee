@@ -51,6 +51,8 @@ const PAGE_SIZE = 20;
 // Page size for search; matches are spread across the hub.
 const SEARCH_PAGE_SIZE = 50;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
+// Follow-up fetches per fill: five pages cover 45 hosted rows (three pages, as measured) and two native pages.
+const MAX_FILL_FOLLOW_UPS = 4;
 const DRAWER_BREAKPOINT_PX = 800;
 const DRAWER_FOCUS_DEBOUNCE_MS = 30;
 
@@ -107,6 +109,8 @@ export class CatalogModal extends Modal {
     private hasMore = false;
     // Hosted rows lead the listing; true when the last page had room for rows after them.
     private pastHostedRows = false;
+    // The fill stopped while the server still had rows; the results offer Load more.
+    private canLoadMore = false;
     private isFetching = false;
     private fetchGeneration = 0;
     private catalogController: AbortController | null = null;
@@ -437,6 +441,7 @@ export class CatalogModal extends Modal {
 
     private clearResults(): void {
         this.entries = [];
+        this.canLoadMore = false;
         if (this.resultsEl) this.resultsEl.empty();
     }
 
@@ -452,12 +457,16 @@ export class CatalogModal extends Modal {
         return query ? SEARCH_PAGE_SIZE : PAGE_SIZE;
     }
 
-    /** Pages past the hosted rows, then fills one page of native rows; the installed-only Library stops there. */
-    private needsMoreRows(): boolean {
+    /** The server has rows the active view may need: the hosted prefix, then one page of native rows. */
+    private wantsMoreRows(): boolean {
         if (!this.hasMore) return false;
         if (!this.pastHostedRows) return true;
-        if (this.activeTab === CATALOG_TAB.LIBRARY) return false;
         return localRowsOnly(this.entries).length < this.pageLimit(this.fetchedQuery);
+    }
+
+    /** The Library's installed-only pages past the hosted rows are sparse, so they load only on request. */
+    private mayFetchAutomatically(followUps: number): boolean {
+        return followUps > 0 && !(this.pastHostedRows && this.activeTab === CATALOG_TAB.LIBRARY);
     }
 
     private catalogParams(query: string): Parameters<typeof this.plugin.api.catalog>[0] {
@@ -475,6 +484,7 @@ export class CatalogModal extends Modal {
 
     private applyPage(response: CatalogResponse): void {
         this.hasMore = response.has_more;
+        this.canLoadMore = false;
         this.pastHostedRows = hostedRowsOnly(response.models).length < response.limit;
         // Filtered by task again; some servers and frontier providers tag rows loosely.
         const filtered = this.filterTask ? response.models.filter((m) => m.task === this.filterTask) : response.models;
@@ -486,7 +496,7 @@ export class CatalogModal extends Modal {
         this.renderResults();
     }
 
-    private async fetchPage(): Promise<void> {
+    private async fetchPage(followUps = MAX_FILL_FOLLOW_UPS): Promise<void> {
         if (this.isFetching) return;
         const query = this.filterSearch;
         // The offset belongs to one query; a different term restarts the result set.
@@ -523,13 +533,38 @@ export class CatalogModal extends Modal {
             this.catalogController = null;
         }
         if (this.modalClosed) return;
-        if (superseded || (applied && this.needsMoreRows())) await this.fetchPage();
+        if (superseded) return this.fetchPage();
+        if (applied) await this.continueFill(followUps);
+    }
+
+    private async continueFill(followUps: number): Promise<void> {
+        if (!this.wantsMoreRows()) return;
+        if (this.mayFetchAutomatically(followUps)) return this.fetchPage(followUps - 1);
+        this.canLoadMore = true;
+        this.renderResults();
     }
 
     private renderResults(): void {
         if (!this.resultsEl) return;
         this.resultsEl.empty();
+        this.renderActiveView();
+        if (this.canLoadMore) this.renderLoadMore(this.resultsEl);
+    }
 
+    private renderLoadMore(parent: HTMLElement): void {
+        const btn = parent.createEl("button", { cls: "lilbee-catalog-load-more", text: MESSAGES.BUTTON_LOAD_MORE });
+        btn.addEventListener("click", () => void this.fetchPage());
+    }
+
+    /** Empty-state text: nothing matches only once the server has no more rows. */
+    private renderEmpty(parent: HTMLElement): void {
+        parent.createDiv({
+            cls: "lilbee-catalog-empty",
+            text: this.hasMore ? MESSAGES.LABEL_NO_MODELS_LOADED_YET : MESSAGES.LABEL_NO_MODELS_FOUND,
+        });
+    }
+
+    private renderActiveView(): void {
         if (this.activeTab === CATALOG_TAB.DISCOVER) {
             this.renderDiscoverTab();
             return;
@@ -551,10 +586,7 @@ export class CatalogModal extends Modal {
         if (!this.resultsEl) return;
         const localEntries = localRowsOnly(this.entries);
         if (localEntries.length === 0) {
-            this.resultsEl.createDiv({
-                cls: "lilbee-catalog-empty",
-                text: MESSAGES.LABEL_NO_MODELS_FOUND,
-            });
+            this.renderEmpty(this.resultsEl);
             return;
         }
         if (this.viewMode === CATALOG_VIEW_MODE.GRID) {
@@ -612,10 +644,7 @@ export class CatalogModal extends Modal {
         // Hosted rows are installed=true server-side; the Library is the on-disk view.
         const installed = localRowsOnly(this.entries).filter((e) => e.installed);
         if (installed.length === 0) {
-            this.resultsEl.createDiv({
-                cls: "lilbee-catalog-empty",
-                text: MESSAGES.LABEL_NO_MODELS_FOUND,
-            });
+            this.renderEmpty(this.resultsEl);
             return;
         }
         if (this.viewMode === CATALOG_VIEW_MODE.GRID) {

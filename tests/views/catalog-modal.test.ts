@@ -1099,7 +1099,10 @@ describe("CatalogModal", () => {
             for (const call of plugin.api.catalog.mock.calls) {
                 expect(call[0]).toMatchObject({ installed: true });
             }
-            expect(contentEl(modal).find("lilbee-catalog-empty")?.textContent).toBe(MESSAGES.LABEL_NO_MODELS_FOUND);
+            expect(contentEl(modal).find("lilbee-catalog-empty")?.textContent).toBe(
+                MESSAGES.LABEL_NO_MODELS_LOADED_YET,
+            );
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).not.toBeNull();
             modal.close();
         });
 
@@ -1166,6 +1169,123 @@ describe("CatalogModal", () => {
             await settle();
 
             expect(offsets(plugin)).toEqual([0, 20]);
+        });
+    });
+
+    describe("sparse filters", () => {
+        const LAST_WINDOW = 1080;
+
+        /** A filter that matches almost nothing: every window is empty except `matches`, and has_more stays true to LAST_WINDOW. */
+        function sparseServer(
+            plugin: ReturnType<typeof makePlugin>,
+            matches: Record<number, CatalogEntry[]> = {},
+        ): void {
+            plugin.api.catalog.mockImplementation((params: { offset: number; limit: number }) => {
+                const { offset, limit } = params;
+                const models = matches[offset] ?? [];
+                return Promise.resolve(ok({ total: null, limit, offset, models, has_more: offset < LAST_WINDOW }));
+            });
+        }
+
+        async function settle(): Promise<void> {
+            for (let i = 0; i < 20; i++) await tick();
+        }
+
+        function offsets(plugin: ReturnType<typeof makePlugin>): number[] {
+            return plugin.api.catalog.mock.calls.map((c: unknown[]) => (c[0] as { offset: number }).offset);
+        }
+
+        it("caps the automatic fill instead of walking the whole catalog", async () => {
+            const plugin = makePlugin();
+            sparseServer(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20, 40, 60, 80]);
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-empty")?.textContent).toBe(MESSAGES.LABEL_NO_MODELS_LOADED_YET);
+            expect(content.find("lilbee-catalog-load-more")?.textContent).toBe(MESSAGES.BUTTON_LOAD_MORE);
+            modal.close();
+        });
+
+        it("loads the next pages when Load more is clicked", async () => {
+            const plugin = makePlugin();
+            const match = makeEntry({ hf_repo: "owner/big-embed-GGUF", display_name: "Big Embed", task: "embedding" });
+            sparseServer(plugin, { 120: [match] });
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
+            await settle();
+            plugin.api.catalog.mockClear();
+
+            contentEl(modal).find("lilbee-catalog-load-more")!.trigger("click");
+            await settle();
+
+            expect(offsets(plugin)).toEqual([100, 120, 140, 160, 180]);
+            const content = contentEl(modal);
+            expect(collectTexts(content)).toContain("Big Embed");
+            expect(content.find("lilbee-catalog-load-more")).not.toBeNull();
+            modal.close();
+        });
+
+        it("drops Load more once a loaded page fills the view", async () => {
+            const plugin = makePlugin();
+            const page = Array.from({ length: 20 }, (_, i) =>
+                makeEntry({ hf_repo: `owner/e-${i}-GGUF`, display_name: `E ${i}`, task: "embedding" }),
+            );
+            sparseServer(plugin, { 100: page });
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
+            await settle();
+
+            contentEl(modal).find("lilbee-catalog-load-more")!.trigger("click");
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20, 40, 60, 80, 100]);
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).toBeNull();
+            modal.close();
+        });
+
+        it("drops Load more when a new filter starts a fresh fill", async () => {
+            const plugin = makePlugin();
+            sparseServer(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
+            await settle();
+            const inFlight = deferred<Result<CatalogResponse, Error>>();
+            plugin.api.catalog.mockReturnValueOnce(inFlight.promise);
+
+            (modal as any).resetAndFetch();
+            (modal as any).toggleView();
+
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).toBeNull();
+            modal.close();
+        });
+
+        it("offers no Load more once the server has no more rows", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: null, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
+            await settle();
+
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-load-more")).toBeNull();
+            expect(content.find("lilbee-catalog-empty")?.textContent).toBe(MESSAGES.LABEL_NO_MODELS_FOUND);
+            modal.close();
+        });
+
+        it("offers no Load more when the fill ends with a full page", async () => {
+            const plugin = makePlugin();
+            const page = Array.from({ length: 20 }, (_, i) =>
+                makeEntry({ hf_repo: `owner/m-${i}-GGUF`, display_name: `M ${i}` }),
+            );
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: null, limit: 20, offset: 0, models: page, has_more: true }),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            await settle();
+
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).toBeNull();
+            modal.close();
         });
     });
 

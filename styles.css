@@ -797,6 +797,11 @@
     font-size: var(--font-small, 13px);
 }
 
+.lilbee-catalog-load-more {
+    display: block;
+    margin: var(--size-4-3, 12px) auto;
+}
+
 /* Card Grid Layout — Editorial Spec
  * Cards present a model the way a magazine specimen sheet would: a left rail
  * (3px) signals hardware fit, the name owns the top, monospace specs read as
