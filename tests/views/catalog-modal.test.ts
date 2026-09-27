@@ -964,6 +964,7 @@ describe("CatalogModal", () => {
 
     describe("hosted rows ahead of the native rows", () => {
         const HOSTED_ROWS = 41;
+        const MAX_TEST_OFFSET = 2000;
 
         function hostedRow(i: number): CatalogEntry {
             const ollama = i >= 38;
@@ -987,11 +988,14 @@ describe("CatalogModal", () => {
             native: CatalogEntry[],
             { hosted = HOSTED_ROWS, nativeHasMore = true } = {},
         ): void {
-            const rows = [...Array.from({ length: hosted }, (_, i) => hostedRow(i)), ...native];
-            plugin.api.catalog.mockImplementation((params: { offset: number; limit: number }) => {
+            const hostedRows = Array.from({ length: hosted }, (_, i) => hostedRow(i));
+            plugin.api.catalog.mockImplementation((params: { offset: number; limit: number; installed?: boolean }) => {
                 const { offset, limit } = params;
+                // installed=true filters the native rows only; hosted rows still lead.
+                const rows = [...hostedRows, ...native.filter((r) => !params.installed || r.installed)];
                 const models = rows.slice(offset, offset + limit);
-                const has_more = nativeHasMore || offset + limit < rows.length;
+                // A runaway fill ends here as a failed assertion instead of a hung worker.
+                const has_more = offset < MAX_TEST_OFFSET && (nativeHasMore || offset + limit < rows.length);
                 return Promise.resolve(ok({ total: null, limit, offset, models, has_more }));
             });
         }
@@ -1053,6 +1057,49 @@ describe("CatalogModal", () => {
             (modal as any).switchMainTab(CATALOG_TAB.LIBRARY);
             await settle();
             expect(collectTexts(contentEl(modal))).toContain("Native 1");
+            modal.close();
+        });
+
+        it("shows an installed model the Library would reach only past a page of other native rows", async () => {
+            const plugin = makePlugin();
+            serverPages(plugin, [
+                ...Array.from({ length: 39 }, (_, i) => nativeRow(i)),
+                nativeRow(39, { installed: true }),
+            ]);
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await settle();
+
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-empty")).toBeNull();
+            expect(collectTexts(content)).toContain("Native 39");
+            modal.close();
+        });
+
+        it("treats a page with no hosted rows as past them when the hosted rows end on a page boundary", async () => {
+            const plugin = makePlugin();
+            serverPages(plugin, [nativeRow(0, { installed: true })], { hosted: 40 });
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20, 40]);
+            expect(collectTexts(contentEl(modal))).toContain("Native 0");
+            modal.close();
+        });
+
+        it("stops the Library at the first page past the hosted rows when nothing is installed", async () => {
+            const plugin = makePlugin();
+            serverPages(
+                plugin,
+                Array.from({ length: 100 }, (_, i) => nativeRow(i)),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await settle();
+
+            expect(offsets(plugin)).toEqual([0, 20, 40]);
+            for (const call of plugin.api.catalog.mock.calls) {
+                expect(call[0]).toMatchObject({ installed: true });
+            }
+            expect(contentEl(modal).find("lilbee-catalog-empty")?.textContent).toBe(MESSAGES.LABEL_NO_MODELS_FOUND);
             modal.close();
         });
 

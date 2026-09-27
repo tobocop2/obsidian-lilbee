@@ -105,6 +105,8 @@ export class CatalogModal extends Modal {
     // The query the offset was fetched under.
     private fetchedQuery = "";
     private hasMore = false;
+    // Hosted rows lead the listing; true when the last page had room for rows after them.
+    private pastHostedRows = false;
     private isFetching = false;
     private fetchGeneration = 0;
     private catalogController: AbortController | null = null;
@@ -450,9 +452,12 @@ export class CatalogModal extends Modal {
         return query ? SEARCH_PAGE_SIZE : PAGE_SIZE;
     }
 
-    /** True until a page's worth of native rows is loaded; hosted rows lead the listing. */
-    private needsNativeRows(): boolean {
-        return this.hasMore && localRowsOnly(this.entries).length < this.pageLimit(this.fetchedQuery);
+    /** Pages past the hosted rows, then fills one page of native rows; the installed-only Library stops there. */
+    private needsMoreRows(): boolean {
+        if (!this.hasMore) return false;
+        if (!this.pastHostedRows) return true;
+        if (this.activeTab === CATALOG_TAB.LIBRARY) return false;
+        return localRowsOnly(this.entries).length < this.pageLimit(this.fetchedQuery);
     }
 
     private catalogParams(query: string): Parameters<typeof this.plugin.api.catalog>[0] {
@@ -464,11 +469,13 @@ export class CatalogModal extends Modal {
         if (this.filterTask) params.task = this.filterTask;
         if (this.filterSize) params.size = this.filterSize;
         if (query) params.search = query;
+        if (this.activeTab === CATALOG_TAB.LIBRARY) params.installed = true;
         return params;
     }
 
     private applyPage(response: CatalogResponse): void {
         this.hasMore = response.has_more;
+        this.pastHostedRows = hostedRowsOnly(response.models).length < response.limit;
         // Filtered by task again; some servers and frontier providers tag rows loosely.
         const filtered = this.filterTask ? response.models.filter((m) => m.task === this.filterTask) : response.models;
         this.entries.push(...filtered);
@@ -516,7 +523,7 @@ export class CatalogModal extends Modal {
             this.catalogController = null;
         }
         if (this.modalClosed) return;
-        if (superseded || (applied && this.needsNativeRows())) await this.fetchPage();
+        if (superseded || (applied && this.needsMoreRows())) await this.fetchPage();
     }
 
     private renderResults(): void {
