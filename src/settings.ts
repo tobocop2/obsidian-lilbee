@@ -8,9 +8,16 @@ import {
     setIcon,
     Setting,
 } from "obsidian";
-import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem, SettingGroup } from "obsidian";
+import type {
+    SettingDefinition,
+    SettingDefinitionGroup,
+    SettingDefinitionItem,
+    SettingDefinitionPage,
+    SettingGroup,
+    SettingGroupItem,
+} from "obsidian";
 import type LilbeePlugin from "./main";
-import { LilbeeClient } from "./api";
+import { isHttpStatus, LilbeeClient } from "./api";
 import { isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
 import type { ReleaseInfo } from "./server-binary";
 
@@ -27,16 +34,20 @@ import {
     DEFAULT_SETTINGS,
     ERROR_NAME,
     HOSTED_SOURCES,
+    HTTP_STATUS,
     KV_CACHE_TYPE,
     LILBEE_REPO_URL,
     MEMORY_CONFIG_KEY,
     MODEL_TASK,
     SEARCH_CHUNK_TYPE,
+    SERVER_ENV_PREFIX,
     SERVER_MODE,
     SERVER_STATE,
+    SETTING_SOURCE,
     SSE_EVENT,
     TABLE_MODEL,
     TASK_TYPE,
+    UNRESETTABLE_CONFIG_KEYS,
     VERSION_ACTION,
 } from "./types";
 import type {
@@ -50,14 +61,15 @@ import type {
     LilbeeSettings,
     SearchChunkType,
     ServerMode,
+    SettingSource,
 } from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
 import { reportForVault } from "./storage-stats";
 import { AGENT_LABELS, AGENT_LINKS, MESSAGES } from "./locales/en";
 import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./agent-integration";
-import { PILL_CLS } from "./components/pill";
+import { PILL_CLS, renderPill } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
-import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
+import { applyConfig, applyEmbeddingModel, resetConfig } from "./utils/reindex";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
 import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
@@ -112,6 +124,12 @@ const CREDENTIAL_FIELDS = new Set([
     "manual_session_token",
 ]);
 
+/** The pill a row shows for a value the user or an environment variable sets; other sources show none. */
+const SOURCE_PILLS: Partial<Record<SettingSource, { label: (key: string) => string; cls: string }>> = {
+    [SETTING_SOURCE.USER]: { label: () => MESSAGES.PILL_SOURCE_USER, cls: PILL_CLS.SOURCE_USER },
+    [SETTING_SOURCE.ENV]: { label: (key) => `${SERVER_ENV_PREFIX}${key.toUpperCase()}`, cls: PILL_CLS.SOURCE_ENV },
+};
+
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
 /** Paint the phase line, and grow the bar once a real percentage arrives. */
@@ -162,6 +180,8 @@ interface RowSpec {
     desc: string;
     /** Set when the connected server has to report the key before the row means anything. */
     key?: string;
+    /** The server setting the row edits; a row the schema flags advanced folds into its section's "More settings". */
+    configKey?: string;
     /** Set only by gated(), which is never nested. */
     visible?: () => boolean;
     /** False for rows that carry a section's own DOM rather than a setting a user searches for. */
@@ -188,7 +208,16 @@ const ADAPTIVE_THRESHOLD: ConfigRowSpec = {
     name: MESSAGES.LABEL_ADAPTIVE_THRESHOLD,
     desc: MESSAGES.DESC_ADAPTIVE_THRESHOLD,
 };
-const TOP_K_LIMITS: SliderLimits = { min: 1, max: 20, step: 1 };
+const RERANK_CANDIDATES: ConfigRowSpec = {
+    key: "rerank_candidates",
+    name: MESSAGES.LABEL_RERANKER_CANDIDATES,
+    desc: MESSAGES.DESC_RERANKER_CANDIDATES,
+};
+const TOP_K: ConfigRowSpec = {
+    key: CONFIG_KEY.TOP_K,
+    name: MESSAGES.LABEL_RESULTS_COUNT,
+    desc: MESSAGES.DESC_RESULTS_COUNT,
+};
 const WIKI_FAITHFULNESS_LIMITS: SliderLimits = { min: 0, max: 1, step: 0.05 };
 
 /** A crawl number typed into a text box. */
@@ -535,6 +564,14 @@ const GENERATION_FIELDS: GenerationField[] = [
     },
 ];
 
+/** What `null` means for a boolean config key on a server that predates the field: the
+ * value that server's own behavior implies. Both currently released fields default to
+ * on, so a legacy server's missing choice still reads as its real, running state. */
+const NULL_BOOLEAN_DEFAULT: Readonly<Record<string, boolean>> = {
+    enable_ocr: true,
+    flash_attention: true,
+};
+
 export class LilbeeSettingTab extends PluginSettingTab {
     private versionSettingEl: HTMLElement | null = null;
     /** Set by the update ribbon icon and the reminder: keep the version row in view across re-renders. */
@@ -558,8 +595,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigSliders: Map<string, { setValue: (v: number) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
-    // Null until /api/config/defaults answers; an empty map is a server that cannot report defaults.
-    private configDefaults: Record<string, unknown> | null = null;
+    // Keys the schema flags advanced; empty until the schema answers, and on a server without the flag.
+    private advancedKeys: ReadonlySet<string> = new Set();
+    // Where each server setting's value comes from; null on a server without /api/config/sources.
+    private configSources: Record<string, SettingSource> | null = null;
+    // The name element of each server-backed row, which carries its source pill.
+    private sourcePillHosts: Map<string, HTMLElement> = new Map();
     // The values the server accepts per config key, from /api/config/schema. Stays null on a
     // server without that route, which leaves the closed-set rows as free text.
     private configChoices: Map<string, string[]> | null = null;
@@ -611,9 +652,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (requireApiVersion("1.13.0")) this.refreshDomState();
     }
 
-    /** Build each row into its own Setting, in order. The pre-1.13 path. */
+    /** Build each row into its own Setting, in order, with the advanced rows in a closed fold. The pre-1.13 path. */
     private renderRows(container: HTMLElement, rows: RowSpec[]): void {
-        for (const row of rows) row.apply(new Setting(container), container);
+        const advanced = rows.filter((row) => this.isAdvanced(row));
+        for (const row of rows) if (!this.isAdvanced(row)) row.apply(new Setting(container), container);
+        if (advanced.length === 0) return;
+        const fold = this.openDetails(container, "lilbee-more-settings", MESSAGES.LABEL_MORE_SETTINGS(advanced.length));
+        for (const row of advanced) row.apply(new Setting(fold), fold);
+    }
+
+    /** True when the schema flags the row's server setting as advanced. */
+    private isAdvanced(row: RowSpec): boolean {
+        return row.configKey !== undefined && this.advancedKeys.has(row.configKey);
     }
 
     /** A collapsible section with its summary and one-line explainer. The pre-1.13 path. */
@@ -630,12 +680,31 @@ export class LilbeeSettingTab extends PluginSettingTab {
         rows: RowSpec[],
         opts?: { help?: string; visible?: () => boolean },
     ): SettingDefinitionGroup {
-        const items: SettingDefinition[] = rows.map((row) => this.definitionOf(row));
+        const advanced = rows.filter((row) => this.isAdvanced(row));
+        const items: SettingGroupItem[] = rows
+            .filter((row) => !this.isAdvanced(row))
+            .map((row) => this.definitionOf(row));
+        if (advanced.length > 0) items.push(this.moreSettingsPage(advanced));
         if (opts?.help !== undefined) items.unshift({ name: "", desc: opts.help, searchable: false });
         const group: SettingDefinitionGroup = { type: "group", items };
         if (heading !== undefined) group.heading = heading;
         if (opts?.visible) group.visible = opts.visible;
         return group;
+    }
+
+    /** The advanced rows of a group, behind one entry that opens them as a page. The 1.13 path. */
+    private moreSettingsPage(rows: RowSpec[]): SettingDefinitionPage {
+        return {
+            type: "page",
+            name: MESSAGES.LABEL_MORE_SETTINGS(rows.length),
+            items: [{ type: "group", items: rows.map((row) => this.definitionOf(row)) }],
+            visible: () => rows.some((row) => this.rowVisible(row)),
+        };
+    }
+
+    /** True when the server reports the row's key, if it has one, and the row's own condition holds. */
+    private rowVisible(row: RowSpec): boolean {
+        return (row.key === undefined || this.serverReports(row.key)) && (row.visible === undefined || row.visible());
     }
 
     private definitionOf(row: RowSpec): SettingDefinition {
@@ -649,10 +718,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
         if (row.searchable === false) definition.searchable = false;
         if (row.aliases !== undefined) definition.aliases = row.aliases;
-        if (key !== undefined || visible !== undefined) {
-            definition.visible = (): boolean =>
-                (key === undefined || this.serverReports(key)) && (visible === undefined || visible());
-        }
+        if (key !== undefined || visible !== undefined) definition.visible = (): boolean => this.rowVisible(row);
         return definition;
     }
 
@@ -678,31 +744,41 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return { name, desc, apply };
     }
 
+    /** A row for one server setting that shows whether or not the server reports the key. */
+    private serverRow(spec: ConfigRowSpec, apply: (setting: Setting, container: HTMLElement) => void): RowSpec {
+        return { name: spec.name, desc: spec.desc, configKey: spec.key, apply };
+    }
+
+    /** A row for one server setting that stays hidden until the server reports the key. */
+    private reportedRow(spec: ConfigRowSpec, apply: (setting: Setting, container: HTMLElement) => void): RowSpec {
+        return { ...spec, configKey: spec.key, apply };
+    }
+
     private toggleRow(spec: ConfigRowSpec): RowSpec {
-        return { ...spec, apply: (setting) => this.applyConfigToggle(setting, spec) };
+        return this.reportedRow(spec, (setting) => this.applyConfigToggle(setting, spec));
     }
 
     private bareToggleRow(spec: ConfigRowSpec): RowSpec {
-        return { ...spec, apply: (setting) => this.applyBareConfigToggle(setting, spec) };
+        return this.reportedRow(spec, (setting) => this.applyBareConfigToggle(setting, spec));
     }
 
     private sliderRow(spec: ConfigRowSpec, limits: SliderLimits): RowSpec {
-        return { ...spec, apply: (setting) => this.applyConfigSlider(setting, spec, limits) };
+        return this.reportedRow(spec, (setting) => this.applyConfigSlider(setting, spec, limits));
     }
 
     private numberRow(spec: ConfigRowSpec, opts: NumberFieldOpts): RowSpec {
-        return { ...spec, apply: (setting) => this.applyNumberFieldWithReset(setting, spec, opts) };
+        return this.reportedRow(spec, (setting) => this.applyNumberFieldWithReset(setting, spec, opts));
     }
 
     /** OCR languages and the like: always shown; the server answers with a default. */
     private listRow(spec: ConfigRowSpec): RowSpec {
-        return this.localRow(spec.name, spec.desc, (setting) => this.applyConfigList(setting, spec));
+        return this.serverRow(spec, (setting) => this.applyConfigList(setting, spec));
     }
 
     /** Write one server-config value and report the outcome, including why the server refused. */
     private async pushConfig(key: string, value: unknown, name: string): Promise<CommitOutcome> {
         try {
-            await applyConfig(this.plugin, { [key]: value });
+            await this.writeConfig({ [key]: value });
             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
             return COMMIT_OUTCOME.WRITTEN;
         } catch (err) {
@@ -748,6 +824,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.serverConfigToggles.set(spec.key, toggle);
             });
         this.hideUntilServerReports(setting.settingEl, spec.key);
+        this.markSource(setting, spec.key);
     }
 
     /** Rebuild the tab after state a control's own callback changed. */
@@ -770,6 +847,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.committedText.clear();
         this.serverConfigDropdowns.clear();
         this.serverConfigHideableEls.clear();
+        this.sourcePillHosts.clear();
 
         const filterInput = containerEl.createEl("input", {
             cls: "lilbee-settings-filter",
@@ -857,7 +935,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Server state every render depends on: current config, its defaults, and the capabilities. */
     private loadTabState(): void {
         this.loadServerDefaults();
-        this.loadConfigDefaults();
+        this.loadConfigSources();
         this.loadConfigChoices();
         void this.applyCapabilityGating();
     }
@@ -1928,9 +2006,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private rowsSearchRetrieval(): RowSpec[] {
         return [
-            this.localRow(MESSAGES.LABEL_RESULTS_COUNT, MESSAGES.DESC_RESULTS_COUNT, (setting) =>
-                this.applyResultsCountRow(setting),
-            ),
+            this.numberRow(TOP_K, { integer: true, min: 1 }),
             this.sliderRow(MAX_DISTANCE, MAX_DISTANCE_LIMITS),
             this.toggleRow(ADAPTIVE_THRESHOLD),
         ];
@@ -1939,22 +2015,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderSearchRetrievalSettings(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_SEARCH_RETRIEVAL).setHeading();
         this.renderRows(containerEl, this.rowsSearchRetrieval());
-    }
-
-    private applyResultsCountRow(setting: Setting): void {
-        setting
-            .setName(MESSAGES.LABEL_RESULTS_COUNT)
-            .setDesc(MESSAGES.DESC_RESULTS_COUNT)
-            .addSlider((slider) =>
-                slider
-                    .setLimits(TOP_K_LIMITS.min, TOP_K_LIMITS.max, TOP_K_LIMITS.step)
-                    .setValue(this.plugin.settings.topK)
-                    .onChange(async (value) => {
-                        this.plugin.settings.topK = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
-        this.appendLocalResetAffordance(setting, "topK", MESSAGES.LABEL_RESULTS_COUNT);
     }
 
     private loadServerDefaults(): void {
@@ -2000,6 +2060,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         for (const [key, toggle] of this.serverConfigToggles) {
             const v = cfg[key];
             if (typeof v === "boolean") this.setValueSilently(() => toggle.setValue(v));
+            else if (v === null && key in NULL_BOOLEAN_DEFAULT) {
+                this.setValueSilently(() => toggle.setValue(NULL_BOOLEAN_DEFAULT[key]));
+            }
         }
         for (const [key, slider] of this.serverConfigSliders) {
             const v = cfg[key];
@@ -2033,8 +2096,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** PATCH one server-config key. Writes to the same key are sent in the order they started. */
     private writeConfigKey(key: string, value: unknown): Promise<unknown> {
+        return this.queueKeyWrite(key, () => this.writeConfig({ [key]: value }));
+    }
+
+    /** Run a write to one key after the writes to it already started. */
+    private queueKeyWrite(key: string, write: () => Promise<unknown>): Promise<unknown> {
         const pending = this.configWrites.get(key) ?? Promise.resolve();
-        const next = pending.then(() => applyConfig(this.plugin, { [key]: value }));
+        const next = pending.then(write);
         this.configWrites.set(
             key,
             next.catch(() => undefined),
@@ -2113,16 +2181,39 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private loadConfigDefaults(): void {
+    /** Write server config, then re-read the sources so the row's pill follows the write. */
+    private async writeConfig(updates: Record<string, unknown>): Promise<void> {
+        await applyConfig(this.plugin, updates);
+        this.loadConfigSources();
+    }
+
+    private loadConfigSources(): void {
         this.plugin.api
-            .configDefaults()
-            .then((defaults: Record<string, unknown>) => {
-                this.configDefaults = defaults;
+            .configSources()
+            .then((response) => {
+                this.configSources = response?.sources ?? null;
+                this.paintSourcePills();
             })
             .catch(() => {
-                // Older servers without /api/config/defaults — reset affordances simply hide.
-                this.configDefaults = {};
+                // A server that cannot report sources shows no pills.
             });
+    }
+
+    /** Give the row the pill for its setting's source, now and on every later read of the sources. */
+    private markSource(setting: Setting, key: string): void {
+        this.sourcePillHosts.set(key, setting.nameEl);
+        this.paintSourcePill(key, setting.nameEl);
+    }
+
+    private paintSourcePills(): void {
+        for (const [key, host] of this.sourcePillHosts) this.paintSourcePill(key, host);
+    }
+
+    private paintSourcePill(key: string, host: HTMLElement): void {
+        host.querySelector(`.${PILL_CLS.SOURCE}`)?.remove();
+        const source = this.configSources?.[key];
+        const pill = source === undefined ? undefined : SOURCE_PILLS[source];
+        if (pill !== undefined) renderPill(host, pill.label(key), `${PILL_CLS.SOURCE} ${pill.cls}`);
     }
 
     private loadConfigChoices(): void {
@@ -2134,7 +2225,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
-    /** The first schema rebuilds the tab, so a row with a closed set becomes a picker. */
+    /** The first schema rebuilds the tab, so a row with a closed set becomes a picker and advanced rows fold. */
     private adoptConfigChoices(schema: ConfigSchemaResponse): void {
         if (this.configChoices !== null) return;
         const choices = new Map<string, string[]>();
@@ -2142,27 +2233,27 @@ export class LilbeeSettingTab extends PluginSettingTab {
             if (field.choices !== null) choices.set(field.key, field.choices);
         }
         this.configChoices = choices;
+        this.advancedKeys = new Set(schema.fields.filter((field) => field.advanced === true).map((field) => field.key));
         this.refresh();
     }
 
     private appendResetAffordance(setting: Setting, key: string, label: string): Setting {
-        return setting.addExtraButton((btn) =>
+        setting.addExtraButton((btn) =>
             btn
                 .setIcon(ICON_RESET)
                 .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
                 .onClick(async () => {
-                    // Silent no-op until defaults have loaded (old servers or racing first click).
-                    const defaults = this.configDefaults;
-                    if (defaults === null || !(key in defaults)) return;
-                    if (await this.pushConfigDefault(key, label, defaults[key])) this.refresh();
+                    if (await this.pushConfigReset(key, label)) this.refresh();
                 }),
         );
+        this.markSource(setting, key);
+        return setting;
     }
 
-    /** Write the server's default for one key. False means the write failed and said so. */
-    private async pushConfigDefault(key: string, label: string, value: unknown): Promise<boolean> {
+    /** Reset one key on the server. False means the reset failed and said so. */
+    private async pushConfigReset(key: string, label: string): Promise<boolean> {
         try {
-            await this.writeConfigKey(key, value);
+            await this.queueKeyWrite(key, () => this.resetServerKey(key));
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
             return false;
@@ -2171,26 +2262,29 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return true;
     }
 
+    /** Remove the user's value; a server without the reset route gets its default written instead. */
+    private async resetServerKey(key: string): Promise<void> {
+        if ((await resetConfig(this.plugin, [key])) !== null) return;
+        const defaults = await this.plugin.api.configDefaults();
+        if (!(key in defaults)) throw new Error(`The server reports no default for ${key}`);
+        await this.writeConfig({ [key]: defaults[key] });
+    }
+
     /** Reset a system prompt in both places it lives: the server's value, then the plugin's mirror. */
     private appendPromptResetAffordance(setting: Setting, spec: ConfigRowSpec, settingsKey: PromptSettingKey): Setting {
-        return setting.addExtraButton((btn) =>
+        setting.addExtraButton((btn) =>
             btn
                 .setIcon(ICON_RESET)
                 .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
                 .onClick(async () => {
-                    const defaults = this.configDefaults;
-                    // Still loading: nothing to reset to yet, and nothing has gone wrong.
-                    if (defaults === null) return;
-                    if (!(spec.key in defaults)) {
-                        new Notice(MESSAGES.NOTICE_FAILED_RESET(spec.name));
-                        return;
-                    }
-                    if (!(await this.pushConfigDefault(spec.key, spec.name, defaults[spec.key]))) return;
+                    if (!(await this.pushConfigReset(spec.key, spec.name))) return;
                     this.plugin.settings[settingsKey] = DEFAULT_SETTINGS[settingsKey];
                     await this.plugin.saveSettings();
                     this.refresh();
                 }),
         );
+        this.markSource(setting, spec.key);
+        return setting;
     }
 
     private appendLocalResetAffordance<K extends keyof LilbeeSettings>(
@@ -2224,10 +2318,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
         return [
             // Both prompts are server config, shown in external mode too.
-            this.localRow(rag.name, rag.desc, (setting) =>
+            this.serverRow(rag, (setting) =>
                 this.applySystemPromptRow(setting, rag, "ragSystemPrompt", this.plugin.settings.ragSystemPrompt),
             ),
-            this.localRow(general.name, general.desc, (setting) =>
+            this.serverRow(general, (setting) =>
                 this.applySystemPromptRow(
                     setting,
                     general,
@@ -2235,12 +2329,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.plugin.settings.generalSystemPrompt,
                 ),
             ),
-            {
-                key: CONFIG_KEY.CHAT_MODE,
-                name: MESSAGES.LABEL_CHAT_MODE,
-                desc: MESSAGES.DESC_CHAT_MODE,
-                apply: (setting) => this.applyChatModeRow(setting),
-            },
+            this.reportedRow(
+                { key: CONFIG_KEY.CHAT_MODE, name: MESSAGES.LABEL_CHAT_MODE, desc: MESSAGES.DESC_CHAT_MODE },
+                (setting) => this.applyChatModeRow(setting),
+            ),
             ...GENERATION_FIELDS.map((field) => this.generationRow(field)),
         ];
     }
@@ -2289,7 +2381,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dd.setValue(CHAT_MODE.SEARCH);
                 dd.onChange(async (value) => {
                     try {
-                        await applyConfig(this.plugin, { [CONFIG_KEY.CHAT_MODE]: value });
+                        await this.writeConfig({ [CONFIG_KEY.CHAT_MODE]: value });
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CHAT_MODE));
                     }
@@ -2299,12 +2391,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         this.chatModeSettingEl = setting.settingEl;
         this.setRowVisible(this.chatModeSettingEl, false);
+        this.markSource(setting, CONFIG_KEY.CHAT_MODE);
     }
 
     private generationRow(field: GenerationField): RowSpec {
         const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
         const apply = (setting: Setting): void => this.applyGenerationField(setting, spec, field);
-        return field.hideable === true ? { ...spec, apply } : this.localRow(spec.name, spec.desc, apply);
+        return field.hideable === true ? this.reportedRow(spec, apply) : this.serverRow(spec, apply);
     }
 
     /** A generation knob: a number, or an empty box that clears the override. */
@@ -2394,7 +2487,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             desc: MESSAGES.DESC_GPU_DEVICES,
         };
         return [
-            { ...kv, apply: (setting) => this.applyKvCacheRow(setting, kv) },
+            this.reportedRow(kv, (setting) => this.applyKvCacheRow(setting, kv)),
             this.toggleRow({
                 key: "flash_attention",
                 name: MESSAGES.LABEL_FLASH_ATTENTION,
@@ -2412,10 +2505,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 { key: "vision_replicas", name: MESSAGES.LABEL_VISION_REPLICAS, desc: MESSAGES.DESC_VISION_REPLICAS },
                 { integer: true, min: 0 },
             ),
-            {
-                ...devices,
-                apply: (setting) => this.applyNullableTextRow(setting, devices, MESSAGES.PLACEHOLDER_GPU_DEVICES),
-            },
+            this.reportedRow(devices, (setting) =>
+                this.applyNullableTextRow(setting, devices, MESSAGES.PLACEHOLDER_GPU_DEVICES),
+            ),
         ];
     }
 
@@ -2483,11 +2575,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 name: MESSAGES.LABEL_TABLE_EXTRACTION,
                 desc: MESSAGES.DESC_TABLE_EXTRACTION,
             }),
-            this.localRow(tableModel.name, tableModel.desc, (setting) => this.applyTableModelRow(setting, tableModel)),
+            this.serverRow(tableModel, (setting) => this.applyTableModelRow(setting, tableModel)),
             this.listRow({
                 key: "ocr_language",
                 name: MESSAGES.LABEL_OCR_LANGUAGE,
                 desc: MESSAGES.DESC_OCR_LANGUAGE,
+            }),
+            this.toggleRow({
+                key: "enable_ocr",
+                name: MESSAGES.LABEL_ENABLE_OCR,
+                desc: MESSAGES.DESC_ENABLE_OCR,
+            }),
+            this.toggleRow({
+                key: "force_ocr",
+                name: MESSAGES.LABEL_FORCE_OCR,
+                desc: MESSAGES.DESC_FORCE_OCR,
             }),
             this.numberRow(
                 {
@@ -2580,10 +2682,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** Memory rows read the config the tab already holds, so they exist only once it has arrived. */
     private rowsMemory(): RowSpec[] {
-        return MEMORY_TOGGLES.map((spec) => ({
-            ...spec,
-            apply: (setting: Setting) => this.applyMemoryToggle(setting, spec, this.serverConfig?.[spec.key] === true),
-        }));
+        return MEMORY_TOGGLES.map((spec) =>
+            this.reportedRow(spec, (setting) =>
+                this.applyMemoryToggle(setting, spec, this.serverConfig?.[spec.key] === true),
+            ),
+        );
     }
 
     private renderMemorySection(containerEl: HTMLElement): void {
@@ -2613,6 +2716,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
                 this.memoryToggles.set(spec.key, toggle);
             });
+        this.markSource(setting, spec.key);
     }
 
     private rowsRetrievalAdvanced(): RowSpec[] {
@@ -2640,11 +2744,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private languageRow(spec: ConfigRowSpec): RowSpec {
         const choices = this.configChoices?.get(spec.key) ?? null;
         if (choices !== null)
-            return this.localRow(spec.name, spec.desc, (setting) =>
-                this.applyLanguageChoiceRow(setting, spec, choices),
-            );
+            return this.serverRow(spec, (setting) => this.applyLanguageChoiceRow(setting, spec, choices));
         const free: ConfigRowSpec = { ...spec, desc: MESSAGES.DESC_FTS_LANGUAGE_FREE_TEXT };
-        return this.localRow(free.name, free.desc, (setting) => this.applyLanguageTextRow(setting, free));
+        return this.serverRow(free, (setting) => this.applyLanguageTextRow(setting, free));
     }
 
     private applyLanguageChoiceRow(setting: Setting, spec: ConfigRowSpec, choices: string[]): void {
@@ -3158,10 +3260,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         return [
             ...CRAWL_FIELDS.map((field) => this.crawlRow(field)),
             {
-                ...renderMode,
+                ...this.reportedRow(renderMode, (setting) => this.applyCrawlRenderModeRow(setting, renderMode)),
                 // The setup offer's search terms; picking browser mode installs the browser.
                 aliases: [MESSAGES.LABEL_CRAWL_BROWSER_SETUP],
-                apply: (setting) => this.applyCrawlRenderModeRow(setting, renderMode),
             },
             {
                 name: MESSAGES.LABEL_CRAWL_BROWSER_SETUP,
@@ -3169,9 +3270,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 visible: () => !this.crawlerBrowserReady,
                 apply: (setting) => this.applyCrawlBrowserSetupRow(setting),
             },
-            this.localRow(patterns.name, patterns.desc, (setting) =>
-                this.applyCrawlExcludePatternsRow(setting, patterns),
-            ),
+            this.serverRow(patterns, (setting) => this.applyCrawlExcludePatternsRow(setting, patterns)),
         ];
     }
 
@@ -3182,9 +3281,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private crawlRow(field: CrawlField): RowSpec {
         const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
-        if (field.kind === "bool")
-            return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlBool(setting, spec));
-        return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlNumber(setting, spec, field));
+        if (field.kind === "bool") return this.serverRow(spec, (setting) => this.applyCrawlBool(setting, spec));
+        return this.serverRow(spec, (setting) => this.applyCrawlNumber(setting, spec, field));
     }
 
     private applyCrawlBool(setting: Setting, spec: ConfigRowSpec): void {
@@ -3346,9 +3444,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 },
                 { integer: true, min: 1 },
             ),
-            this.localRow(entityPrompt.name, entityPrompt.desc, (setting) =>
-                this.applyWikiEntityPromptRow(setting, entityPrompt),
-            ),
+            this.serverRow(entityPrompt, (setting) => this.applyWikiEntityPromptRow(setting, entityPrompt)),
             this.localRow(MESSAGES.LABEL_WIKI_RUN_LINT, MESSAGES.DESC_WIKI_RUN_LINT, (setting) =>
                 this.applyWikiActionRow(setting, MESSAGES.LABEL_WIKI_RUN_LINT, MESSAGES.DESC_WIKI_RUN_LINT, () =>
                     this.plugin.runWikiLint(),
@@ -3510,19 +3606,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.localRow(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT, MESSAGES.DESC_STORE_CONTENT_IN_VAULT, (setting) =>
                 this.applyStoreContentRow(setting),
             ),
-            this.localRow(MESSAGES.LABEL_RERANKER_CANDIDATES, MESSAGES.DESC_RERANKER_CANDIDATES, (setting) =>
-                this.applyRerankCandidatesRow(setting),
-            ),
-            this.localRow(llm.name, llm.desc, (setting) => this.applyLlmProviderRow(setting, llm)),
+            this.rowRerankCandidates(),
+            this.serverRow(llm, (setting) => this.applyLlmProviderRow(setting, llm)),
             ...this.gated(
-                API_KEY_FIELDS.map((field) =>
-                    this.localRow(field.name, field.desc, (setting) => this.applyApiKeyRow(setting, field)),
-                ),
+                API_KEY_FIELDS.map((field) => this.serverRow(field, (setting) => this.applyApiKeyRow(setting, field))),
                 () => this.serverSupports(CAPABILITY.API_KEYS),
             ),
             this.localRow(MESSAGES.LABEL_HF_TOKEN, MESSAGES.DESC_HF_TOKEN, (setting) => this.applyHfTokenRow(setting)),
             ...LOCAL_SERVER_FIELDS.map((field) =>
-                this.localRow(field.name, field.desc, (setting) => this.applyLocalServerUrlRow(setting, field)),
+                this.serverRow(field, (setting) => this.applyLocalServerUrlRow(setting, field)),
             ),
             this.localRow(MESSAGES.LABEL_RESET_ALL_SETTINGS, MESSAGES.DESC_RESET_ALL_SETTINGS, (setting) =>
                 this.applyResetAllRow(setting),
@@ -3530,6 +3622,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ];
     }
 
+    private rowRerankCandidates(): RowSpec {
+        return this.serverRow(RERANK_CANDIDATES, (setting) => this.applyRerankCandidatesRow(setting));
+    }
+
+    /** The rerank row sits in place, or in the section's fold at its end when the schema flags it advanced. */
     private renderAdvancedSettings(containerEl: HTMLElement): void {
         const details = this.openDetails(
             containerEl,
@@ -3538,7 +3635,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             MESSAGES.LABEL_ADVANCED_HELP,
         );
         this.applyStoreContentRow(new Setting(details));
-        this.applyRerankCandidatesRow(new Setting(details));
+        const rerank = this.rowRerankCandidates();
+        if (!this.isAdvanced(rerank)) this.renderRows(details, [rerank]);
         const llm: ConfigRowSpec = {
             key: "llm_provider",
             name: MESSAGES.LABEL_LLM_PROVIDER,
@@ -3551,6 +3649,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.applyHfTokenRow(new Setting(details));
         for (const field of LOCAL_SERVER_FIELDS) this.applyLocalServerUrlRow(new Setting(details), field);
         this.applyResetAllRow(new Setting(details));
+        if (this.isAdvanced(rerank)) this.renderRows(details, [rerank]);
     }
 
     private applyStoreContentRow(setting: Setting): void {
@@ -3585,7 +3684,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .setValue("auto")
                     .onChange(async (value) => {
                         try {
-                            await applyConfig(this.plugin, { [spec.key]: value });
+                            await this.writeConfig({ [spec.key]: value });
                             new Notice(MESSAGES.NOTICE_LLM_UPDATED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_LLM);
@@ -3608,7 +3707,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const trimmed = text.inputEl.value.trim();
                     if (trimmed === "") return;
                     try {
-                        await applyConfig(this.plugin, { [field.key]: trimmed });
+                        await this.writeConfig({ [field.key]: trimmed });
                         this.plugin.api.invalidateCapability(CAPABILITY.API_KEYS);
                         new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
                     } catch {
@@ -3642,7 +3741,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const sending = new AbortController();
                     inFlight = sending;
                     try {
-                        await applyConfig(this.plugin, { hf_token: trimmed });
+                        await this.writeConfig({ hf_token: trimmed });
                     } catch {
                         if (sending.signal.aborted) return;
                         new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
@@ -3669,7 +3768,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const trimmed = value.trim();
                     if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
                     try {
-                        await applyConfig(this.plugin, { [field.key]: trimmed });
+                        await this.writeConfig({ [field.key]: trimmed });
                         new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
                         return COMMIT_OUTCOME.WRITTEN;
                     } catch {
@@ -3695,12 +3794,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         confirm.open();
                         const confirmed = await confirm.result;
                         if (!confirmed) return;
-                        const payload = { ...this.configDefaults };
-                        // Never wipe credential fields: resetting an API key has no undo path.
-                        for (const k of CREDENTIAL_FIELDS) delete payload[k];
-                        if (Object.keys(payload).length === 0) return;
                         try {
-                            await applyConfig(this.plugin, payload);
+                            await this.resetAllServerSettings();
                             new Notice(MESSAGES.NOTICE_SETTINGS_RESET);
                             this.refresh();
                         } catch {
@@ -3708,6 +3803,31 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         }
                     }),
             );
+    }
+
+    /** Remove the user's value for every resettable setting; a server without the reset route gets its defaults written. */
+    private async resetAllServerSettings(): Promise<void> {
+        const keys = await this.resettableKeys();
+        if (keys !== null && (await resetConfig(this.plugin, keys)) !== null) return;
+        const payload = await this.plugin.api.configDefaults();
+        // Never wipe credential fields: resetting an API key has no undo path.
+        for (const k of CREDENTIAL_FIELDS) delete payload[k];
+        if (Object.keys(payload).length === 0) throw new Error("The server reports no defaults");
+        await applyConfig(this.plugin, payload);
+    }
+
+    /** Every writable setting the reset route accepts, minus credentials; null on a server without the schema route. */
+    private async resettableKeys(): Promise<string[] | null> {
+        let schema: ConfigSchemaResponse;
+        try {
+            schema = await this.plugin.api.configSchema();
+        } catch (e) {
+            if (e instanceof Error && isHttpStatus(e, HTTP_STATUS.NOT_FOUND)) return null;
+            throw e;
+        }
+        return schema.fields
+            .filter((f) => f.writable && !UNRESETTABLE_CONFIG_KEYS.has(f.key) && !CREDENTIAL_FIELDS.has(f.key))
+            .map((f) => f.key);
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {
@@ -3968,8 +4088,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private applyRerankCandidatesRow(setting: Setting): void {
         setting
-            .setName(MESSAGES.LABEL_RERANKER_CANDIDATES)
-            .setDesc(MESSAGES.DESC_RERANKER_CANDIDATES)
+            .setName(RERANK_CANDIDATES.name)
+            .setDesc(RERANK_CANDIDATES.desc)
             .addText((text) => {
                 text.setPlaceholder(MESSAGES.PLACEHOLDER_RERANK_CANDIDATES).setValue("");
                 this.commitOnChange(text.inputEl, async (value) => {
@@ -3981,10 +4101,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             MESSAGES.LABEL_RERANKER_CANDIDATES,
                             MESSAGES.REASON_BETWEEN(RERANK_CANDIDATES_MIN, RERANK_CANDIDATES_MAX),
                         );
-                    return this.pushConfig("rerank_candidates", num, MESSAGES.LABEL_RERANKER_CANDIDATES);
+                    return this.pushConfig(RERANK_CANDIDATES.key, num, RERANK_CANDIDATES.name);
                 });
-                this.serverConfigInputs.set("rerank_candidates", text.inputEl);
+                this.serverConfigInputs.set(RERANK_CANDIDATES.key, text.inputEl);
             });
+        this.markSource(setting, RERANK_CANDIDATES.key);
     }
 }
 

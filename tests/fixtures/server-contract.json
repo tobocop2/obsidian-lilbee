@@ -84,10 +84,27 @@
         "streams": false
       }
     },
+    "/api/config/reset": {
+      "POST": {
+        "fields": {
+          "reindex_required": "boolean",
+          "updated": "array"
+        },
+        "streams": false
+      }
+    },
     "/api/config/schema": {
       "GET": {
         "fields": {
           "fields": "array"
+        },
+        "streams": false
+      }
+    },
+    "/api/config/sources": {
+      "GET": {
+        "fields": {
+          "sources": "object"
         },
         "streams": false
       }
@@ -636,5 +653,5 @@
       }
     }
   },
-  "version": "0.6.90b446"
+  "version": "0.6.90b447"
 }

@@ -1083,6 +1083,72 @@ describe("pullModel()", () => {
         });
     });
 
+    describe("configSources()", () => {
+        const statusResponse = (status: number): Response =>
+            ({
+                ok: false,
+                status,
+                headers: { get: () => null },
+                text: () => Promise.resolve("x"),
+            }) as unknown as Response;
+
+        it("calls GET /api/config/sources", async () => {
+            const data = { sources: { top_k: "user", chunk_size: "env" } };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.configSources();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/config/sources`, expect.objectContaining({}));
+            expect(result).toEqual(data);
+        });
+
+        it("answers null against a server too old to serve the route", async () => {
+            fetchMock.mockResolvedValue(statusResponse(404));
+            await expect(client.configSources()).resolves.toBeNull();
+        });
+
+        it("still throws on a real failure", async () => {
+            fetchMock.mockResolvedValue(statusResponse(500));
+            await expect(client.configSources()).rejects.toThrow(/500/);
+        });
+    });
+
+    describe("resetConfig()", () => {
+        const statusResponse = (status: number): Response =>
+            ({
+                ok: false,
+                status,
+                headers: { get: () => null },
+                text: () => Promise.resolve("x"),
+            }) as unknown as Response;
+
+        it("POSTs the keys to /api/config/reset", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ updated: ["top_k"], reindex_required: false }));
+
+            const result = await client.resetConfig(["top_k"]);
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/config/reset`,
+                expect.objectContaining({
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ keys: ["top_k"] }),
+                }),
+            );
+            expect(result).toEqual({ updated: ["top_k"], reindex_required: false });
+        });
+
+        it("answers null against a server too old to serve the route", async () => {
+            fetchMock.mockResolvedValue(statusResponse(404));
+            await expect(client.resetConfig(["top_k"])).resolves.toBeNull();
+        });
+
+        it("throws when the server refuses the keys, rather than falling back", async () => {
+            fetchMock.mockResolvedValue(statusResponse(400));
+            await expect(client.resetConfig(["documents_dir"])).rejects.toThrow(/400/);
+        });
+    });
+
     describe("updateConfig()", () => {
         it("PATCHes /api/config", async () => {
             fetchMock.mockResolvedValue(jsonResponse({ updated: ["temperature"], reindex_required: false }));

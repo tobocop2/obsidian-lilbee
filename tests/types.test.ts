@@ -57,8 +57,8 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.serverUrl).toBe("http://127.0.0.1:7433");
     });
 
-    it("has topK of 12 (matches the server default)", () => {
-        expect(DEFAULT_SETTINGS.topK).toBe(12);
+    it("keeps no copy of the retrieval depth, which the server owns", () => {
+        expect("topK" in DEFAULT_SETTINGS).toBe(false);
     });
 
     it("has wizardCompleted defaulting to false", () => {
@@ -91,7 +91,6 @@ describe("DEFAULT_SETTINGS", () => {
             "lastCatalogTab",
             "generalSystemPrompt",
             "ragSystemPrompt",
-            "topK",
             "wikiEnabled",
             "wikiSyncToVault",
             "wikiVaultFolder",
@@ -246,7 +245,7 @@ describe("ModelsResponse interface", () => {
 describe("StatusResponse interface", () => {
     it("holds config, document_count, sources, and total_chunks", () => {
         const s: StatusResponse = {
-            config: { model: "llama3" },
+            config: { chat_model: "llama3" },
             document_count: 1,
             sources: [{ filename: "a.md", chunk_count: 3 }],
             total_chunks: 3,
@@ -305,14 +304,12 @@ describe("LilbeeSettings interface", () => {
     it("accepts a fully-specified settings object", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
-            topK: 3,
             serverMode: "managed",
             ragSystemPrompt: "",
             generalSystemPrompt: "",
             setupCompleted: false,
             sharedRoot: "",
         } as unknown as LilbeeSettings;
-        expect(s.topK).toBe(3);
         expect(s.sharedRoot).toBe("");
     });
 });

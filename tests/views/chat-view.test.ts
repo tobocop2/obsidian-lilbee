@@ -254,7 +254,7 @@ function makePlugin(): LilbeePlugin {
             forkSession: vi.fn(),
             getSessionMarkdown: vi.fn(),
         },
-        settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
+        settings: { enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
@@ -509,10 +509,18 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all", {
-            summary: "",
-            sessionId: null,
-        });
+        expect(plugin.api.chatStream).toHaveBeenCalledWith(
+            "hello",
+            [],
+            undefined,
+            expect.any(AbortSignal),
+            undefined,
+            "all",
+            {
+                summary: "",
+                sessionId: null,
+            },
+        );
     });
 
     it("clears textarea value after send", async () => {
@@ -3871,10 +3879,18 @@ describe("ChatView.sendMessage — does not send generation overrides", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all", {
-            summary: "",
-            sessionId: null,
-        });
+        expect(plugin.api.chatStream).toHaveBeenCalledWith(
+            "hi",
+            [],
+            undefined,
+            expect.any(AbortSignal),
+            undefined,
+            "all",
+            {
+                summary: "",
+                sessionId: null,
+            },
+        );
     });
 });
 
@@ -3892,10 +3908,18 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki", {
-            summary: "",
-            sessionId: null,
-        });
+        expect(plugin.api.chatStream).toHaveBeenCalledWith(
+            "q",
+            [],
+            undefined,
+            expect.any(AbortSignal),
+            undefined,
+            "wiki",
+            {
+                summary: "",
+                sessionId: null,
+            },
+        );
     });
 
     it("passes 'raw' when the setting is 'raw'", async () => {
@@ -3911,10 +3935,18 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw", {
-            summary: "",
-            sessionId: null,
-        });
+        expect(plugin.api.chatStream).toHaveBeenCalledWith(
+            "q",
+            [],
+            undefined,
+            expect.any(AbortSignal),
+            undefined,
+            "raw",
+            {
+                summary: "",
+                sessionId: null,
+            },
+        );
     });
 });
 

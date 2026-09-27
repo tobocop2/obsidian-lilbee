@@ -358,7 +358,7 @@ describe("StatusModal", () => {
         }
     });
 
-    it("shows OCR: Auto when enable_ocr is not set", async () => {
+    it("shows OCR: On when enable_ocr is not set", async () => {
         const plugin = makePlugin();
         (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
@@ -373,13 +373,33 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const values = content.findAll("lilbee-status-value");
         const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("Auto");
+        expect(texts).toContain("On");
+    });
+
+    it("shows OCR: On when an older server sends enable_ocr: null", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
+            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: null } })),
+        );
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const values = content.findAll("lilbee-status-value");
+        const texts = values.map((v: MockElement) => v.textContent);
+        expect(texts).toContain("On");
     });
 
     it("shows OCR: On when enable_ocr is true", async () => {
         const plugin = makePlugin();
         (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: "true" } })),
+            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: true } })),
         );
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
@@ -399,7 +419,7 @@ describe("StatusModal", () => {
     it("shows OCR: Off when enable_ocr is false", async () => {
         const plugin = makePlugin();
         (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: "false" } })),
+            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: false } })),
         );
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
 

@@ -167,13 +167,9 @@ export class StatusModal extends Modal {
         }
         await this.renderServedContext(table);
 
-        const ocrValue = status.config.enable_ocr;
+        // An older server sends null for enable_ocr; that server also runs OCR by default.
         const ocrLabel =
-            ocrValue === "true"
-                ? MESSAGES.STATUS_VALUE_OCR_ON
-                : ocrValue === "false"
-                  ? MESSAGES.STATUS_VALUE_OCR_OFF
-                  : MESSAGES.STATUS_VALUE_OCR_AUTO;
+            status.config.enable_ocr === false ? MESSAGES.STATUS_VALUE_OCR_OFF : MESSAGES.STATUS_VALUE_OCR_ON;
         this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrLabel);
     }
 

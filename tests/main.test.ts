@@ -6,6 +6,7 @@ import { electronDialog } from "../src/utils/file-dialog";
 import {
     CAPABILITY,
     CHAT_STATUS,
+    DEFAULT_SETTINGS,
     DEFAULT_SHARED_CONFIG,
     INDETERMINATE_PROGRESS,
     LOGS_DIR,
@@ -1302,9 +1303,9 @@ describe("LilbeePlugin", () => {
     describe("loadSettings()", () => {
         it("merges saved data over defaults", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", topK: 15 });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", wikiVaultFolder: "notes" });
             await plugin.loadSettings();
-            expect(plugin.settings.topK).toBe(15);
+            expect(plugin.settings.wikiVaultFolder).toBe("notes");
             expect(plugin.settings.serverUrl).toBe("http://127.0.0.1:7433");
         });
 
@@ -1312,7 +1313,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             plugin.loadData = vi.fn().mockResolvedValue(null);
             await plugin.loadSettings();
-            expect(plugin.settings.topK).toBe(12);
+            expect(plugin.settings.wikiVaultFolder).toBe(DEFAULT_SETTINGS.wikiVaultFolder);
             expect(plugin.settings.serverMode).toBe("managed");
         });
     });
@@ -6085,12 +6086,14 @@ describe("LilbeePlugin", () => {
         });
 
         it("loads a settings file holding the retired local keys without error", async () => {
-            // Search strictness and the adaptive threshold live on the server now. A data.json
-            // written by an older plugin still carries the local copies: nothing reads them and
-            // nothing sends them, so the server keeps the values it already has.
-            const { DEFAULT_SETTINGS } = await import("../src/types");
+            // Search strictness, the adaptive threshold and topK live on the server now. A
+            // data.json written by an older plugin still carries the local copies: nothing reads
+            // them and nothing sends them, so the server keeps the values it already has. The
+            // stray key rides along in the loaded object (nothing strips it) but LilbeeSettings
+            // no longer declares it, so no production code can read it back out.
             const plugin = await createPlugin({
                 serverMode: "external",
+                topK: 12,
                 maxDistance: 0.5,
                 adaptiveThreshold: true,
                 wikiPruneRaw: true,
@@ -6107,7 +6110,7 @@ describe("LilbeePlugin", () => {
             await plugin.fetchActiveModel();
 
             expect(updateConfig).not.toHaveBeenCalled();
-            expect(plugin.settings.topK).toBe(DEFAULT_SETTINGS.topK);
+            expect((plugin.settings as unknown as { topK?: number }).topK).toBe(12);
             expect(plugin.settings.serverMode).toBe("external");
         });
 
