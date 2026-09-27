@@ -1208,6 +1208,64 @@ describe("CatalogModal", () => {
             modal.close();
         });
 
+        it("keeps Load more off the Hosted sub-tab, whose rows all load first", async () => {
+            const plugin = makePlugin();
+            const hosted = Array.from({ length: 5 }, (_, i) =>
+                makeEntry({
+                    hf_repo: `gemini/model-${i}`,
+                    display_name: `Hosted ${i}`,
+                    source: "frontier",
+                    provider: "Gemini",
+                    key_status: "ready",
+                    installed: true,
+                }),
+            );
+            sparseServer(plugin, { 0: hosted });
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            await settle();
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).not.toBeNull();
+
+            (modal as any).switchSubTab("hosted");
+            expect(contentEl(modal).findAll("lilbee-frontier-row")).toHaveLength(5);
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).toBeNull();
+
+            (modal as any).switchSubTab("local");
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).not.toBeNull();
+            modal.close();
+        });
+
+        it("gives a Library Load more click the same bounded budget as a fill", async () => {
+            const plugin = makePlugin();
+            sparseServer(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await settle();
+            expect(offsets(plugin)).toEqual([0]);
+            plugin.api.catalog.mockClear();
+
+            contentEl(modal).find("lilbee-catalog-load-more")!.trigger("click");
+            await settle();
+
+            expect(offsets(plugin)).toEqual([20, 40, 60, 80, 100]);
+            expect(contentEl(modal).find("lilbee-catalog-load-more")).not.toBeNull();
+            modal.close();
+        });
+
+        it("stops a Library Load more click as soon as an installed model arrives", async () => {
+            const plugin = makePlugin();
+            const installed = makeEntry({ hf_repo: "owner/kept-GGUF", display_name: "Kept", installed: true });
+            sparseServer(plugin, { 40: [installed] });
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await settle();
+            plugin.api.catalog.mockClear();
+
+            contentEl(modal).find("lilbee-catalog-load-more")!.trigger("click");
+            await settle();
+
+            expect(offsets(plugin)).toEqual([20, 40]);
+            expect(collectTexts(contentEl(modal))).toContain("Kept");
+            modal.close();
+        });
+
         it("loads the next pages when Load more is clicked", async () => {
             const plugin = makePlugin();
             const match = makeEntry({ hf_repo: "owner/big-embed-GGUF", display_name: "Big Embed", task: "embedding" });

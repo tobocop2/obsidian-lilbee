@@ -70,6 +70,13 @@ const SUB_TAB = {
     HOSTED: "hosted",
 } as const satisfies Record<string, SubTab>;
 
+/** What started a fill: opening or filtering the view, or a Load more click. */
+type FillTrigger = "auto" | "load-more";
+const FILL_TRIGGER = {
+    AUTO: "auto",
+    LOAD_MORE: "load-more",
+} as const satisfies Record<string, FillTrigger>;
+
 const TASK_SECTION_LABEL: Record<ModelTask, string> = {
     [MODEL_TASK.CHAT]: MESSAGES.LABEL_SECTION_CHAT,
     [MODEL_TASK.VISION]: MESSAGES.LABEL_SECTION_VISION,
@@ -464,9 +471,11 @@ export class CatalogModal extends Modal {
         return localRowsOnly(this.entries).length < this.pageLimit(this.fetchedQuery);
     }
 
-    /** The Library's installed-only pages past the hosted rows are sparse, so they load only on request. */
-    private mayFetchAutomatically(followUps: number): boolean {
-        return followUps > 0 && !(this.pastHostedRows && this.activeTab === CATALOG_TAB.LIBRARY);
+    /** The Library's installed-only pages past the hosted rows are sparse: they load only on request, until one adds a row. */
+    private mayFetchAutomatically(followUps: number, trigger: FillTrigger, addedRows: number): boolean {
+        if (followUps <= 0) return false;
+        if (!(this.pastHostedRows && this.activeTab === CATALOG_TAB.LIBRARY)) return true;
+        return trigger === FILL_TRIGGER.LOAD_MORE && addedRows === 0;
     }
 
     private catalogParams(query: string): Parameters<typeof this.plugin.api.catalog>[0] {
@@ -482,7 +491,8 @@ export class CatalogModal extends Modal {
         return params;
     }
 
-    private applyPage(response: CatalogResponse): void {
+    /** Returns the number of native rows the page added. */
+    private applyPage(response: CatalogResponse): number {
         this.hasMore = response.has_more;
         this.canLoadMore = false;
         this.pastHostedRows = hostedRowsOnly(response.models).length < response.limit;
@@ -494,9 +504,10 @@ export class CatalogModal extends Modal {
 
         this.updateHostedTabVisibility();
         this.renderResults();
+        return localRowsOnly(filtered).length;
     }
 
-    private async fetchPage(followUps = MAX_FILL_FOLLOW_UPS): Promise<void> {
+    private async fetchPage(followUps = MAX_FILL_FOLLOW_UPS, trigger: FillTrigger = FILL_TRIGGER.AUTO): Promise<void> {
         if (this.isFetching) return;
         const query = this.filterSearch;
         // The offset belongs to one query; a different term restarts the result set.
@@ -514,7 +525,7 @@ export class CatalogModal extends Modal {
         this.catalogController = controller;
 
         let superseded = false;
-        let applied = false;
+        let added: number | null = null;
         try {
             const result = await this.plugin.api.catalog({
                 ...this.catalogParams(query),
@@ -525,8 +536,7 @@ export class CatalogModal extends Modal {
             } else if (result.isErr()) {
                 new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
             } else {
-                this.applyPage(result.value);
-                applied = true;
+                added = this.applyPage(result.value);
             }
         } finally {
             this.isFetching = false;
@@ -534,12 +544,12 @@ export class CatalogModal extends Modal {
         }
         if (this.modalClosed) return;
         if (superseded) return this.fetchPage();
-        if (applied) await this.continueFill(followUps);
+        if (added !== null) await this.continueFill(followUps, trigger, added);
     }
 
-    private async continueFill(followUps: number): Promise<void> {
+    private async continueFill(followUps: number, trigger: FillTrigger, addedRows: number): Promise<void> {
         if (!this.wantsMoreRows()) return;
-        if (this.mayFetchAutomatically(followUps)) return this.fetchPage(followUps - 1);
+        if (this.mayFetchAutomatically(followUps, trigger, addedRows)) return this.fetchPage(followUps - 1, trigger);
         this.canLoadMore = true;
         this.renderResults();
     }
@@ -548,12 +558,13 @@ export class CatalogModal extends Modal {
         if (!this.resultsEl) return;
         this.resultsEl.empty();
         this.renderActiveView();
-        if (this.canLoadMore) this.renderLoadMore(this.resultsEl);
+        // Hosted rows lead the listing, so the Hosted sub-tab is complete once shown.
+        if (this.canLoadMore && this.currentTab !== SUB_TAB.HOSTED) this.renderLoadMore(this.resultsEl);
     }
 
     private renderLoadMore(parent: HTMLElement): void {
         const btn = parent.createEl("button", { cls: "lilbee-catalog-load-more", text: MESSAGES.BUTTON_LOAD_MORE });
-        btn.addEventListener("click", () => void this.fetchPage());
+        btn.addEventListener("click", () => void this.fetchPage(MAX_FILL_FOLLOW_UPS, FILL_TRIGGER.LOAD_MORE));
     }
 
     /** Empty-state text: nothing matches only once the server has no more rows. */
