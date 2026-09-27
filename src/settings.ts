@@ -85,6 +85,7 @@ import {
 const RELEASES_CACHE_TTL_MS = 10 * 60 * 1000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
 const CLS_SETTING_EXTRAS = "lilbee-setting-extras";
+const CLS_EXTRAS_ONLY_ROW = "lilbee-extras-only-row";
 const RERANKER_DISABLED_KEY = "";
 const VISION_DISABLED_KEY = "";
 const RERANK_CANDIDATES_MIN = 1;
@@ -660,7 +661,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** Obsidian keeps only the rows' own elements in a group's list, so a row's extra DOM lives inside the row. */
     private rowExtras(setting: Setting): HTMLElement {
         return (
-            setting.settingEl.querySelector<HTMLDivElement>(`.${CLS_SETTING_EXTRAS}`) ??
+            setting.settingEl.querySelector<HTMLDivElement>(`:scope > .${CLS_SETTING_EXTRAS}`) ??
             setting.settingEl.createDiv(CLS_SETTING_EXTRAS)
         );
     }
@@ -1077,7 +1078,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     /** The dropdown lists only installed agents, so what shows is what you can pick. */
     private renderAgentChoice(body: HTMLElement, installed: AgentClient[]): void {
         new Setting(body)
-            .setName(MESSAGES.LABEL_AGENT_CHOICE)
+            .setName(MESSAGES.LABEL_AGENT_PICKER)
             .setDesc(MESSAGES.DESC_AGENT_CHOICE)
             .addDropdown((dropdown) => {
                 dropdown.addOption(AGENT_SELECTION.NONE, MESSAGES.AGENT_OPTION_NONE);
@@ -1504,7 +1505,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         name: "",
                         desc: "",
                         searchable: false,
-                        apply: (_setting, container) => this.renderUninstallCallout(container),
+                        apply: (setting, container) => {
+                            setting.settingEl.addClass(CLS_EXTRAS_ONLY_ROW);
+                            this.renderUninstallCallout(container);
+                        },
                     }),
                     this.definitionOf(
                         this.localRow(

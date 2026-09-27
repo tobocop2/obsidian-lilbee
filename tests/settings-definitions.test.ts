@@ -9,7 +9,7 @@ import { LilbeeSettingTab } from "../src/settings";
 import { DEFAULT_SETTINGS, CAPABILITY, MEMORY_CONFIG_KEY, SERVER_MODE, type LilbeeSettings } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { formatDiskSize } from "../src/utils";
-import { err } from "../src/result";
+import { err, ok } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import type LilbeePlugin from "../src/main";
@@ -165,6 +165,7 @@ function renderDefinitions(items: Definition[], container: MockElement, rendered
         if (item.name !== undefined && item.name !== "") names.push(item.name);
         if (item.render) {
             const setting = new Setting(container);
+            setting.setName(item.name ?? "").setDesc(item.desc ?? "");
             const render = item.render;
             const rerender = () => render(setting, { listEl: container });
             rerender();
@@ -358,6 +359,47 @@ describe("declarative setting definitions", () => {
         renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
         expect(rowOf(container.find("lilbee-storage-report"))).toBeTruthy();
         expect(rowOf(container.find("lilbee-uninstall-callout"))).toBeTruthy();
+    });
+
+    it("marks the callout's row as extras only, so no blank row shows above the callout", () => {
+        const tab = makeTab();
+        const container = new MockElement("div");
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        expect(rowOf(container.find("lilbee-uninstall-callout"))?.classList.contains("lilbee-extras-only-row")).toBe(
+            true,
+        );
+        expect(rowOf(container.find("lilbee-storage-report"))?.classList.contains("lilbee-extras-only-row")).toBe(
+            false,
+        );
+    });
+
+    it("names the coding-agent row once, with the picker inside it under its own label", async () => {
+        const tab = makeTab();
+        tab.plugin.api.getAgentConfigIndex = vi.fn().mockResolvedValue(ok({ clients: [] }));
+        const names: string[] = [];
+        const original = Setting.prototype.setName;
+        Setting.prototype.setName = function (name: string) {
+            names.push(name);
+            return original.call(this, name);
+        };
+        try {
+            renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        } finally {
+            Setting.prototype.setName = original;
+        }
+        expect(names.filter((name) => name === MESSAGES.LABEL_AGENT_CHOICE)).toHaveLength(1);
+        expect(names).toContain(MESSAGES.LABEL_AGENT_PICKER);
+    });
+
+    it("finds a row's extras only among the row's own children", () => {
+        const tab = makeTab();
+        const setting = new Setting(new MockElement("div"));
+        const nested = (setting.infoEl as unknown as MockElement).createDiv("lilbee-setting-extras");
+        const extras = (tab as any).rowExtras(setting) as MockElement;
+        expect(extras).not.toBe(nested);
+        expect(extras.parentElement).toBe(setting.settingEl);
+        expect((tab as any).rowExtras(setting)).toBe(extras);
     });
 
     it("leaves the uninstall warning to the callout, so the sentence shows once", () => {

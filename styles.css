@@ -483,6 +483,16 @@
     display: none;
 }
 
+/* A row that only hosts extras: no empty name, description or control band above them. */
+.lilbee-extras-only-row > .setting-item-info,
+.lilbee-extras-only-row > .setting-item-control {
+    display: none;
+}
+
+.lilbee-extras-only-row .lilbee-uninstall-callout {
+    margin-top: 0;
+}
+
 .lilbee-models-container {
     margin-top: var(--size-4-3, 12px);
 }
