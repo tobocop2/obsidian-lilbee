@@ -8,7 +8,7 @@ import {
     setIcon,
     Setting,
 } from "obsidian";
-import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem, SettingGroup } from "obsidian";
+import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem } from "obsidian";
 import type LilbeePlugin from "./main";
 import { LilbeeClient } from "./api";
 import { isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
@@ -84,6 +84,7 @@ import {
 /** GitHub's unauthenticated releases API allows 60 requests/hour per IP, so renders share one fetch. */
 const RELEASES_CACHE_TTL_MS = 10 * 60 * 1000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
+const CLS_SETTING_EXTRAS = "lilbee-setting-extras";
 const RERANKER_DISABLED_KEY = "";
 const VISION_DISABLED_KEY = "";
 const RERANK_CANDIDATES_MIN = 1;
@@ -168,7 +169,7 @@ interface RowSpec {
     searchable?: boolean;
     /** Extra search terms: the names of the hidden rows this row reveals. */
     aliases?: string[];
-    /** `container` is where a row that needs more than one element puts the rest. */
+    /** `container` is where a row that needs more than one element puts the rest: the section, or a node inside the row. */
     apply: (setting: Setting, container: HTMLElement) => void;
 }
 
@@ -643,8 +644,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const definition: SettingDefinition = {
             name: row.name,
             desc: row.desc,
-            render: (setting: Setting, group: SettingGroup) => {
-                if (requireApiVersion("1.13.0")) row.apply(setting, group.listEl);
+            render: (setting: Setting) => {
+                if (requireApiVersion("1.13.0")) row.apply(setting, this.rowExtras(setting));
             },
         };
         if (row.searchable === false) definition.searchable = false;
@@ -654,6 +655,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 (key === undefined || this.serverReports(key)) && (visible === undefined || visible());
         }
         return definition;
+    }
+
+    /** Obsidian keeps only the rows' own elements in a group's list, so a row's extra DOM lives inside the row. */
+    private rowExtras(setting: Setting): HTMLElement {
+        return (
+            setting.settingEl.querySelector<HTMLDivElement>(`.${CLS_SETTING_EXTRAS}`) ??
+            setting.settingEl.createDiv(CLS_SETTING_EXTRAS)
+        );
     }
 
     /** Hide a whole run of rows behind one condition, e.g. the wiki rows behind the wiki toggle. */
@@ -1008,7 +1017,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private mountAgentBody(container: HTMLElement): void {
-        // Render re-runs into the same group container; reuse the body instead of stacking one per refresh.
+        // Render re-runs into the same container; reuse the body instead of stacking one per refresh.
         this.agentBodyEl =
             container.querySelector<HTMLDivElement>(".lilbee-agent-body") ??
             container.createDiv({ cls: "lilbee-agent-body" });
@@ -1493,7 +1502,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 items: [
                     this.definitionOf({
                         name: "",
-                        desc: MESSAGES.CALLOUT_UNINSTALL_FIRST,
+                        desc: "",
                         searchable: false,
                         apply: (_setting, container) => this.renderUninstallCallout(container),
                     }),
@@ -1894,7 +1903,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** The chat, embedding, vision and reranker pickers all live in one container the Refresh button reloads. */
     private mountModelPickers(container: HTMLElement): void {
-        // Render re-runs into the same group container; reuse it instead of stacking one per refresh.
+        // Render re-runs into the same container; reuse it instead of stacking one per refresh.
         this.modelsContainerEl =
             container.querySelector<HTMLDivElement>(`.${CLS_MODELS_CONTAINER}`) ??
             container.createDiv(CLS_MODELS_CONTAINER);

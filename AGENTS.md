@@ -207,7 +207,7 @@ vi.mock("../src/server-manager", async (importOriginal) => {
 - `update()` stores what `getSettingDefinitions()` returns; settings search reads that stored array, not a fresh call.
 - Settings search skips any definition whose `visible` predicate is false when the query runs, before it reads `searchable`.
 - `update()` rebuilds the definitions; `refreshDomState()` only re-evaluates the `visible` and `disabled` predicates.
-- A definition's `render` callback receives the `Setting` and its group; `group.listEl` is where extra elements go.
+- A definition's `render` callback receives the `Setting` and its group; after every render Obsidian keeps only the rows' `settingEl`s in `group.listEl`, so extra elements go inside `setting.settingEl`.
 
 ## Build
 

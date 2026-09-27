@@ -282,6 +282,13 @@ export class MockElement {
         this.remove();
     }
 
+    /** Obsidian's helper: the listed nodes become the only children, in order. */
+    setChildrenInPlace(nodes: MockElement[]): void {
+        for (const child of this.children) child.parentElement = null;
+        this.children = [];
+        for (const node of nodes) this.insertBefore(node, null);
+    }
+
     scrollIntoView(_opts?: unknown): void {
         /* noop */
     }
