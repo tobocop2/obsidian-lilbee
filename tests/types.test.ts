@@ -61,6 +61,11 @@ describe("DEFAULT_SETTINGS", () => {
         expect("topK" in DEFAULT_SETTINGS).toBe(false);
     });
 
+    it("keeps no copy of the system prompts, which the server owns", () => {
+        expect("ragSystemPrompt" in DEFAULT_SETTINGS).toBe(false);
+        expect("generalSystemPrompt" in DEFAULT_SETTINGS).toBe(false);
+    });
+
     it("has wizardCompleted defaulting to false", () => {
         expect(DEFAULT_SETTINGS.wizardCompleted).toBe(false);
     });
@@ -89,8 +94,6 @@ describe("DEFAULT_SETTINGS", () => {
             "sharedRoot",
             "storeContentInVault",
             "lastCatalogTab",
-            "generalSystemPrompt",
-            "ragSystemPrompt",
             "wikiEnabled",
             "wikiSyncToVault",
             "wikiVaultFolder",
@@ -103,7 +106,14 @@ describe("DEFAULT_SETTINGS", () => {
     });
 
     it("no longer carries the settings the server owns", () => {
-        const retired = ["maxDistance", "adaptiveThreshold", "wikiPruneRaw", "wikiFaithfulnessThreshold"];
+        const retired = [
+            "maxDistance",
+            "adaptiveThreshold",
+            "wikiPruneRaw",
+            "wikiFaithfulnessThreshold",
+            "ragSystemPrompt",
+            "generalSystemPrompt",
+        ];
         for (const key of retired) {
             expect(key in DEFAULT_SETTINGS).toBe(false);
         }
@@ -305,8 +315,6 @@ describe("LilbeeSettings interface", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
             serverMode: "managed",
-            ragSystemPrompt: "",
-            generalSystemPrompt: "",
             setupCompleted: false,
             sharedRoot: "",
         } as unknown as LilbeeSettings;

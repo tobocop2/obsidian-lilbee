@@ -99,6 +99,8 @@ import {
     type VaultAdapter,
     type SkippedSource,
     MANAGED_DOCS_PREFIX,
+    SETTING_SOURCE,
+    type ConfigSourcesResponse,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -214,6 +216,19 @@ function noticeIndexMismatch(done: AddDone): boolean {
 /** Forward-slash form of a path with no trailing separator. */
 function posixPath(p: string): string {
     return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/** Whether a legacy local prompt is safe to push into `key`: the server's value is still
+ *  provably the built-in default. A server old enough to omit `/api/config/sources` is
+ *  trusted only when it doesn't report the key at all; a reported value with no source
+ *  behind it may be a real user edit, so it is left alone. */
+function promptStillAtDefault(
+    key: string,
+    sources: ConfigSourcesResponse | null,
+    currentValue: string | undefined,
+): boolean {
+    if (sources !== null) return sources.sources[key] === SETTING_SOURCE.BUILT_IN;
+    return currentValue === undefined;
 }
 
 /** Task-center label for a sync, distinguishing the recovery variants. */
@@ -349,6 +364,12 @@ function downloadPercent(progress: DownloadProgress): number | undefined {
     return percentOfBytes(progress.done, progress.total);
 }
 
+/** ragSystemPrompt/generalSystemPrompt, dropped from LilbeeSettings; may still be in an older data.json. */
+interface LegacyPromptSettings {
+    ragSystemPrompt?: string;
+    generalSystemPrompt?: string;
+}
+
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
     private settingTab: LilbeeSettingTab | null = null;
@@ -427,6 +448,11 @@ export default class LilbeePlugin extends Plugin {
     // so a fresh install / first-run wizard doesn't flash a red error pill
     // while the binary downloads and the server boots.
     private serverEverReady = false;
+    /** A prompt data.json carried before the plugin stopped mirroring it; null once migrated. */
+    private pendingPromptMigration: { rag: string; general: string } | null = null;
+    /** The in-flight migration attempt, so a second `configureApi()` before it resolves joins it
+     *  instead of firing a duplicate write. */
+    private promptMigrationInFlight: Promise<void> | null = null;
 
     async onload(): Promise<void> {
         this.registerErrorCapture();
@@ -816,10 +842,6 @@ export default class LilbeePlugin extends Plugin {
             dataDir: registry.resolveDataDir(this.vaultId),
             sharedRoot,
             modelsDir: sharedModelsDir(sharedRoot),
-            systemPrompts: () => ({
-                rag: this.settings.ragSystemPrompt,
-                general: this.settings.generalSystemPrompt,
-            }),
             installedVersion: this.getSharedLilbeeVersion(),
             onStateChange: (state) => this.handleServerStateChange(state),
             onRestartsExhausted: (output: string) => {
@@ -1546,6 +1568,16 @@ export default class LilbeePlugin extends Plugin {
         this.api.setTokenProvider(() => this.readCurrentToken());
         this.api.setToken(this.readCurrentToken());
         this.api.setOutcomeCallback((outcome) => this.handleRequestOutcome(outcome));
+        void this.migratePendingPromptsOnce();
+    }
+
+    /** Runs `migratePendingPrompts` at most once at a time; a call that arrives while one is
+     *  already in flight joins it instead of firing a duplicate write. */
+    private migratePendingPromptsOnce(): Promise<void> {
+        this.promptMigrationInFlight ??= this.migratePendingPrompts().finally(() => {
+            this.promptMigrationInFlight = null;
+        });
+        return this.promptMigrationInFlight;
     }
 
     /** Update the status bar to reflect the latest API outcome. */
@@ -2070,14 +2102,66 @@ export default class LilbeePlugin extends Plugin {
         this.previousServerUrl = this.settings.serverUrl;
     }
 
+    /** Writes a legacy per-vault prompt once through the settings API, then drops it from settings.
+     *  Only ever writes into a key still at the server's built-in default; a value the server
+     *  already has from the user, a profile or an env var is left alone. */
+    private async migratePendingPrompts(): Promise<void> {
+        const pending = this.pendingPromptMigration;
+        if (pending === null) return;
+        let sources: ConfigSourcesResponse | null;
+        let cfg: Awaited<ReturnType<typeof this.api.config>>;
+        try {
+            [sources, cfg] = await Promise.all([this.api.configSources(), this.api.config()]);
+        } catch (err) {
+            // Kept for the next successful connection to retry.
+            this.journal.lifecycle(
+                `could not check the server before migrating a saved system prompt: ${errorMessage(err, String(err))}`,
+            );
+            return;
+        }
+        const updates: Record<string, string> = {};
+        if (pending.rag && promptStillAtDefault(CONFIG_KEY.RAG_SYSTEM_PROMPT, sources, cfg.rag_system_prompt)) {
+            updates[CONFIG_KEY.RAG_SYSTEM_PROMPT] = pending.rag;
+        }
+        if (
+            pending.general &&
+            promptStillAtDefault(CONFIG_KEY.GENERAL_SYSTEM_PROMPT, sources, cfg.general_system_prompt)
+        ) {
+            updates[CONFIG_KEY.GENERAL_SYSTEM_PROMPT] = pending.general;
+        }
+        if (Object.keys(updates).length > 0) {
+            try {
+                await applyConfig(this, updates);
+            } catch (err) {
+                // Kept for the next successful connection to retry.
+                this.journal.lifecycle(
+                    `could not migrate a saved system prompt to the server: ${errorMessage(err, String(err))}`,
+                );
+                return;
+            }
+        }
+        this.pendingPromptMigration = null;
+        await this.persistAll();
+    }
+
     async loadSettings(): Promise<void> {
-        const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
+        const raw = (await this.loadData()) as
+            (LilbeeSettings & LegacyPromptSettings & { taskHistory?: { history?: unknown[] } }) | null;
         this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
         // Object.assign only merges one level, so a stored agentIntegration would
         // shadow the defaults of any key added to it later.
         this.settings.agentIntegration = { ...DEFAULT_AGENT_INTEGRATION, ...(raw?.agentIntegration ?? {}) };
         // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
         this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
+        // ragSystemPrompt/generalSystemPrompt predate the server-backed prompt rows; a vault saved
+        // before that change still carries them in data.json. Queue them for a one-time server
+        // write and drop the local copy, which Object.assign above would otherwise carry forward.
+        this.pendingPromptMigration =
+            raw?.ragSystemPrompt || raw?.generalSystemPrompt
+                ? { rag: raw?.ragSystemPrompt ?? "", general: raw?.generalSystemPrompt ?? "" }
+                : null;
+        delete (this.settings as LilbeeSettings & LegacyPromptSettings).ragSystemPrompt;
+        delete (this.settings as LilbeeSettings & LegacyPromptSettings).generalSystemPrompt;
         this.recordServerBaseline();
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());

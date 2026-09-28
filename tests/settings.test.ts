@@ -1043,18 +1043,6 @@ describe("LilbeeSettingTab", () => {
         const RAG_PROMPT_RESET = 4;
         const GENERAL_PROMPT_RESET = 5;
 
-        it("saves ragSystemPrompt when the cited-answer textarea changes", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
-
-            // The cited-answer textarea is the first textarea in Generation settings.
-            await textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
-            expect(plugin.saveSettings).toHaveBeenCalled();
-        });
-
         it("sends the cited-answer prompt to the server", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
@@ -1085,7 +1073,7 @@ describe("LilbeeSettingTab", () => {
         });
 
         it("an emptied prompt box keeps the saved prompt until an explicit reset", async () => {
-            const plugin = makePlugin({ generalSystemPrompt: "You are a friendly tutor." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaByName, extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -1102,9 +1090,9 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ general_system_prompt: "You are lilbee." });
         });
 
-        it("resetting a prompt clears the mirrored plugin setting", async () => {
+        it("resets a prompt through the fallback default when the server has no reset route", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -1116,8 +1104,6 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 rag_system_prompt: "Answer from the cited documents.",
             });
-            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
-            expect(plugin.saveSettings).toHaveBeenCalled();
             expect(
                 Notice.instances.some((n) =>
                     n.message.includes(MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
@@ -1127,7 +1113,7 @@ describe("LilbeeSettingTab", () => {
 
         it("reports a failure when the server serves no defaults to reset to", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             // A server without /api/config/defaults either.
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
@@ -1137,7 +1123,6 @@ describe("LilbeeSettingTab", () => {
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
             expect(
                 Notice.instances.some((n) =>
                     n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
@@ -1147,7 +1132,7 @@ describe("LilbeeSettingTab", () => {
 
         it("resets a prompt through the reset route on a server that has it, writing no default", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
                 updated: ["rag_system_prompt"],
@@ -1161,7 +1146,6 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.resetConfig).toHaveBeenCalledWith(["rag_system_prompt"]);
             expect(plugin.api.configDefaults).not.toHaveBeenCalled();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
         });
 
         it("a reset clicked after a keystroke lands last on the server", async () => {
@@ -1199,12 +1183,11 @@ describe("LilbeeSettingTab", () => {
                 { rag_system_prompt: "You are a pirate." },
                 { rag_system_prompt: "Answer from the cited documents." },
             ]);
-            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
         });
 
-        it("keeps the mirrored setting when the server refuses the reset", async () => {
+        it("shows a failure notice when the server refuses the prompt's default write", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("read-only config"));
             const tab = makeTab(plugin);
@@ -1214,7 +1197,6 @@ describe("LilbeeSettingTab", () => {
             });
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
             expect(
                 Notice.instances.some((n) =>
                     n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
@@ -1237,7 +1219,7 @@ describe("LilbeeSettingTab", () => {
             ).toBe(true);
         });
 
-        it("saves generalSystemPrompt when the no-document textarea changes", async () => {
+        it("sends the no-document prompt to the server", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -1245,8 +1227,9 @@ describe("LilbeeSettingTab", () => {
 
             // The no-document textarea is the second textarea in Generation settings.
             await textAreaByName.get(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)!("You are a friendly tutor.");
-            expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
-            expect(plugin.saveSettings).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                general_system_prompt: "You are a friendly tutor.",
+            });
         });
 
         it("keeps the Default placeholder when the server reports an empty prompt", async () => {
@@ -3795,8 +3778,8 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 768 });
         });
 
-        it("a system prompt the server refuses stays in the box, as the plugin saved it for the next start", async () => {
-            const plugin = makePlugin({ generalSystemPrompt: "You are a friendly tutor." });
+        it("a system prompt the server refuses stays in the box for correcting", async () => {
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
             const tab = makeTab(plugin);
@@ -3808,7 +3791,6 @@ describe("managed mode settings", () => {
             area.blur();
             await settle();
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
-            expect(plugin.settings.generalSystemPrompt).toBe("You are terse.");
             expect(area.inputEl.value).toBe("You are terse.");
         });
 

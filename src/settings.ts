@@ -158,9 +158,6 @@ interface ConfigRowSpec {
     desc: string;
 }
 
-/** The plugin settings that mirror a server-side system prompt. */
-type PromptSettingKey = "ragSystemPrompt" | "generalSystemPrompt";
-
 /** Slider bounds for a server-config number. */
 interface SliderLimits {
     min: number;
@@ -2112,13 +2109,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     /** Send a system prompt to the server. An empty box writes nothing: the saved prompt stays in force. */
-    private async pushSystemPrompt(key: string, value: string, name: string): Promise<void> {
+    private async pushSystemPrompt(key: string, value: string, name: string): Promise<CommitOutcome> {
         const trimmed = value.trim();
-        if (trimmed === "") return;
+        if (trimmed === "") return COMMIT_OUTCOME.DROPPED;
         try {
             await this.writeConfigKey(key, trimmed);
+            return COMMIT_OUTCOME.WRITTEN;
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+            return COMMIT_OUTCOME.REFUSED;
         }
     }
 
@@ -2298,23 +2297,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         await this.writeConfig({ [key]: defaults[key] });
     }
 
-    /** Reset a system prompt in both places it lives: the server's value, then the plugin's mirror. */
-    private appendPromptResetAffordance(setting: Setting, spec: ConfigRowSpec, settingsKey: PromptSettingKey): Setting {
-        setting.addExtraButton((btn) =>
-            btn
-                .setIcon(ICON_RESET)
-                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
-                .onClick(async () => {
-                    if (!(await this.pushConfigReset(spec.key, spec.name))) return;
-                    this.plugin.settings[settingsKey] = DEFAULT_SETTINGS[settingsKey];
-                    await this.plugin.saveSettings();
-                    this.refresh();
-                }),
-        );
-        this.markSource(setting, spec.key);
-        return setting;
-    }
-
     private appendLocalResetAffordance<K extends keyof LilbeeSettings>(
         setting: Setting,
         key: K,
@@ -2346,17 +2328,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         };
         return [
             // Both prompts are server config, shown in external mode too.
-            this.serverRow(rag, (setting) =>
-                this.applySystemPromptRow(setting, rag, "ragSystemPrompt", this.plugin.settings.ragSystemPrompt),
-            ),
-            this.serverRow(general, (setting) =>
-                this.applySystemPromptRow(
-                    setting,
-                    general,
-                    "generalSystemPrompt",
-                    this.plugin.settings.generalSystemPrompt,
-                ),
-            ),
+            this.serverRow(rag, (setting) => this.applySystemPromptRow(setting, rag)),
+            this.serverRow(general, (setting) => this.applySystemPromptRow(setting, general)),
             this.reportedRow(
                 { key: CONFIG_KEY.CHAT_MODE, name: MESSAGES.LABEL_CHAT_MODE, desc: MESSAGES.DESC_CHAT_MODE },
                 (setting) => this.applyChatModeRow(setting),
@@ -2375,28 +2348,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderRows(details, this.rowsGeneration());
     }
 
-    /** A prompt kept in plugin settings and mirrored to the server. */
-    private applySystemPromptRow(
-        setting: Setting,
-        spec: ConfigRowSpec,
-        settingsKey: PromptSettingKey,
-        initial: string,
-    ): void {
+    /** A system prompt kept only on the server; the box fills from GET /api/config, never a plugin copy. */
+    private applySystemPromptRow(setting: Setting, spec: ConfigRowSpec): void {
         setting
             .setName(spec.name)
             .setDesc(spec.desc)
             .addTextArea((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT).setValue(initial);
-                this.commitOnChange(text.inputEl, async (value) => {
-                    this.plugin.settings[settingsKey] = value;
-                    await this.plugin.saveSettings();
-                    await this.pushSystemPrompt(spec.key, value, spec.name);
-                    // Saved for the next server start even when the live write fails.
-                    return COMMIT_OUTCOME.WRITTEN;
-                });
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT);
+                this.commitOnChange(text.inputEl, (value) => this.pushSystemPrompt(spec.key, value, spec.name));
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
-        this.appendPromptResetAffordance(setting, spec, settingsKey);
+        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
     private applyChatModeRow(setting: Setting): void {

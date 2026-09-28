@@ -692,8 +692,6 @@ export interface StorageMoveTarget {
 export interface LilbeeSettings {
     serverUrl: string;
     serverMode: ServerMode;
-    ragSystemPrompt: string;
-    generalSystemPrompt: string;
     /** A server has answered, so the plugin may start itself on the next launch. */
     setupCompleted: boolean;
     /** The wizard reached an end, by finishing or by an explicit skip. While false, the next launch reopens it. */
@@ -734,8 +732,6 @@ export interface LilbeeSettings {
 export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverUrl: "http://127.0.0.1:7433",
     serverMode: "managed",
-    ragSystemPrompt: "",
-    generalSystemPrompt: "",
     setupCompleted: false,
     wizardCompleted: false,
     wikiEnabled: false,

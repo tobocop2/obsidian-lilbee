@@ -143,8 +143,8 @@ vi.mock("../src/server-manager", () => {
 
 import LilbeePlugin from "../src/main";
 import { App, Notice } from "obsidian";
-import { NVIDIA_PROBE_STATUS, SHARED_PATH, UNINSTALL_TARGET } from "../src/types";
-import type { GpuDetection } from "../src/types";
+import { NVIDIA_PROBE_STATUS, SETTING_SOURCE, SHARED_PATH, UNINSTALL_TARGET } from "../src/types";
+import type { GpuDetection, SettingSource } from "../src/types";
 
 /** A probe result, as every install now records one. */
 const DETECTION: GpuDetection = {
@@ -334,20 +334,13 @@ describe("managed server tracks the open vault's data dir", () => {
         expect(smB.dataDir).toBe("/shared/vaults/b");
     });
 
-    it("hands the supervisor the prompts settings hold now, not a copy from build time", async () => {
+    it("never hands the supervisor a system prompt to spawn with", async () => {
         const plugin = await createPlugin();
         const registry = plugin.vaultRegistry!;
-        plugin.settings.ragSystemPrompt = "You are a pirate.";
-        plugin.settings.generalSystemPrompt = "You are a tutor.";
         const ctor = (await import("../src/server-manager")).ServerManager as unknown as ReturnType<typeof vi.fn>;
         ctor.mockClear();
         (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
-        const readPrompts = ctor.mock.calls.at(-1)![0].systemPrompts as () => { rag: string; general: string };
-        expect(readPrompts()).toEqual({ rag: "You are a pirate.", general: "You are a tutor." });
-
-        // A reset clears the mirror; the supervisor must see the cleared value on its next spawn.
-        plugin.settings.ragSystemPrompt = "";
-        expect(readPrompts()).toEqual({ rag: "", general: "You are a tutor." });
+        expect(ctor.mock.calls.at(-1)![0]).not.toHaveProperty("systemPrompts");
     });
 
     it("falls back to the default per-vault dir when the open vault is unregistered", async () => {
@@ -974,5 +967,179 @@ describe("status bar after an uninstall", () => {
         await (plugin as any).probeServerHealth();
 
         expect(health).not.toHaveBeenCalled();
+    });
+});
+
+describe("legacy system prompt migration", () => {
+    /** A plugin loaded from data.json carrying the retired local prompt fields. */
+    async function createPluginWithLegacyPrompts(raw: Record<string, unknown>) {
+        const app = new App() as any;
+        app.vault.adapter.getBasePath = () => "/Users/tester/MyVault";
+        const plugin = new LilbeePlugin(app, { id: "lilbee" } as any);
+        (plugin as any).loadData = vi.fn().mockResolvedValue(raw);
+        await plugin.loadSettings();
+        return plugin;
+    }
+
+    it("clears the local copy as soon as settings load", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        expect("ragSystemPrompt" in plugin.settings).toBe(false);
+        expect("generalSystemPrompt" in plugin.settings).toBe(false);
+    });
+
+    /** The server's answer when both prompt keys are at the given source. */
+    function stubSources(plugin: LilbeePlugin, rag: SettingSource, general: SettingSource) {
+        vi.spyOn(plugin.api, "configSources").mockResolvedValue({
+            sources: { rag_system_prompt: rag, general_system_prompt: general },
+        });
+    }
+
+    it("writes a saved prompt to the server once the API is configured, then persists the drop", async () => {
+        const plugin = await createPluginWithLegacyPrompts({
+            ragSystemPrompt: "You are a pirate.",
+            generalSystemPrompt: "You are a tutor.",
+        });
+        stubSources(plugin, SETTING_SOURCE.BUILT_IN, SETTING_SOURCE.BUILT_IN);
+        vi.spyOn(plugin.api, "config").mockResolvedValue({});
+        const updateConfig = vi
+            .spyOn(plugin.api, "updateConfig")
+            .mockResolvedValue({ updated: [], reindex_required: false });
+        const persistAll = vi.spyOn(plugin as any, "persistAll").mockResolvedValue(undefined);
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).toHaveBeenCalledWith({
+            rag_system_prompt: "You are a pirate.",
+            general_system_prompt: "You are a tutor.",
+        });
+        expect(persistAll).toHaveBeenCalled();
+    });
+
+    it("migrates only the no-document prompt when that is the one that was saved", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ generalSystemPrompt: "You are a tutor." });
+        stubSources(plugin, SETTING_SOURCE.BUILT_IN, SETTING_SOURCE.BUILT_IN);
+        vi.spyOn(plugin.api, "config").mockResolvedValue({});
+        const updateConfig = vi
+            .spyOn(plugin.api, "updateConfig")
+            .mockResolvedValue({ updated: [], reindex_required: false });
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).toHaveBeenCalledWith({ general_system_prompt: "You are a tutor." });
+    });
+
+    it("never calls the server when no legacy prompt was saved", async () => {
+        const plugin = await createPlugin();
+        const updateConfig = vi.spyOn(plugin.api, "updateConfig");
+        const configSources = vi.spyOn(plugin.api, "configSources");
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).not.toHaveBeenCalled();
+        expect(configSources).not.toHaveBeenCalled();
+    });
+
+    it("keeps the pending prompt for the next connection when the migration write fails", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        stubSources(plugin, SETTING_SOURCE.BUILT_IN, SETTING_SOURCE.BUILT_IN);
+        vi.spyOn(plugin.api, "config").mockResolvedValue({});
+        const updateConfig = vi.spyOn(plugin.api, "updateConfig").mockRejectedValueOnce(new Error("offline"));
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+        expect(updateConfig).toHaveBeenCalledTimes(1);
+
+        updateConfig.mockResolvedValueOnce({ updated: [], reindex_required: false });
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).toHaveBeenCalledTimes(2);
+        expect(updateConfig).toHaveBeenLastCalledWith({ rag_system_prompt: "You are a pirate." });
+    });
+
+    it("keeps the pending prompt for the next connection when reading the server fails", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        vi.spyOn(plugin.api, "configSources").mockRejectedValueOnce(new Error("offline"));
+        vi.spyOn(plugin.api, "config").mockResolvedValue({});
+        const updateConfig = vi.spyOn(plugin.api, "updateConfig");
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).not.toHaveBeenCalled();
+        expect((plugin as any).pendingPromptMigration).not.toBeNull();
+    });
+
+    it.each([
+        ["a value the user set directly", SETTING_SOURCE.USER],
+        ["a value a profile set", SETTING_SOURCE.PROFILE],
+        ["a value an env var set", SETTING_SOURCE.ENV],
+        ["a runtime-derived value", SETTING_SOURCE.AUTO],
+    ] as const)("keeps the server's rag prompt when the source reports %s", async (_label, source) => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        stubSources(plugin, source, SETTING_SOURCE.BUILT_IN);
+        vi.spyOn(plugin.api, "config").mockResolvedValue({ rag_system_prompt: "the server's own prompt" });
+        const persistAll = vi.spyOn(plugin as any, "persistAll").mockResolvedValue(undefined);
+        const updateConfig = vi
+            .spyOn(plugin.api, "updateConfig")
+            .mockResolvedValue({ updated: [], reindex_required: false });
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).not.toHaveBeenCalled();
+        expect(persistAll).toHaveBeenCalled();
+        expect((plugin as any).pendingPromptMigration).toBeNull();
+    });
+
+    it("migrates the rag prompt on an older server without the sources route when the key is unset", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        vi.spyOn(plugin.api, "configSources").mockResolvedValue(null);
+        vi.spyOn(plugin.api, "config").mockResolvedValue({});
+        const updateConfig = vi
+            .spyOn(plugin.api, "updateConfig")
+            .mockResolvedValue({ updated: [], reindex_required: false });
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).toHaveBeenCalledWith({ rag_system_prompt: "You are a pirate." });
+    });
+
+    it("keeps the server's rag prompt on an older server without the sources route when the key is already set", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        vi.spyOn(plugin.api, "configSources").mockResolvedValue(null);
+        vi.spyOn(plugin.api, "config").mockResolvedValue({ rag_system_prompt: "the server's own prompt" });
+        const persistAll = vi.spyOn(plugin as any, "persistAll").mockResolvedValue(undefined);
+        const updateConfig = vi
+            .spyOn(plugin.api, "updateConfig")
+            .mockResolvedValue({ updated: [], reindex_required: false });
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(updateConfig).not.toHaveBeenCalled();
+        expect(persistAll).toHaveBeenCalled();
+    });
+
+    it("fires only one migration when two connections configure the API before the first resolves", async () => {
+        const plugin = await createPluginWithLegacyPrompts({ ragSystemPrompt: "You are a pirate." });
+        const configSources = vi
+            .spyOn(plugin.api, "configSources")
+            .mockResolvedValue({ sources: { rag_system_prompt: SETTING_SOURCE.BUILT_IN } });
+        vi.spyOn(plugin.api, "config").mockResolvedValue({});
+        const updateConfig = vi
+            .spyOn(plugin.api, "updateConfig")
+            .mockResolvedValue({ updated: [], reindex_required: false });
+
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        (plugin as any).configureApi("http://127.0.0.1:54321");
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(configSources).toHaveBeenCalledTimes(1);
+        expect(updateConfig).toHaveBeenCalledTimes(1);
     });
 });
