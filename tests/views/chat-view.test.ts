@@ -4241,6 +4241,28 @@ describe("ChatView — offline retry", () => {
         expect((view as any).retryCount).toBe(0);
     });
 
+    it("keeps one retry loop when the rail refreshes while offline", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+        view.refreshRail();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(vi.getTimerCount()).toBe(1);
+        const configCalls = (plugin.api.config as ReturnType<typeof vi.fn>).mock.calls.length;
+        await vi.advanceTimersByTimeAsync(5000);
+        expect((plugin.api.config as ReturnType<typeof vi.fn>).mock.calls.length - configCalls).toBe(1);
+        expect(vi.getTimerCount()).toBe(1);
+
+        await view.onClose();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it("keeps a single connecting label across retries", async () => {
         const plugin = makePlugin();
         plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));

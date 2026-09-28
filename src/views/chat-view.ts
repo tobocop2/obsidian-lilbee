@@ -538,7 +538,7 @@ export class ChatView extends ItemView {
                 // already running, and the retry below never stopped.
                 if (this.chatOptionGroups().flat().length === 0) {
                     this.showEmptyState();
-                    this.retryTimer = window.setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
+                    this.scheduleRetry();
                 } else {
                     this.hideEmptyState();
                 }
@@ -558,8 +558,13 @@ export class ChatView extends ItemView {
                 if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
                     new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
                 }
-                this.retryTimer = window.setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
+                this.scheduleRetry();
             });
+    }
+
+    private scheduleRetry(): void {
+        if (this.retryTimer !== null) window.clearTimeout(this.retryTimer);
+        this.retryTimer = window.setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
     }
 
     private renderChatModeToggle(serverConfig: Record<string, unknown> | null): void {
