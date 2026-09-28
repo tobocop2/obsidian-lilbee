@@ -164,6 +164,7 @@ import {
 } from "./profiles";
 import type { ProfileAction } from "./profiles";
 import { ProfileLibraryModal } from "./views/profile-library-modal";
+import { dismissAnalyzeTip, maybeShowAnalyzeTip, runAnalyze } from "./analyze";
 
 const BYTES_PER_MB = 1_000_000;
 
@@ -484,6 +485,7 @@ export default class LilbeePlugin extends Plugin {
         this.taskQueue.onChange(() => this.schedulePendingSyncHint());
         this.registerCommands();
         this.registerProfileCommands();
+        this.registerAnalyzeCommands();
 
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu: Menu, file: TAbstractFile) => {
@@ -1986,6 +1988,28 @@ export default class LilbeePlugin extends Plugin {
         ];
     }
 
+    /** The analyze command and its tip-dismiss command, each offered only while the server is ready. */
+    private registerAnalyzeCommands(): void {
+        this.addCommand({
+            id: "analyze-vault",
+            name: MESSAGES.COMMAND_ANALYZE,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) runAnalyze(this);
+                return true;
+            },
+        });
+        this.addCommand({
+            id: "analyze-dismiss-tip",
+            name: MESSAGES.COMMAND_ANALYZE_DISMISS_TIP,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void dismissAnalyzeTip(this);
+                return true;
+            },
+        });
+    }
+
     /**
      * Re-point this vault at a different lilbee data-dir. Used by Settings →
      * "Use existing lilbee data directory" so a user can adopt an existing
@@ -2964,6 +2988,7 @@ export default class LilbeePlugin extends Plugin {
         makeStream?: (signal: AbortSignal) => AsyncGenerator<SSEEvent, void>,
         label = "Adding files",
     ): Promise<void> {
+        void maybeShowAnalyzeTip(this);
         const taskId = this.taskQueue.enqueue(label, TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
@@ -3601,6 +3626,7 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
+        if (trigger === SYNC_TRIGGER.USER) void maybeShowAnalyzeTip(this);
         // One sync at a time: a user trigger reports the running one, an automatic one defers.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
             if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);

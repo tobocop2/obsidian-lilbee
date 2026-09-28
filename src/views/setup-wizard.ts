@@ -31,6 +31,7 @@ import { isForeignVendorQuant, isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 import { applyEmbeddingModelDeferred } from "../utils/reindex";
+import { analyzeSupported, runAnalyze } from "../analyze";
 import {
     bindEscapeToClose,
     closeSettings,
@@ -56,14 +57,15 @@ interface SyncProgress {
 }
 
 /**
- * Ordered, visible-in-indicator steps. The indicator labels these 1..6 so the
- * user has a clear sense of "Step N of 6" while moving through setup. Welcome
+ * Ordered, visible-in-indicator steps. The indicator labels these 1..7 so the
+ * user has a clear sense of "Step N of 7" while moving through setup. Welcome
  * is not in the numbered sequence (it's the intro splash).
  */
 const INDICATOR_STEPS: { step: number; key: string; label: string }[] = [
     { step: WIZARD_STEP.SERVER_MODE, key: "server", label: "Server" },
     { step: WIZARD_STEP.MODEL_PICKER, key: "model", label: "Model" },
     { step: WIZARD_STEP.EMBEDDING_PICKER, key: "embedding", label: "Embed" },
+    { step: WIZARD_STEP.ANALYZE, key: "analyze", label: "Analyze" },
     { step: WIZARD_STEP.SYNC, key: "sync", label: "Sync" },
     { step: WIZARD_STEP.WIKI, key: "wiki", label: "Wiki" },
     { step: WIZARD_STEP.DONE, key: "done", label: "Done" },
@@ -79,6 +81,7 @@ const STEP_KEY: Record<number, string> = {
     [WIZARD_STEP.SERVER_MODE]: "server",
     [WIZARD_STEP.MODEL_PICKER]: "model",
     [WIZARD_STEP.EMBEDDING_PICKER]: "embedding",
+    [WIZARD_STEP.ANALYZE]: "analyze",
     [WIZARD_STEP.SYNC]: "sync",
     [WIZARD_STEP.WIKI]: "wiki",
     [WIZARD_STEP.DONE]: "done",
@@ -335,6 +338,9 @@ export class SetupWizard extends Modal {
                 break;
             case WIZARD_STEP.EMBEDDING_PICKER:
                 this.renderEmbeddingPicker();
+                break;
+            case WIZARD_STEP.ANALYZE:
+                this.renderAnalyze();
                 break;
             case WIZARD_STEP.SYNC:
                 this.renderSync(syncOptions);
@@ -1063,8 +1069,7 @@ export class SetupWizard extends Modal {
         this.primaryBtn = downloadBtn;
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedEmbedding) {
-                this.step = WIZARD_STEP.SYNC;
-                this.renderStep();
+                void this.goToAnalyzeOrSync();
                 return;
             }
             if (this.selectedEmbedding.installed) {
@@ -1076,8 +1081,7 @@ export class SetupWizard extends Modal {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", label));
                         return;
                     }
-                    this.step = WIZARD_STEP.SYNC;
-                    this.renderStep(syncOptions);
+                    await this.goToAnalyzeOrSync(syncOptions);
                 })();
                 return;
             }
@@ -1163,6 +1167,34 @@ export class SetupWizard extends Modal {
         }
     }
 
+    /** Embed finished; go to the Analyze step, or straight to Sync on a server that predates analyze. */
+    private async goToAnalyzeOrSync(syncOptions?: SyncOptions): Promise<void> {
+        const supported = await analyzeSupported(this.plugin);
+        this.step = supported ? WIZARD_STEP.ANALYZE : WIZARD_STEP.SYNC;
+        this.renderStep(syncOptions);
+    }
+
+    private renderAnalyze(): void {
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_WIZARD_ANALYZE);
+        step.createEl("p", { text: MESSAGES.WIZARD_ANALYZE_HELP });
+
+        const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
+        backBtn.addEventListener("click", () => this.back());
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_ANALYZE });
+        skipBtn.addEventListener("click", () => {
+            this.step = WIZARD_STEP.SYNC;
+            this.renderStep();
+        });
+        const runBtn = actions.createEl("button", { text: MESSAGES.BUTTON_RUN_ANALYZE, cls: "mod-cta" });
+        runBtn.addEventListener("click", () => {
+            runAnalyze(this.plugin, null);
+            this.step = WIZARD_STEP.SYNC;
+            this.renderStep();
+        });
+    }
+
     private async pullEmbeddingModel(
         downloadBtn: HTMLElement,
         progressEl: HTMLElement,
@@ -1214,8 +1246,7 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            this.step = WIZARD_STEP.SYNC;
-            this.renderStep(syncOptions);
+            await this.goToAnalyzeOrSync(syncOptions);
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);

@@ -25,6 +25,8 @@ import type {
     ConfigSchemaResponse,
     ConfigSourcesResponse,
     ActiveProfileResponse,
+    AnalyzeOptions,
+    AnalyzeStateResponse,
     ExportedProfile,
     ProfileApplyResponse,
     ProfileDiffResponse,
@@ -714,6 +716,41 @@ export class LilbeeClient {
             { stream: true, signal },
         );
         yield* this.parseSSE(res);
+    }
+
+    /** Streams an analyze run: `analyze` progress frames, then `done` with the report or `error`. */
+    async *analyzeStream(
+        directory?: string | null,
+        options?: AnalyzeOptions,
+        signal?: AbortSignal,
+    ): AsyncGenerator<SSEEvent, void> {
+        const body: Record<string, unknown> = {};
+        if (directory !== undefined) body.directory = directory;
+        if (options?.apply) body.apply = true;
+        if (options?.save !== undefined && options.save !== null) body.save = options.save;
+        if (options?.target) body.target = options.target;
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/analyze`,
+            {
+                method: "POST",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify(body),
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
+    /** The project's analyze tip state, or null on a server that predates analyze. */
+    async analyzeState(): Promise<AnalyzeStateResponse | null> {
+        return this.jsonOrNullWhenMissing<AnalyzeStateResponse>(`${this.baseUrl}/api/analyze/state`);
+    }
+
+    /** Hide the analyze tip for this project; null on a server that predates analyze. */
+    async dismissAnalyzeTip(): Promise<AnalyzeStateResponse | null> {
+        return this.jsonOrNullWhenMissing<AnalyzeStateResponse>(`${this.baseUrl}/api/analyze/dismiss`, {
+            method: "POST",
+        });
     }
 
     async listModels(): Promise<ModelsResponse> {

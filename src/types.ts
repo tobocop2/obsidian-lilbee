@@ -930,6 +930,7 @@ export const SSE_EVENT = {
     BATCH_PROGRESS: "batch_progress",
     MEMORY_EXTRACTED: "memory_extracted",
     GPU_STATS: "gpu_stats",
+    ANALYZE: "analyze",
 } as const;
 
 /** Stage of a wiki build or synthesis run. */
@@ -1277,6 +1278,91 @@ export interface ProfileValidationResponse {
 export interface ExportedProfile {
     filename: string | null;
     content: string;
+}
+
+/** Progress payload of an `analyze` SSE event: one extraction batch. */
+export interface AnalyzeProgress {
+    done: number;
+    total: number;
+    file: string;
+}
+
+/** What analyze takes on `POST /api/analyze`; a target needs `apply` or `save`. */
+export interface AnalyzeOptions {
+    apply?: boolean;
+    save?: string | null;
+    target?: ProfileFolder | null;
+}
+
+/** A sampled file analyze could not read. */
+export interface AnalyzeFailure {
+    file: string;
+    error: string;
+}
+
+/** PDF pages, scans and tables; `scanned_share` also counts image files at the sample rate. */
+export interface AnalyzePdf {
+    files: number;
+    pages: number;
+    scanned_pages: number;
+    scanned_share: number;
+    files_with_tables: number;
+    tables: number;
+    median_pages: number | null;
+}
+
+/** A detected language (ISO 639-3), its share of text files, its stemmer, and OCR support. */
+export interface AnalyzeLanguage {
+    code: string;
+    share: number;
+    fts_language: string | null;
+    ocr_supported: boolean;
+}
+
+/** Why the recommendation sets a setting; the key `profile` explains the built-in pick. */
+export interface AnalyzeReason {
+    key: string;
+    text: string;
+}
+
+/** The picked built-in, the derived profile, and what applying it changes. */
+export interface AnalyzeRecommendation {
+    builtin: string;
+    name: string | null;
+    values: Record<string, unknown>;
+    changes: ProfileDiffRow[];
+    kept: string[];
+    reasons: AnalyzeReason[];
+    notes: string[];
+}
+
+/** The profile analyze saved or switched to, its file, and whether the project now uses it. */
+export interface AnalyzeSaved extends ProfileLocationResponse {
+    applied: boolean;
+}
+
+/** One analyze run: what it read and what it recommends; the shape every surface returns. */
+export interface AnalyzeResponse {
+    files_total: number;
+    documents_total: number;
+    files_read: number;
+    files_counted: number;
+    cap: number;
+    failed: AnalyzeFailure[];
+    file_types: Record<string, number>;
+    code_share: number;
+    pdf: AnalyzePdf;
+    median_chars: number | null;
+    languages: AnalyzeLanguage[];
+    recommendation: AnalyzeRecommendation;
+    saved: AnalyzeSaved | null;
+}
+
+/** Whether the project was analyzed, hid the analyze tip, and would see the tip now. */
+export interface AnalyzeStateResponse {
+    analyzed: boolean;
+    tip_dismissed: boolean;
+    tip_shows: boolean;
 }
 
 export interface EmbeddingModelResponse {
@@ -1635,9 +1721,10 @@ export const WIZARD_STEP = {
     SERVER_MODE: 1,
     MODEL_PICKER: 2,
     EMBEDDING_PICKER: 3,
-    SYNC: 4,
-    WIKI: 5,
-    DONE: 6,
+    ANALYZE: 4,
+    SYNC: 5,
+    WIKI: 6,
+    DONE: 7,
 } as const satisfies Record<string, number>;
 
 export const DOWNLOAD_PANEL = {

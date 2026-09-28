@@ -98,6 +98,7 @@ export const MESSAGES = {
     BUTTON_NEXT: "Next",
     BUTTON_CONTINUE: "Continue",
     BUTTON_CANCEL: "Cancel",
+    BUTTON_CLOSE: "Close",
     BUTTON_PULL: "Pull",
     BUTTON_PULL_MODEL: "Pull Model",
     BUTTON_PULL_ANYWAY: "Pull anyway",
@@ -1568,6 +1569,50 @@ export const MESSAGES = {
     COMMAND_PROFILE_DUPLICATE: "Duplicate profile",
     COMMAND_PROFILE_RENAME: "Rename profile",
     COMMAND_PROFILE_DELETE: "Delete profile",
+    COMMAND_ANALYZE: "Analyze your vault",
+    COMMAND_ANALYZE_DISMISS_TIP: "Stop suggesting vault analysis",
+    TITLE_ANALYZE_RUNNING: "Analyzing your vault",
+    TITLE_ANALYZE_REPORT: "Vault analysis",
+    TITLE_ANALYZE_APPLYING: "Applying the recommendation",
+    TITLE_ANALYZE_SAVING: "Saving the recommendation",
+    STATUS_ANALYZE_STARTING: "Starting...",
+    STATUS_ANALYZE_PROGRESS: (current: number, total: number, file: string): string =>
+        `Reading file ${current} of ${total}: ${file}`,
+    LABEL_ANALYZE_READING: (read: number, total: number, counted: number): string =>
+        counted > 0
+            ? `Read ${read} of ${total} documents; counted ${counted} code, image and archive files.`
+            : `Read ${read} of ${total} documents.`,
+    LABEL_ANALYZE_SAMPLED: (cap: number): string => `The documents are sampled evenly; the cap is ${cap}.`,
+    LABEL_ANALYZE_FAILURES_TITLE: "Files analyze could not read",
+    LABEL_ANALYZE_STATS_TITLE: "What analyze found",
+    LABEL_ANALYZE_CODE_SHARE: (percent: number): string => `Code files: ${percent}%`,
+    LABEL_ANALYZE_PDF_SUMMARY: (files: number, scannedPercent: number, tables: number): string =>
+        `PDFs: ${files}, ${scannedPercent}% scanned, ${tables} tables`,
+    LABEL_ANALYZE_LANGUAGES_TITLE: "Languages",
+    LABEL_ANALYZE_LANG_COL_LANGUAGE: "Language",
+    LABEL_ANALYZE_LANG_COL_SHARE: "Share",
+    LABEL_ANALYZE_LANG_COL_STEMMER: "Search stemmer",
+    LABEL_ANALYZE_LANG_COL_OCR: "OCR",
+    LABEL_ANALYZE_STEMMER_NONE: "none",
+    LABEL_ANALYZE_OCR_YES: "supported",
+    LABEL_ANALYZE_OCR_NO: "not supported",
+    LABEL_ANALYZE_RECOMMENDATION_TITLE: (builtin: string): string => `Recommended: ${builtin}`,
+    LABEL_ANALYZE_KEPT: "Keeps your values",
+    LABEL_ANALYZE_REASONS_TITLE: "Why",
+    LABEL_ANALYZE_NOTES_TITLE: "Notes",
+    LABEL_ANALYZE_NOTHING_TO_CHANGE: "This vault's settings already match the recommendation.",
+    BUTTON_ANALYZE_SAVE_ONLY: "Save only",
+    NOTICE_ANALYZE_APPLIED: (name: string): string => `Switched to ${name}.`,
+    NOTICE_ANALYZE_SAVED: (name: string, path: string): string => `Saved ${name} to ${path}.`,
+    NOTICE_ANALYZE_TIP: 'Not analyzed yet. Run "Analyze your vault" to tune lilbee for your notes.',
+    NOTICE_ANALYZE_TIP_DISMISSED: "You won't see the vault analysis tip again.",
+    NOTICE_ANALYZE_UNSUPPORTED: "This lilbee server doesn't support analyze yet. Update lilbee to use it.",
+    ERROR_ANALYZE_ACTION: (reason: string): string => `The vault analysis failed: ${reason}`,
+    TITLE_WIZARD_ANALYZE: "Analyze your vault",
+    WIZARD_ANALYZE_HELP:
+        "Analyze reads your documents and recommends settings for them: OCR language, search language, and how ingest handles scans, tables and code. Nothing changes until you apply or save the result.",
+    BUTTON_RUN_ANALYZE: "Run analysis",
+    BUTTON_SKIP_ANALYZE: "Skip for now",
 } as const;
 
 /** Product names for the agent clients; the wire values are lowercase ids. */

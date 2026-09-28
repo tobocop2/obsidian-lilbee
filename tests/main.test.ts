@@ -233,6 +233,16 @@ vi.mock("../src/views/profile-library-modal", () => ({
     },
 }));
 
+const analyzeFlows = vi.hoisted(() => ({
+    runAnalyze: vi.fn(),
+    maybeShowAnalyzeTip: vi.fn(),
+    dismissAnalyzeTip: vi.fn(),
+}));
+vi.mock("../src/analyze", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/analyze")>()),
+    ...analyzeFlows,
+}));
+
 /** What the ServerBinary mock reports as installed and returns from ensure. */
 const INSTALLED = {
     path: "/fake/bin/lilbee",
@@ -594,11 +604,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all forty-two commands", async () => {
+        it("adds all forty-four commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(42);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(44);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -606,6 +616,8 @@ describe("LilbeePlugin", () => {
             expect(allIds).toContain("model-info-active-embedding");
             expect(allIds).toContain("take-over");
             expect(allIds).toContain("export-diagnostics");
+            expect(allIds).toContain("analyze-vault");
+            expect(allIds).toContain("analyze-dismiss-tip");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("search");
             expect(ids).toContain("chat");
@@ -11253,5 +11265,79 @@ describe("profile commands", () => {
         byId("profile-import").checkCallback(false);
         expect(profileFlows.libraryOpen).toHaveBeenCalled();
         expect(profileFlows.importProfile).toHaveBeenCalledWith(plugin);
+    });
+});
+
+describe("analyze commands and tip", () => {
+    async function commands() {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
+        const byId = (id: string) => calls.find((c) => c[0]?.id === id)![0];
+        return { plugin, byId };
+    }
+
+    beforeEach(() => {
+        for (const flow of Object.values(analyzeFlows)) flow.mockReset();
+    });
+
+    it("registers the analyze and dismiss-tip commands, offered only while the server is ready", async () => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
+        expect(byId("analyze-vault").checkCallback(true)).toBe(false);
+        expect(byId("analyze-dismiss-tip").checkCallback(true)).toBe(false);
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        expect(byId("analyze-vault").checkCallback(true)).toBe(true);
+        expect(byId("analyze-dismiss-tip").checkCallback(true)).toBe(true);
+        expect(analyzeFlows.runAnalyze).not.toHaveBeenCalled();
+        expect(analyzeFlows.dismissAnalyzeTip).not.toHaveBeenCalled();
+    });
+
+    it("analyze-vault runs the analyze modal on the plugin", async () => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        byId("analyze-vault").checkCallback(false);
+        expect(analyzeFlows.runAnalyze).toHaveBeenCalledWith(plugin);
+    });
+
+    it("analyze-dismiss-tip hides the tip", async () => {
+        const { plugin, byId } = await commands();
+        vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+        byId("analyze-dismiss-tip").checkCallback(false);
+        expect(analyzeFlows.dismissAnalyzeTip).toHaveBeenCalledWith(plugin);
+    });
+
+    it("shows the tip before a user-triggered sync starts", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        async function* noEvents() {}
+        plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+        await plugin.triggerSync();
+
+        expect(analyzeFlows.maybeShowAnalyzeTip).toHaveBeenCalledWith(plugin);
+    });
+
+    it("shows no tip before an automatic sync", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        async function* noEvents() {}
+        plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+        await plugin.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
+
+        expect(analyzeFlows.maybeShowAnalyzeTip).not.toHaveBeenCalled();
+    });
+
+    it("shows the tip before an add starts", async () => {
+        const plugin = await createPlugin({ serverMode: "managed" });
+        await plugin.onload();
+        plugin.activeModel = "llama3";
+        async function* noEvents() {}
+        plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+        await plugin.addExternalFiles(["/home/user/a.md"]);
+
+        expect(analyzeFlows.maybeShowAnalyzeTip).toHaveBeenCalledWith(plugin);
     });
 });
