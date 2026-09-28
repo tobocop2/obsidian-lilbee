@@ -654,18 +654,20 @@ describe("LilbeePlugin", () => {
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             vi.spyOn(plugin, "serverSupportsSessionFork").mockReturnValue(true);
             const forkSession = vi.fn().mockResolvedValue(undefined);
+            const refreshRail = vi.fn();
             const view = Object.assign(Object.create(ChatView.prototype), {
                 currentSessionId: () => sessionId,
                 forkSession,
+                refreshRail,
             });
             const chatLeaf = { view };
             plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
             plugin.app.workspace.revealLeaf = vi.fn();
-            return { plugin, forkSession, chatLeaf };
+            return { plugin, forkSession, chatLeaf, refreshRail };
         }
 
         it("fork-current-chat forks the open conversation and reveals the chat", async () => {
-            const { plugin, forkSession, chatLeaf } = await pluginWithChat("s5");
+            const { plugin, forkSession, chatLeaf, refreshRail } = await pluginWithChat("s5");
             const cmd = forkCommand(plugin);
 
             expect(cmd.name).toBe(MESSAGES.COMMAND_FORK_CHAT);
@@ -675,6 +677,7 @@ describe("LilbeePlugin", () => {
 
             expect(forkSession).toHaveBeenCalledWith("s5");
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(refreshRail).toHaveBeenCalledTimes(1);
         });
 
         it("fork-current-chat is unavailable while the chat has no saved conversation", async () => {
@@ -695,18 +698,19 @@ describe("LilbeePlugin", () => {
                 const plugin = await createPlugin();
                 await plugin.onload();
                 const exportToFile = vi.fn().mockResolvedValue(undefined);
-                const view = Object.assign(Object.create(ChatView.prototype), { exportToFile });
+                const refreshRail = vi.fn();
+                const view = Object.assign(Object.create(ChatView.prototype), { exportToFile, refreshRail });
                 const chatLeaf = { view };
                 plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
                 plugin.app.workspace.revealLeaf = vi.fn();
                 const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                     (c: any[]) => c[0].id === "export-chat-to-file",
                 )![0];
-                return { plugin, exportToFile, chatLeaf, cmd };
+                return { plugin, exportToFile, chatLeaf, cmd, refreshRail };
             }
 
             it("exports the open chat and reveals it", async () => {
-                const { plugin, exportToFile, chatLeaf, cmd } = await pluginWithExportableChat();
+                const { plugin, exportToFile, chatLeaf, cmd, refreshRail } = await pluginWithExportableChat();
 
                 expect(cmd.name).toBe(MESSAGES.COMMAND_EXPORT_CHAT);
                 expect(cmd.checkCallback(true)).toBe(true);
@@ -715,6 +719,7 @@ describe("LilbeePlugin", () => {
 
                 expect(exportToFile).toHaveBeenCalledTimes(1);
                 expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+                expect(refreshRail).toHaveBeenCalledTimes(1);
             });
 
             it("is unavailable with no chat view open", async () => {
@@ -5833,6 +5838,37 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
             expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
+        });
+
+        it("refreshes the rail of a chat leaf that was already open", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const refreshRail = vi.fn();
+            const chatLeaf = {
+                setViewState: vi.fn(),
+                view: Object.assign(Object.create(ChatView.prototype), { refreshRail }),
+            };
+            wireWorkspace(plugin, { "lilbee-chat": [chatLeaf] });
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(refreshRail).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not refresh the rail of a chat leaf it opens", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const store = wireWorkspace(plugin);
+            const refreshRail = vi.fn();
+            const chatLeaf: any = {
+                view: Object.assign(Object.create(ChatView.prototype), { refreshRail }),
+                setViewState: vi.fn().mockImplementation(async () => {
+                    store["lilbee-chat"].push(chatLeaf);
+                }),
+            };
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(chatLeaf);
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(refreshRail).not.toHaveBeenCalled();
         });
 
         it("includes wiki and memories only when they are already open", async () => {

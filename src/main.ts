@@ -1686,7 +1686,7 @@ export default class LilbeePlugin extends Plugin {
                 const sessionId = view.currentSessionId();
                 if (!sessionId) return false;
                 if (!checking) {
-                    void this.app.workspace.revealLeaf(chatLeaf);
+                    this.revealChatLeaf(chatLeaf);
                     void view.forkSession(sessionId);
                 }
                 return true;
@@ -1700,7 +1700,7 @@ export default class LilbeePlugin extends Plugin {
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
                 if (!chatLeaf || !(chatLeaf.view instanceof ChatView)) return false;
                 if (!checking) {
-                    void this.app.workspace.revealLeaf(chatLeaf);
+                    this.revealChatLeaf(chatLeaf);
                     void chatLeaf.view.exportToFile();
                 }
                 return true;
@@ -3177,12 +3177,16 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Reveal an already-open chat leaf; its rail can predate a model change. */
+    private revealChatLeaf(leaf: WorkspaceLeaf): void {
+        void this.app.workspace.revealLeaf(leaf);
+        if (leaf.view instanceof ChatView) leaf.view.refreshRail();
+    }
+
     async activateChatView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         if (existing.length > 0) {
-            void this.app.workspace.revealLeaf(existing[0]);
-            // A rail opened before a model was activated still shows the old one.
-            this.refreshOpenChatRails();
+            this.revealChatLeaf(existing[0]);
             return;
         }
         if (this.openingChatLeaf) return;
@@ -3209,6 +3213,7 @@ export default class LilbeePlugin extends Plugin {
         this.openingChatLeaf = true;
         try {
             const workspace = this.app.workspace;
+            const openChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0] ?? null;
             const included = [
                 VIEW_TYPE_CHAT,
                 VIEW_TYPE_TASKS,
@@ -3233,7 +3238,8 @@ export default class LilbeePlugin extends Plugin {
             }
             for (const type of included) {
                 const leaf = workspace.getLeavesOfType(type)[0];
-                if (leaf) void workspace.revealLeaf(leaf);
+                if (leaf === openChat) this.revealChatLeaf(leaf);
+                else if (leaf) void workspace.revealLeaf(leaf);
             }
         } finally {
             this.openingChatLeaf = false;
