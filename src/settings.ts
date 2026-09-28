@@ -840,18 +840,25 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.render();
     }
 
+    /** Every per-render row map, cleared together so a full rebuild on either path keeps no stale entry. */
+    private resetPerRenderMaps(): void {
+        this.serverConfigInputs.clear();
+        this.builtPlaceholders.clear();
+        this.serverConfigToggles.clear();
+        this.memoryToggles.clear();
+        this.serverConfigTextAreas.clear();
+        this.committedText.clear();
+        this.serverConfigDropdowns.clear();
+        this.serverConfigSliders.clear();
+        this.serverConfigHideableEls.clear();
+        this.sourcePillHosts.clear();
+    }
+
     render(): void {
         const { containerEl } = this;
         containerEl.empty();
         this.settingsFilterQuery = "";
-        this.serverConfigInputs.clear();
-        this.builtPlaceholders.clear();
-        this.serverConfigToggles.clear();
-        this.serverConfigTextAreas.clear();
-        this.committedText.clear();
-        this.serverConfigDropdowns.clear();
-        this.serverConfigHideableEls.clear();
-        this.sourcePillHosts.clear();
+        this.resetPerRenderMaps();
 
         const filterInput = containerEl.createEl("input", {
             cls: "lilbee-settings-filter",
@@ -890,6 +897,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** The 1.13 render path: Obsidian renders and search-indexes from this instead of calling display(). */
     getSettingDefinitions(): SettingDefinitionItem[] {
+        this.resetPerRenderMaps();
         const items: SettingDefinitionItem[] = [
             this.definitionOf({
                 name: "",

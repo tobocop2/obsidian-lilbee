@@ -5131,6 +5131,34 @@ describe("managed mode settings", () => {
         });
     });
 
+    describe("per-render row maps added alongside the source pills", () => {
+        it("clears stale server-config sliders on a second render", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const sliders = (tab as unknown as { serverConfigSliders: Map<string, unknown> }).serverConfigSliders;
+            sliders.set("a_key_this_render_never_registers", { setValue: () => undefined });
+
+            tab.display();
+
+            expect(sliders.has("a_key_this_render_never_registers")).toBe(false);
+        });
+
+        it("clears stale memory toggles on a second render", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const toggles = (tab as unknown as { memoryToggles: Map<string, unknown> }).memoryToggles;
+            toggles.set("a_key_this_render_never_registers", { setValue: () => undefined });
+
+            tab.display();
+
+            expect(toggles.has("a_key_this_render_never_registers")).toBe(false);
+        });
+    });
+
     describe("reset through the server's reset route", () => {
         it("removes the user value with the reset route and writes no default", async () => {
             Notice.clear();

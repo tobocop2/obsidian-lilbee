@@ -475,6 +475,17 @@ describe("declarative setting definitions", () => {
         });
     });
 
+    it("clears stale pill hosts on a second definitions rebuild, like the render() path", () => {
+        const tab = makeTab();
+        tab.getSettingDefinitions();
+        const hosts = (tab as unknown as { sourcePillHosts: Map<string, MockElement> }).sourcePillHosts;
+        hosts.set("a_row_this_rebuild_never_registers", new MockElement());
+
+        tab.getSettingDefinitions();
+
+        expect(hosts.has("a_row_this_rebuild_never_registers")).toBe(false);
+    });
+
     it("loads the server state once the tab actually renders", () => {
         const tab = makeTab();
         renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
