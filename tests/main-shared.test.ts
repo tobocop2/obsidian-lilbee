@@ -91,8 +91,9 @@ const INSTALLED = {
 };
 const mockEnsure = vi.fn().mockResolvedValue(INSTALLED);
 
-vi.mock("../src/server-binary", () => {
+vi.mock("../src/server-binary", async (importOriginal) => {
     return {
+        ServerUpdateBusyError: (await importOriginal<typeof import("../src/server-binary")>()).ServerUpdateBusyError,
         DownloadCanceledError: class DownloadCanceledError extends Error {
             constructor() {
                 super("The lilbee server download was cancelled.");

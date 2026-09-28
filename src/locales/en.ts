@@ -808,6 +808,8 @@ export const MESSAGES = {
     NOTICE_SERVER_SWITCHING_BUILD: (build: string) => `lilbee: switching to the ${build} build for your GPU...`,
     NOTICE_SERVER_SWITCHED_BUILD: (build: string) => `lilbee server now runs the ${build} build`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
+    NOTICE_SERVER_UPDATE_BUSY: (version: string) =>
+        `lilbee: the server is already updating to ${version}. Try again when that finishes.`,
     UPDATE_MODAL_TITLE: "A newer lilbee server is available",
     UPDATE_MODAL_BODY: (version: string, build: string | null) =>
         build

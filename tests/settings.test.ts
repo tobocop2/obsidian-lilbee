@@ -17,6 +17,7 @@ import { MESSAGES } from "../src/locales/en";
 import configSchema from "./fixtures/config-schema.json";
 import configRefusal from "./fixtures/config-refusal.json";
 import { ServerStartingError } from "../src/api";
+import { ServerUpdateBusyError } from "../src/server-binary";
 import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
@@ -36,7 +37,8 @@ const { FakeDownloadCanceledError } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock("../src/server-binary", () => ({
+vi.mock("../src/server-binary", async (importOriginal) => ({
+    ServerUpdateBusyError: (await importOriginal<typeof import("../src/server-binary")>()).ServerUpdateBusyError,
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     listReleases: (...args: any[]) => mockListReleases(...args),
@@ -3326,6 +3328,30 @@ describe("managed mode settings", () => {
         // A failed install collapses the progress panel rather than leaving a dead bar up.
         expect(tab.containerEl.find("lilbee-update-progress")!.style.display).toBe("none");
         expect(buttons[2].text).toBe("Downgrade to v0.1.0");
+    });
+
+    it("shows a refused update as its notice only, and logs a real failure", async () => {
+        Notice.clear();
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        (plugin as any).updateServer = vi
+            .fn()
+            .mockRejectedValueOnce(new ServerUpdateBusyError("v0.3.0"))
+            .mockRejectedValueOnce(new Error("Not enough disk space"));
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.1.0");
+
+        await buttonOnClicks[2]();
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v0.3.0")]);
+        expect(logged).not.toHaveBeenCalled();
+        await buttonOnClicks[2]();
+        expect(logged).toHaveBeenCalledTimes(1);
+        logged.mockRestore();
     });
 
     it("an unreachable GitHub leaves the version button disabled and says so", async () => {
@@ -9186,6 +9212,26 @@ describe("managed mode with no server installed", () => {
         const install = captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!;
         expect(install.text).toBe("Install server");
         expect(install.disabled).toBe(false);
+    });
+
+    it("shows a refused install as its notice only, and logs a real failure", async () => {
+        const plugin = makeUninstalledPlugin();
+        (plugin as any).installServer = vi
+            .fn()
+            .mockRejectedValueOnce(new ServerUpdateBusyError("v0.3.0"))
+            .mockRejectedValueOnce(new Error("Not enough disk space"));
+        const tab = makeTab(plugin);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v0.3.0")]);
+        expect(logged).not.toHaveBeenCalled();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+        expect(logged).toHaveBeenCalledTimes(1);
+        logged.mockRestore();
     });
 
     it("does nothing when clicked before the release list arrives", async () => {

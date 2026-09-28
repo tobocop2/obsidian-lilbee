@@ -11,7 +11,7 @@ import {
 import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem } from "obsidian";
 import type LilbeePlugin from "./main";
 import { LilbeeClient } from "./api";
-import { isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
+import { ServerUpdateBusyError, isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
 import type { ReleaseInfo } from "./server-binary";
 
 /** Community IRC channel for dev-build feedback. */
@@ -1671,7 +1671,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
             } else {
                 new Notice(errorMessage(err, MESSAGES.ERROR_INSTALL_FAILED));
-                console.error("[lilbee] install failed:", err);
+                if (!(err instanceof ServerUpdateBusyError)) console.error("[lilbee] install failed:", err);
             }
             progress.panel.hide();
             btn.setButtonText(MESSAGES.BUTTON_INSTALL_SERVER);
@@ -1725,7 +1725,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             } else {
                 // errorMessage carries the server's reason, e.g. insufficient disk space.
                 new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
-                console.error("[lilbee] update failed:", err);
+                if (!(err instanceof ServerUpdateBusyError)) console.error("[lilbee] update failed:", err);
             }
             progress.panel.hide();
             actionBtn.setButtonText(restoreLabel);

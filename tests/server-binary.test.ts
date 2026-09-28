@@ -4,6 +4,7 @@ import { MESSAGES } from "../src/locales/en";
 import {
     DownloadCanceledError,
     ServerBinary,
+    ServerUpdateBusyError,
     checkForUpdate,
     getLatestRelease,
     isDevBuild,
@@ -165,6 +166,15 @@ describe("error wording", () => {
         const plain = new Error("ENOENT");
         lilbee.ensureBinary.mockRejectedValueOnce(plain);
         await expect(new ServerBinary(BIN_DIR).ensure({ includeDev: false })).rejects.toBe(plain);
+    });
+});
+
+describe("ServerUpdateBusyError", () => {
+    it("names the release already installing", () => {
+        expect(new ServerUpdateBusyError("v1")).toMatchObject({
+            name: "ServerUpdateBusyError",
+            message: MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v1"),
+        });
     });
 });
 
