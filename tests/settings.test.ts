@@ -1822,6 +1822,95 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("model dropdowns past a first page of frontier rows", () => {
+        const pagedRow = (hf_repo: string, task: string, source: string, provider: string) => ({
+            hf_repo,
+            gguf_filename: "",
+            display_name: hf_repo,
+            size_gb: 0,
+            min_ram_gb: 0,
+            description: "",
+            installed: false,
+            source,
+            task,
+            featured: false,
+            downloads: 0,
+            quality_tier: "",
+            param_count: "",
+            provider,
+            key_status: source === "frontier" ? "ready" : null,
+        });
+
+        function mockPagedCatalog(plugin: ReturnType<typeof makePlugin>): void {
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockImplementation(
+                (p: { task: string; offset?: number }) => {
+                    const offset = p.offset ?? 0;
+                    const models =
+                        offset === 0
+                            ? Array.from({ length: 20 }, (_, i) =>
+                                  pagedRow(`gemini/m${i}`, p.task, "frontier", "Gemini"),
+                              )
+                            : [
+                                  pagedRow(`ollama/${p.task}-local`, p.task, "ollama", "Ollama"),
+                                  pagedRow("org/native", p.task, "native", ""),
+                              ];
+                    return Promise.resolve(ok({ total: 40, limit: 20, offset, has_more: true, models }));
+                },
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+        }
+
+        async function dropdownOptions(render: (container: HTMLElement) => unknown): Promise<string[]> {
+            const values: string[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: (value: string) => {
+                        values.push(value);
+                        return fakeDropdown;
+                    },
+                    setValue: () => fakeDropdown,
+                    onChange: () => fakeDropdown,
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            try {
+                render(new MockElement("div") as unknown as HTMLElement);
+                await new Promise((r) => setTimeout(r, 0));
+            } finally {
+                Setting.prototype.addDropdown = origAddDropdown;
+            }
+            return values;
+        }
+
+        it("offers the Ollama chat model and keeps the table to the first page", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "" });
+            mockPagedCatalog(plugin);
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const values = await dropdownOptions(() => (tab as any).renderChatSection(container));
+            expect(values).toContain("ollama/chat-local");
+            const table = (container as unknown as MockElement).find("lilbee-model-catalog")!.children[0];
+            // Header plus the first page.
+            expect(table.children.length).toBe(21);
+        });
+
+        it.each([
+            ["embedding", "loadEmbeddingDropdown"],
+            ["vision", "renderVisionSection"],
+            ["rerank", "renderRerankerSection"],
+        ])("offers the Ollama %s model", async (task, method) => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockPagedCatalog(plugin);
+            const tab = makeTab(plugin);
+            const values = await dropdownOptions((c) => (tab as any)[method](c));
+            expect(values).toContain(`ollama/${task}-local`);
+        });
+    });
+
     describe("renderChatCatalogRow()", () => {
         it("shows 'Installed' badge for installed models", () => {
             const plugin = makePlugin();
@@ -4012,7 +4101,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             // The embedding dropdown is rendered via loadEmbeddingDropdown — just verify catalog was called
-            expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
+            expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding", offset: 0 });
         });
 
         it("surfaces hosted ollama embedding models with a provider label", async () => {

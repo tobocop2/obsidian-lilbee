@@ -78,7 +78,7 @@ import {
 } from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
-import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
+import { catalogThroughHosted, hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 import { electronDialog } from "../utils/file-dialog";
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
@@ -504,12 +504,12 @@ export class ChatView extends ItemView {
 
     private fetchAndFillSelectors(): void {
         Promise.all([
-            this.plugin.api.catalog({ task: MODEL_TASK.CHAT }),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.CHAT }),
             this.plugin.api.installedModels({ task: MODEL_TASK.CHAT }).catch(() => ({ models: [] })),
-            this.plugin.api.catalog({ task: MODEL_TASK.EMBEDDING }).catch(() => null),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.EMBEDDING }).catch(() => null),
             this.plugin.api.config().catch(() => null),
-            this.plugin.api.catalog({ task: MODEL_TASK.VISION }).catch(() => null),
-            this.plugin.api.catalog({ task: MODEL_TASK.RERANK }).catch(() => null),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.VISION }).catch(() => null),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.RERANK }).catch(() => null),
         ])
             .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig, visionCatalog, rerankCatalog]) => {
                 if (this.closed) return;
@@ -518,15 +518,15 @@ export class ChatView extends ItemView {
                     this.retryTimer = null;
                 }
                 this.retryCount = 0;
-                this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
+                this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value : [];
                 this.chatInstalled = chatInstalled.models;
                 this.chatActive = serverConfig ? configString(serverConfig, "chat_model") : "";
                 this.chatTriggerTextEl?.setText(railTriggerLabel(this.chatOptionGroups().flat(), this.chatActive));
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
                 this.fillOptionalRoleData(
-                    visionCatalog && visionCatalog.isOk() ? visionCatalog.value.models : [],
-                    rerankCatalog && rerankCatalog.isOk() ? rerankCatalog.value.models : [],
+                    visionCatalog && visionCatalog.isOk() ? visionCatalog.value : [],
+                    rerankCatalog && rerankCatalog.isOk() ? rerankCatalog.value : [],
                     serverConfig,
                 );
                 this.renderChatModeToggle(serverConfig);
@@ -618,12 +618,12 @@ export class ChatView extends ItemView {
     }
 
     private fillEmbeddingSelector(
-        embeddingResult: import("../result").Result<import("../types").CatalogResponse, Error> | null,
+        embeddingResult: import("../result").Result<CatalogEntry[], Error> | null,
         serverConfig: Record<string, unknown> | null,
     ): void {
         this.activeEmbeddingModel = serverConfig ? configString(serverConfig, "embedding_model") : "";
         this.embeddingModels =
-            embeddingResult && embeddingResult.isOk() ? embeddingResult.value.models.filter((m) => m.installed) : [];
+            embeddingResult && embeddingResult.isOk() ? embeddingResult.value.filter((m) => m.installed) : [];
         this.embeddingTriggerTextEl?.setText(railTriggerLabel(this.embeddingOptions(), this.activeEmbeddingModel));
     }
 

@@ -12,6 +12,8 @@ import {
     SERVER_MODE,
 } from "../types";
 import { MESSAGES } from "../locales/en";
+import type { LilbeeClient } from "../api";
+import { err, ok, type Result } from "../result";
 
 const DISCOVER_RAIL_LIMIT = 12;
 const TASK_TO_TAB: Record<ModelTask, CatalogTab> = {
@@ -73,6 +75,27 @@ export function hostedOptions(rows: CatalogEntry[]): Array<[string, string]> {
         .filter(isUsableHostedRow)
         .sort(compareHostedRows)
         .map((e) => [e.hf_repo, `${e.display_name}${e.provider ? ` [${e.provider}]` : ""}`]);
+}
+
+/** Page cap for a selector's catalog read, whatever page size the caller passes. */
+const MAX_SELECTOR_PAGES = 50;
+
+/** Catalog rows for a model selector: pages until the listing passes its leading hosted rows. */
+export async function catalogThroughHosted(
+    api: Pick<LilbeeClient, "catalog">,
+    params: { task: ModelTask; limit?: number },
+): Promise<Result<CatalogEntry[], Error>> {
+    const models: CatalogEntry[] = [];
+    let offset = 0;
+    for (let page = 0; page < MAX_SELECTOR_PAGES; page++) {
+        const result = await api.catalog({ ...params, offset });
+        if (result.isErr()) return err(result.error);
+        const { value } = result;
+        models.push(...value.models);
+        if (!value.has_more || value.models.some((m) => m.source === CATALOG_SOURCE.NATIVE)) break;
+        offset = value.offset + value.limit;
+    }
+    return ok(models);
 }
 
 /** Hosted rows grouped by provider, local-server groups before frontier, providers alphabetical within a rank. */

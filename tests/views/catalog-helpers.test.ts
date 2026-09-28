@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { App, MockElement } from "../__mocks__/obsidian";
 import {
+    catalogThroughHosted,
     deepLinkToApiKeySettings,
     forYouRail,
     freshRail,
@@ -19,6 +20,7 @@ import {
 } from "../../src/views/catalog-helpers";
 import { CATALOG_SOURCE, CATALOG_TAB, KEY_STATUS, SERVER_MODE } from "../../src/types";
 import type { CatalogEntry } from "../../src/types";
+import { err, ok } from "../../src/result";
 
 function row(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
@@ -499,5 +501,66 @@ describe("catalog-helpers", () => {
 
             (globalThis as any).activeDocument = originalDocument;
         });
+    });
+});
+
+describe("catalogThroughHosted", () => {
+    const frontier = (i: number) => row({ hf_repo: `gemini/m${i}`, source: CATALOG_SOURCE.FRONTIER });
+    const page = (models: CatalogEntry[], offset: number, has_more: boolean) =>
+        ok({ total: 0, limit: 20, offset, models, has_more });
+
+    it("pages past the hosted rows and stops at the page holding a native row", async () => {
+        const catalog = vi
+            .fn()
+            .mockResolvedValue(page([row({ hf_repo: "deep/native" })], 40, false))
+            .mockResolvedValueOnce(page([frontier(0), frontier(1)], 0, true))
+            .mockResolvedValueOnce(
+                page([row({ hf_repo: "ollama/a", source: CATALOG_SOURCE.OLLAMA }), row()], 20, true),
+            );
+        const result = await catalogThroughHosted({ catalog }, { task: "chat" });
+        expect(result.isOk() && result.value.map((m) => m.hf_repo)).toEqual([
+            "gemini/m0",
+            "gemini/m1",
+            "ollama/a",
+            "h/r",
+        ]);
+        // The offset advances by the echoed window, not by the rows a short page held.
+        expect(catalog.mock.calls.map(([p]) => p)).toEqual([
+            { task: "chat", offset: 0 },
+            { task: "chat", offset: 20 },
+        ]);
+    });
+
+    it("makes one request when the first page already reaches a native row", async () => {
+        const catalog = vi.fn().mockResolvedValue(page([frontier(0), row()], 0, true));
+        await catalogThroughHosted({ catalog }, { task: "chat", limit: 50 });
+        expect(catalog).toHaveBeenCalledTimes(1);
+        expect(catalog).toHaveBeenCalledWith({ task: "chat", limit: 50, offset: 0 });
+    });
+
+    it("stops when the server has no more rows", async () => {
+        const catalog = vi.fn().mockResolvedValue(page([frontier(0)], 0, false));
+        const result = await catalogThroughHosted({ catalog }, { task: "chat" });
+        expect(catalog).toHaveBeenCalledTimes(1);
+        expect(result.isOk() && result.value).toHaveLength(1);
+    });
+
+    it("returns the error when a later page fails", async () => {
+        const failure = new Error("boom");
+        const catalog = vi
+            .fn()
+            .mockResolvedValueOnce(page([frontier(0)], 0, true))
+            .mockResolvedValueOnce(err(failure));
+        const result = await catalogThroughHosted({ catalog }, { task: "chat" });
+        expect(result.isErr() && result.error).toBe(failure);
+    });
+
+    it("stops at the page cap when every page is hosted", async () => {
+        const catalog = vi
+            .fn()
+            .mockImplementation((p: { offset: number }) => Promise.resolve(page([frontier(p.offset)], p.offset, true)));
+        const result = await catalogThroughHosted({ catalog }, { task: "chat" });
+        expect(catalog).toHaveBeenCalledTimes(50);
+        expect(result.isOk() && result.value).toHaveLength(50);
     });
 });

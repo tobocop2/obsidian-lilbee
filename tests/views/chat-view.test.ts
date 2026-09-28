@@ -1976,6 +1976,54 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onClose();
     });
 
+    it("offers local-server models listed after a first page of frontier rows", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const row = (hf_repo: string, task: string, source: string, provider: string) => ({
+            hf_repo,
+            gguf_filename: "",
+            display_name: hf_repo,
+            size_gb: 0,
+            min_ram_gb: 0,
+            description: "",
+            installed: false,
+            source,
+            task,
+            featured: false,
+            downloads: 0,
+            quality_tier: "",
+            param_count: "",
+            provider,
+            key_status: source === "frontier" ? "ready" : null,
+        });
+        plugin.api.catalog = vi.fn().mockImplementation((p: { task: string; offset?: number }) => {
+            const offset = p.offset ?? 0;
+            const models =
+                offset === 0
+                    ? Array.from({ length: 20 }, (_, i) => row(`gemini/m${i}`, p.task, "frontier", "Gemini"))
+                    : [
+                          row(`ollama/${p.task}-local`, p.task, "ollama", "Ollama"),
+                          { ...row("org/native", p.task, "native", ""), installed: true },
+                      ];
+            return Promise.resolve(ok({ total: 40, limit: 20, offset, has_more: true, models }));
+        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const c = view.containerEl.children[1] as unknown as MockElement;
+        expect(menuTitles(openRailMenu(c, "lilbee-chat-model-select"))).toContain("ollama/chat-local [Ollama]");
+        expect(menuTitles(openRailMenu(c, "lilbee-embed-model-select"))).toContain("org/native");
+        expect(
+            menuTitles(openRailMenu(c, "lilbee-vision-model-select")).some((t) => t.startsWith("ollama/vision-local")),
+        ).toBe(true);
+        expect(
+            menuTitles(openRailMenu(c, "lilbee-rerank-model-select")).some((t) => t.startsWith("ollama/rerank-local")),
+        ).toBe(true);
+        await view.onClose();
+    });
+
     it("shows (connecting...) on both triggers when listModels fails", async () => {
         vi.useFakeTimers();
         Notice.clear();
@@ -4921,7 +4969,7 @@ describe("ChatView — role separation on main-screen selectors", () => {
         await tick();
 
         // The plugin must ask the server for the embedding task specifically.
-        expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
+        expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding", offset: 0 });
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const chatItems = menuTitles(openRailMenu(container, "lilbee-chat-model-select"));
