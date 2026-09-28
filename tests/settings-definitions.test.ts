@@ -486,6 +486,54 @@ describe("declarative setting definitions", () => {
         expect(hosts.has("a_row_this_rebuild_never_registers")).toBe(false);
     });
 
+    describe("clears stale single-element references on a second definitions rebuild", () => {
+        function assertCleared<K extends string>(field: K, stale: unknown): void {
+            const tab = makeTab();
+            tab.getSettingDefinitions();
+            (tab as unknown as Record<K, unknown>)[field] = stale;
+
+            tab.getSettingDefinitions();
+
+            expect((tab as unknown as Record<K, unknown>)[field]).toBeNull();
+        }
+
+        it("clears the stale chat-mode setting element", () => {
+            assertCleared("chatModeSettingEl", new MockElement());
+        });
+
+        it("clears the stale chat-mode dropdown", () => {
+            assertCleared("chatModeDropdown", { setValue: () => undefined });
+        });
+
+        it("clears the stale chat-mode select element", () => {
+            assertCleared("chatModeSelectEl", new MockElement() as unknown as HTMLSelectElement);
+        });
+
+        it("clears the stale API keys container", () => {
+            assertCleared("apiKeysContainerEl", new MockElement());
+        });
+
+        it("clears the stale crawler browser setup row", () => {
+            assertCleared("crawlerBrowserSetupEl", new MockElement());
+        });
+
+        it("clears the stale wiki sub-settings container", () => {
+            assertCleared("wikiSubSettingsEl", new MockElement());
+        });
+
+        it("clears the stale models container", () => {
+            assertCleared("modelsContainerEl", new MockElement());
+        });
+
+        it("clears the stale agent body element", () => {
+            assertCleared("agentBodyEl", new MockElement());
+        });
+
+        it("clears the stale version setting row", () => {
+            assertCleared("versionSettingEl", new MockElement());
+        });
+    });
+
     it("loads the server state once the tab actually renders", () => {
         const tab = makeTab();
         renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));

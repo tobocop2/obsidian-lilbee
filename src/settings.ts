@@ -840,7 +840,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.render();
     }
 
-    /** Every per-render row map, cleared together so a full rebuild on either path keeps no stale entry. */
+    /** Every per-render row map and single-element reference, reset together so a full rebuild on either path keeps no stale entry. */
     private resetPerRenderMaps(): void {
         this.serverConfigInputs.clear();
         this.builtPlaceholders.clear();
@@ -852,6 +852,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigSliders.clear();
         this.serverConfigHideableEls.clear();
         this.sourcePillHosts.clear();
+        this.chatModeSettingEl = null;
+        this.chatModeDropdown = null;
+        this.chatModeSelectEl = null;
+        this.apiKeysContainerEl = null;
+        this.crawlerBrowserSetupEl = null;
+        this.wikiSubSettingsEl = null;
+        this.modelsContainerEl = null;
+        this.agentBodyEl = null;
+        this.versionSettingEl = null;
     }
 
     render(): void {
