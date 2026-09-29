@@ -23,7 +23,7 @@ import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
 import { ChatView } from "../src/views/chat-view";
-import { ServerBinary } from "../src/server-binary";
+import { ServerBinary, getLatestRelease } from "../src/server-binary";
 import { ManagedConsentModal } from "../src/views/managed-consent-modal";
 import { exportDatasetToDisk, importDatasetFromDisk } from "../src/dataset-io";
 vi.mock("../src/dataset-io", () => ({
@@ -234,7 +234,8 @@ const mockServerStop = vi.fn().mockResolvedValue(undefined);
 const mockServerKillChildSync = vi.fn();
 let mockServerOpts: any = null;
 
-vi.mock("../src/server-binary", () => ({
+vi.mock("../src/server-binary", async (importOriginal) => ({
+    ServerUpdateBusyError: (await importOriginal<typeof import("../src/server-binary")>()).ServerUpdateBusyError,
     ServerBinary: vi.fn().mockImplementation(function () {
         return { installed: mockInstalled, ensure: mockEnsure };
     }),
@@ -390,6 +391,7 @@ describe("LilbeePlugin", () => {
             } as unknown as ConfirmModal;
         });
         mockInstalled.mockReturnValue(INSTALLED);
+        vi.mocked(getLatestRelease).mockResolvedValue({ tag: INSTALLED.release } as any);
         mockConsentResult = { kind: "download" };
     });
 
@@ -652,18 +654,20 @@ describe("LilbeePlugin", () => {
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             vi.spyOn(plugin, "serverSupportsSessionFork").mockReturnValue(true);
             const forkSession = vi.fn().mockResolvedValue(undefined);
+            const refreshRail = vi.fn();
             const view = Object.assign(Object.create(ChatView.prototype), {
                 currentSessionId: () => sessionId,
                 forkSession,
+                refreshRail,
             });
             const chatLeaf = { view };
             plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
             plugin.app.workspace.revealLeaf = vi.fn();
-            return { plugin, forkSession, chatLeaf };
+            return { plugin, forkSession, chatLeaf, refreshRail };
         }
 
         it("fork-current-chat forks the open conversation and reveals the chat", async () => {
-            const { plugin, forkSession, chatLeaf } = await pluginWithChat("s5");
+            const { plugin, forkSession, chatLeaf, refreshRail } = await pluginWithChat("s5");
             const cmd = forkCommand(plugin);
 
             expect(cmd.name).toBe(MESSAGES.COMMAND_FORK_CHAT);
@@ -673,6 +677,7 @@ describe("LilbeePlugin", () => {
 
             expect(forkSession).toHaveBeenCalledWith("s5");
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(refreshRail).toHaveBeenCalledTimes(1);
         });
 
         it("fork-current-chat is unavailable while the chat has no saved conversation", async () => {
@@ -693,18 +698,19 @@ describe("LilbeePlugin", () => {
                 const plugin = await createPlugin();
                 await plugin.onload();
                 const exportToFile = vi.fn().mockResolvedValue(undefined);
-                const view = Object.assign(Object.create(ChatView.prototype), { exportToFile });
+                const refreshRail = vi.fn();
+                const view = Object.assign(Object.create(ChatView.prototype), { exportToFile, refreshRail });
                 const chatLeaf = { view };
                 plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
                 plugin.app.workspace.revealLeaf = vi.fn();
                 const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                     (c: any[]) => c[0].id === "export-chat-to-file",
                 )![0];
-                return { plugin, exportToFile, chatLeaf, cmd };
+                return { plugin, exportToFile, chatLeaf, cmd, refreshRail };
             }
 
             it("exports the open chat and reveals it", async () => {
-                const { plugin, exportToFile, chatLeaf, cmd } = await pluginWithExportableChat();
+                const { plugin, exportToFile, chatLeaf, cmd, refreshRail } = await pluginWithExportableChat();
 
                 expect(cmd.name).toBe(MESSAGES.COMMAND_EXPORT_CHAT);
                 expect(cmd.checkCallback(true)).toBe(true);
@@ -713,6 +719,7 @@ describe("LilbeePlugin", () => {
 
                 expect(exportToFile).toHaveBeenCalledTimes(1);
                 expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+                expect(refreshRail).toHaveBeenCalledTimes(1);
             });
 
             it("is unavailable with no chat view open", async () => {
@@ -5833,6 +5840,37 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
         });
 
+        it("refreshes the rail of a chat leaf that was already open", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const refreshRail = vi.fn();
+            const chatLeaf = {
+                setViewState: vi.fn(),
+                view: Object.assign(Object.create(ChatView.prototype), { refreshRail }),
+            };
+            wireWorkspace(plugin, { "lilbee-chat": [chatLeaf] });
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(refreshRail).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not refresh the rail of a chat leaf it opens", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const store = wireWorkspace(plugin);
+            const refreshRail = vi.fn();
+            const chatLeaf: any = {
+                view: Object.assign(Object.create(ChatView.prototype), { refreshRail }),
+                setViewState: vi.fn().mockImplementation(async () => {
+                    store["lilbee-chat"].push(chatLeaf);
+                }),
+            };
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(chatLeaf);
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(refreshRail).not.toHaveBeenCalled();
+        });
+
         it("includes wiki and memories only when they are already open", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -7366,6 +7404,32 @@ describe("LilbeePlugin", () => {
             expect(events.map((e) => e.phase)).not.toContain("error");
         });
 
+        it("onunload while the newest release is looked up aborts the first-run download", async () => {
+            const { DownloadCanceledError } = await import("../src/server-binary");
+            let seenSignal: AbortSignal | undefined;
+            mockInstalled.mockReturnValue(null);
+            mockEnsure.mockImplementationOnce(async ({ signal }: any) => {
+                seenSignal = signal;
+                throw new DownloadCanceledError();
+            });
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+            let resolveLatest!: (release: unknown) => void;
+            vi.mocked(getLatestRelease).mockImplementationOnce(
+                () => new Promise((resolve) => (resolveLatest = resolve)) as any,
+            );
+
+            const started = plugin.startManagedServer();
+            await flush();
+            expect(plugin.isDownloadingServer()).toBe(true);
+            plugin.onunload();
+            resolveLatest({ tag: "v1" });
+            await started;
+
+            expect(seenSignal?.aborted).toBe(true);
+        });
+
         it("startManagedServer onProgress emits 'error' phase when ensureBinary rejects", async () => {
             mockInstalled.mockReturnValueOnce(null);
             mockEnsure.mockRejectedValueOnce(new Error("boom"));
@@ -8678,6 +8742,30 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED);
+        });
+
+        it("names the running update, not a failure, when another release is already updating", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const check = vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: false });
+            seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+            let finishOther!: (v: unknown) => void;
+            mockEnsure.mockClear();
+            mockEnsure.mockImplementationOnce(() => new Promise((r) => (finishOther = r)));
+            const other = plugin.updateServer({ ...RELEASE, tag: "v0.1.5" } as any);
+            await flush();
+            check.mockResolvedValue({ available: true, release: RELEASE });
+            Notice.clear();
+
+            await (plugin as any).autoUpdateServerBinary();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v0.1.5"));
+            expect(messages).not.toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED);
+            expect(mockEnsure).toHaveBeenCalledTimes(1);
+            finishOther(INSTALLED);
+            await other;
         });
 
         it("does not check in external mode", async () => {
@@ -10004,6 +10092,168 @@ describe("LilbeePlugin", () => {
 
             expect(mockServerStart).not.toHaveBeenCalled();
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
+        });
+
+        describe("overlapping requests", () => {
+            const V1 = { tag: "v1", url: "https://e/v1", variant: "default", size: 1 } as any;
+            const V2 = { tag: "v2", url: "https://e/v2", variant: "default", size: 1 } as any;
+
+            async function externalPlugin() {
+                const plugin = await createPlugin({ serverMode: "external" });
+                await plugin.onload();
+                await flush();
+                mockEnsure.mockClear();
+                return plugin;
+            }
+
+            function blockEnsure(): { resolve: (v: unknown) => void; reject: (e: unknown) => void } {
+                const gate = { resolve: (_v: unknown) => {}, reject: (_e: unknown) => {} };
+                mockEnsure.mockImplementationOnce(
+                    () =>
+                        new Promise((resolve, reject) => {
+                            gate.resolve = resolve;
+                            gate.reject = reject;
+                        }),
+                );
+                return gate;
+            }
+
+            it("joins the running update for the same release", async () => {
+                const plugin = await externalPlugin();
+                const gate = blockEnsure();
+
+                const first = plugin.updateServer(V1);
+                let secondSettled = false;
+                const second = plugin.updateServer(V1).then(() => {
+                    secondSettled = true;
+                });
+                await flush();
+                expect(secondSettled).toBe(false);
+                gate.resolve(INSTALLED);
+                await Promise.all([first, second]);
+
+                expect(mockEnsure).toHaveBeenCalledTimes(1);
+                const updating = plugin.journal.entries.filter((e) => e.message.startsWith("updating server binary"));
+                expect(updating).toHaveLength(1);
+            });
+
+            it("shares a failure with the call that joined it", async () => {
+                const plugin = await externalPlugin();
+                const gate = blockEnsure();
+
+                const first = plugin.updateServer(V1);
+                const second = plugin.updateServer(V1);
+                gate.reject(new Error("disk full"));
+
+                await expect(first).rejects.toThrow("disk full");
+                await expect(second).rejects.toThrow("disk full");
+                expect(mockEnsure).toHaveBeenCalledTimes(1);
+            });
+
+            it("refuses another release while one runs, and downloads nothing for it", async () => {
+                const plugin = await externalPlugin();
+                const gate = blockEnsure();
+
+                const first = plugin.updateServer(V1);
+                await expect(plugin.updateServer(V2)).rejects.toThrow(MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v1"));
+                expect(mockEnsure).toHaveBeenCalledTimes(1);
+                expect(mockEnsure).not.toHaveBeenCalledWith(expect.objectContaining({ release: "v2" }));
+
+                gate.resolve(INSTALLED);
+                await first;
+            });
+
+            it("starts a fresh update once the previous one succeeded", async () => {
+                const plugin = await externalPlugin();
+
+                await plugin.updateServer(V1);
+                await plugin.updateServer(V2);
+
+                expect(mockEnsure).toHaveBeenCalledTimes(2);
+                expect(mockEnsure).toHaveBeenLastCalledWith(expect.objectContaining({ release: "v2" }));
+            });
+
+            it("starts a fresh update once the previous one failed", async () => {
+                const plugin = await externalPlugin();
+                mockEnsure.mockRejectedValueOnce(new Error("offline"));
+
+                await expect(plugin.updateServer(V1)).rejects.toThrow("offline");
+                await plugin.updateServer(V1);
+
+                expect(mockEnsure).toHaveBeenCalledTimes(2);
+            });
+
+            describe("with the first-run download", () => {
+                beforeEach(() => {
+                    mockInstalled.mockReturnValue(null);
+                    vi.mocked(getLatestRelease).mockResolvedValue(V1);
+                });
+
+                it("joins a Settings install of the newest release to the first-run download", async () => {
+                    const plugin = await externalPlugin();
+                    const gate = blockEnsure();
+
+                    const start = plugin.startManagedServer();
+                    await flush();
+                    let installSettled = false;
+                    const install = plugin.installServer(V1).then(() => {
+                        installSettled = true;
+                    });
+                    await flush();
+                    expect(installSettled).toBe(false);
+                    gate.resolve({ ...INSTALLED, source: "download", detection: null });
+                    mockInstalled.mockReturnValue(INSTALLED);
+                    await Promise.all([start, install]);
+
+                    expect(mockEnsure).toHaveBeenCalledTimes(1);
+                    expect(mockEnsure).toHaveBeenCalledWith(expect.objectContaining({ release: "v1" }));
+                    expect(mockServerStart).toHaveBeenCalledTimes(1);
+                });
+
+                it("refuses a Settings install of another release during the first-run download", async () => {
+                    const plugin = await externalPlugin();
+                    const gate = blockEnsure();
+
+                    const start = plugin.startManagedServer();
+                    await flush();
+                    await expect(plugin.installServer(V2)).rejects.toThrow(MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v1"));
+                    expect(mockEnsure).toHaveBeenCalledTimes(1);
+
+                    gate.resolve(INSTALLED);
+                    await start;
+                });
+
+                it("waits for a running Settings install instead of downloading beside it", async () => {
+                    const plugin = await externalPlugin();
+                    const gate = blockEnsure();
+
+                    const install = plugin.installServer(V2);
+                    await flush();
+                    const start = plugin.startManagedServer();
+                    await flush();
+                    expect(mockEnsure).toHaveBeenCalledTimes(1);
+                    expect(mockServerStart).not.toHaveBeenCalled();
+
+                    mockInstalled.mockReturnValue(INSTALLED);
+                    gate.resolve(INSTALLED);
+                    await Promise.all([install, start]);
+
+                    expect(mockEnsure).not.toHaveBeenCalledWith(expect.objectContaining({ release: "v1" }));
+                    expect(mockServerStart).toHaveBeenCalledTimes(1);
+                });
+
+                it("clears the first-run claim when the newest release cannot be read", async () => {
+                    const plugin = await externalPlugin();
+                    vi.mocked(getLatestRelease).mockRejectedValueOnce(new Error("offline"));
+
+                    await plugin.startManagedServer();
+                    await plugin.installServer(V2);
+
+                    expect(Notice.instances.some((n) => n.message.includes("offline"))).toBe(true);
+                    expect(mockEnsure).toHaveBeenCalledTimes(1);
+                    expect(mockEnsure).toHaveBeenCalledWith(expect.objectContaining({ release: "v2" }));
+                });
+            });
         });
     });
 

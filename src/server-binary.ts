@@ -41,6 +41,14 @@ export interface EnsureResult extends InstalledBinary {
 }
 export { DownloadCanceledError, isDevBuild, isDownloadCanceled };
 
+/** A server install was asked for while an install of another release runs. */
+export class ServerUpdateBusyError extends Error {
+    constructor(runningTag: string) {
+        super(MESSAGES.NOTICE_SERVER_UPDATE_BUSY(runningTag));
+        this.name = "ServerUpdateBusyError";
+    }
+}
+
 const FLAT_BINARY_NAME = "lilbee";
 const WINDOWS_EXE_SUFFIX = ".exe";
 const PART_SUFFIX = ".part";

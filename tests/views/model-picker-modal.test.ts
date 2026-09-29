@@ -120,6 +120,27 @@ describe("ModelPickerModal", () => {
         expect(rows.length).toBe(3);
     });
 
+    it("lists an LM Studio model that follows a full page of frontier rows", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockImplementation((p: { limit: number; offset?: number }) => {
+            const offset = p.offset ?? 0;
+            const models =
+                offset === 0
+                    ? Array.from({ length: p.limit }, (_, i) =>
+                          frontierRow({
+                              hf_repo: `openai/m${i}`,
+                              display_name: `OpenAI-${i}`,
+                              ...({ key_status: "ready" } as Partial<CatalogEntry>),
+                          }),
+                      )
+                    : [localRow({ hf_repo: "lm_studio/qwen", display_name: "Studio-Qwen", source: "lm_studio" })];
+            return Promise.resolve(ok({ total: p.limit + 1, limit: p.limit, offset, models, has_more: offset === 0 }));
+        });
+        const modal = await openPicker(plugin);
+        await tick();
+        expect(contentEl(modal).textContent).toContain("Studio-Qwen");
+    });
+
     it("groups rows under Local then provider section headers", async () => {
         const plugin = makePlugin([
             localRow({ display_name: "Local-A" }),

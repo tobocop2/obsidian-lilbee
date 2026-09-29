@@ -17,6 +17,7 @@ import { MESSAGES } from "../src/locales/en";
 import configSchema from "./fixtures/config-schema.json";
 import configRefusal from "./fixtures/config-refusal.json";
 import { ServerStartingError } from "../src/api";
+import { ServerUpdateBusyError } from "../src/server-binary";
 import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
@@ -36,7 +37,8 @@ const { FakeDownloadCanceledError } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock("../src/server-binary", () => ({
+vi.mock("../src/server-binary", async (importOriginal) => ({
+    ServerUpdateBusyError: (await importOriginal<typeof import("../src/server-binary")>()).ServerUpdateBusyError,
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     listReleases: (...args: any[]) => mockListReleases(...args),
@@ -1820,6 +1822,95 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("model dropdowns past a first page of frontier rows", () => {
+        const pagedRow = (hf_repo: string, task: string, source: string, provider: string) => ({
+            hf_repo,
+            gguf_filename: "",
+            display_name: hf_repo,
+            size_gb: 0,
+            min_ram_gb: 0,
+            description: "",
+            installed: false,
+            source,
+            task,
+            featured: false,
+            downloads: 0,
+            quality_tier: "",
+            param_count: "",
+            provider,
+            key_status: source === "frontier" ? "ready" : null,
+        });
+
+        function mockPagedCatalog(plugin: ReturnType<typeof makePlugin>): void {
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockImplementation(
+                (p: { task: string; offset?: number }) => {
+                    const offset = p.offset ?? 0;
+                    const models =
+                        offset === 0
+                            ? Array.from({ length: 20 }, (_, i) =>
+                                  pagedRow(`gemini/m${i}`, p.task, "frontier", "Gemini"),
+                              )
+                            : [
+                                  pagedRow(`ollama/${p.task}-local`, p.task, "ollama", "Ollama"),
+                                  pagedRow("org/native", p.task, "native", ""),
+                              ];
+                    return Promise.resolve(ok({ total: 40, limit: 20, offset, has_more: true, models }));
+                },
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+        }
+
+        async function dropdownOptions(render: (container: HTMLElement) => unknown): Promise<string[]> {
+            const values: string[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: (value: string) => {
+                        values.push(value);
+                        return fakeDropdown;
+                    },
+                    setValue: () => fakeDropdown,
+                    onChange: () => fakeDropdown,
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            try {
+                render(new MockElement("div") as unknown as HTMLElement);
+                await new Promise((r) => setTimeout(r, 0));
+            } finally {
+                Setting.prototype.addDropdown = origAddDropdown;
+            }
+            return values;
+        }
+
+        it("offers the Ollama chat model and keeps the table to the first page", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "" });
+            mockPagedCatalog(plugin);
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const values = await dropdownOptions(() => (tab as any).renderChatSection(container));
+            expect(values).toContain("ollama/chat-local");
+            const table = (container as unknown as MockElement).find("lilbee-model-catalog")!.children[0];
+            // Header plus the first page.
+            expect(table.children.length).toBe(21);
+        });
+
+        it.each([
+            ["embedding", "loadEmbeddingDropdown"],
+            ["vision", "renderVisionSection"],
+            ["rerank", "renderRerankerSection"],
+        ])("offers the Ollama %s model", async (task, method) => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockPagedCatalog(plugin);
+            const tab = makeTab(plugin);
+            const values = await dropdownOptions((c) => (tab as any)[method](c));
+            expect(values).toContain(`ollama/${task}-local`);
+        });
+    });
+
     describe("renderChatCatalogRow()", () => {
         it("shows 'Installed' badge for installed models", () => {
             const plugin = makePlugin();
@@ -3328,6 +3419,30 @@ describe("managed mode settings", () => {
         expect(buttons[2].text).toBe("Downgrade to v0.1.0");
     });
 
+    it("shows a refused update as its notice only, and logs a real failure", async () => {
+        Notice.clear();
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        (plugin as any).updateServer = vi
+            .fn()
+            .mockRejectedValueOnce(new ServerUpdateBusyError("v0.3.0"))
+            .mockRejectedValueOnce(new Error("Not enough disk space"));
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.1.0");
+
+        await buttonOnClicks[2]();
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v0.3.0")]);
+        expect(logged).not.toHaveBeenCalled();
+        await buttonOnClicks[2]();
+        expect(logged).toHaveBeenCalledTimes(1);
+        logged.mockRestore();
+    });
+
     it("an unreachable GitHub leaves the version button disabled and says so", async () => {
         mockListReleases.mockRejectedValue(new Error("network error"));
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
@@ -3986,7 +4101,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             // The embedding dropdown is rendered via loadEmbeddingDropdown — just verify catalog was called
-            expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
+            expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding", offset: 0 });
         });
 
         it("surfaces hosted ollama embedding models with a provider label", async () => {
@@ -9186,6 +9301,26 @@ describe("managed mode with no server installed", () => {
         const install = captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!;
         expect(install.text).toBe("Install server");
         expect(install.disabled).toBe(false);
+    });
+
+    it("shows a refused install as its notice only, and logs a real failure", async () => {
+        const plugin = makeUninstalledPlugin();
+        (plugin as any).installServer = vi
+            .fn()
+            .mockRejectedValueOnce(new ServerUpdateBusyError("v0.3.0"))
+            .mockRejectedValueOnce(new Error("Not enough disk space"));
+        const tab = makeTab(plugin);
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_SERVER_UPDATE_BUSY("v0.3.0")]);
+        expect(logged).not.toHaveBeenCalled();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+        expect(logged).toHaveBeenCalledTimes(1);
+        logged.mockRestore();
     });
 
     it("does nothing when clicked before the release list arrives", async () => {

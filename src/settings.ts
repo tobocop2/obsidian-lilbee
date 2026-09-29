@@ -11,7 +11,7 @@ import {
 import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem } from "obsidian";
 import type LilbeePlugin from "./main";
 import { LilbeeClient } from "./api";
-import { isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
+import { ServerUpdateBusyError, isDownloadCanceled, listReleases, isDevBuild } from "./server-binary";
 import type { ReleaseInfo } from "./server-binary";
 
 /** Community IRC channel for dev-build feedback. */
@@ -60,7 +60,7 @@ import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/mod
 import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
-import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
+import { catalogThroughHosted, hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
 import { ModelPickerModal } from "./views/model-picker-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
@@ -91,6 +91,8 @@ const VISION_DISABLED_KEY = "";
 const RERANK_CANDIDATES_MIN = 1;
 const RERANK_CANDIDATES_MAX = 100;
 const SEPARATOR_KEY = "__separator__";
+/** Rows in the chat section's catalog table: the listing's first page. */
+const CHAT_TABLE_PAGE_SIZE = 20;
 const SEPARATOR_LABEL = "\u2500\u2500 Other... \u2500\u2500";
 const ICON_RESET = "rotate-ccw";
 type TextField = HTMLInputElement | HTMLTextAreaElement;
@@ -1671,7 +1673,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
             } else {
                 new Notice(errorMessage(err, MESSAGES.ERROR_INSTALL_FAILED));
-                console.error("[lilbee] install failed:", err);
+                if (!(err instanceof ServerUpdateBusyError)) console.error("[lilbee] install failed:", err);
             }
             progress.panel.hide();
             btn.setButtonText(MESSAGES.BUTTON_INSTALL_SERVER);
@@ -1725,7 +1727,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             } else {
                 // errorMessage carries the server's reason, e.g. insufficient disk space.
                 new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
-                console.error("[lilbee] update failed:", err);
+                if (!(err instanceof ServerUpdateBusyError)) console.error("[lilbee] update failed:", err);
             }
             progress.panel.hide();
             actionBtn.setButtonText(restoreLabel);
@@ -2776,8 +2778,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private loadEmbeddingDropdown(container: HTMLElement): void {
-        this.plugin.api
-            .catalog({ task: MODEL_TASK.EMBEDDING })
+        catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.EMBEDDING })
             .then((result) => {
                 if (result.isErr()) {
                     this.renderEmbeddingFallback(container);
@@ -2787,7 +2788,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 // always-on hosted ones (e.g. an Ollama embedding model), matching
                 // the chat/vision/reranker pickers. Discovery and downloads happen
                 // via Browse catalog, which the button on the right of this row opens.
-                const catalogEntries = result.value.models;
+                const catalogEntries = result.value;
                 const localInstalled = catalogEntries.filter(
                     (m) => m.task === MODEL_TASK.EMBEDDING && m.installed && !HOSTED_SOURCES.has(m.source),
                 );
@@ -2829,13 +2830,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderRerankerSection(container: HTMLElement): void {
         Promise.all([
             this.plugin.api.config(),
-            this.plugin.api.catalog({ task: MODEL_TASK.RERANK }),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.RERANK }),
             this.plugin.api.installedModels({ task: MODEL_TASK.RERANK }).catch(() => ({ models: [] })),
         ])
             .then(([cfg, catalogResult, installedResp]) => {
                 const active = typeof cfg.reranker_model === "string" ? cfg.reranker_model : RERANKER_DISABLED_KEY;
                 const catalogEntries = catalogResult.isOk()
-                    ? catalogResult.value.models.filter((m) => m.task === MODEL_TASK.RERANK)
+                    ? catalogResult.value.filter((m) => m.task === MODEL_TASK.RERANK)
                     : [];
                 this.renderRerankerDropdown(container, active, catalogEntries, installedResp.models);
             })
@@ -2984,13 +2985,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderVisionSection(container: HTMLElement): void {
         Promise.all([
             this.plugin.api.config(),
-            this.plugin.api.catalog({ task: MODEL_TASK.VISION }),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.VISION }),
             this.plugin.api.installedModels({ task: MODEL_TASK.VISION }).catch(() => ({ models: [] })),
         ])
             .then(([cfg, catalogResult, installedResp]) => {
                 const active = typeof cfg.vision_model === "string" ? cfg.vision_model : VISION_DISABLED_KEY;
                 const catalogEntries = catalogResult.isOk()
-                    ? catalogResult.value.models.filter((m) => m.task === MODEL_TASK.VISION)
+                    ? catalogResult.value.filter((m) => m.task === MODEL_TASK.VISION)
                     : [];
                 this.renderVisionDropdown(container, active, catalogEntries, installedResp.models);
             })
@@ -3747,7 +3748,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderChatSection(container: HTMLElement): void {
         Promise.all([
             this.plugin.api.config(),
-            this.plugin.api.catalog({ task: MODEL_TASK.CHAT }),
+            catalogThroughHosted(this.plugin.api, { task: MODEL_TASK.CHAT, limit: CHAT_TABLE_PAGE_SIZE }),
             this.plugin.api.installedModels({ task: MODEL_TASK.CHAT }).catch(() => ({ models: [] })),
         ])
             .then(([cfg, catalogResult, installedResp]) => {
@@ -3757,7 +3758,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 // task than requested, which would surface embedding/vision
                 // models in the chat dropdown.
                 const catalogEntries = catalogResult.isOk()
-                    ? catalogResult.value.models.filter((m) => m.task === MODEL_TASK.CHAT)
+                    ? catalogResult.value.filter((m) => m.task === MODEL_TASK.CHAT)
                     : [];
                 this.renderChatPicker(container, active, catalogEntries, installedResp.models);
             })
@@ -3803,7 +3804,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         header.createEl("th", { text: MESSAGES.LABEL_SIZE });
         header.createEl("th", { text: MESSAGES.LABEL_DESCRIPTION });
         header.createEl("th", { text: "" });
-        for (const entry of catalogEntries) {
+        for (const entry of catalogEntries.slice(0, CHAT_TABLE_PAGE_SIZE)) {
             this.renderChatCatalogRow(table, entry, active);
         }
     }

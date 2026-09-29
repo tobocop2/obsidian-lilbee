@@ -26,7 +26,14 @@ import { CHAT_EXPORT_EXTENSION } from "./utils/session";
 import { exportDiagnostics } from "./diagnostics-export";
 import { hasNvidiaDevice, readEngineBackend, readFleetDevices } from "./engine-backend";
 import { ErrorJournal } from "./error-journal";
-import { ServerBinary, getLatestRelease, checkForUpdate, isDownloadCanceled, migrateFlatBinary } from "./server-binary";
+import {
+    ServerBinary,
+    ServerUpdateBusyError,
+    getLatestRelease,
+    checkForUpdate,
+    isDownloadCanceled,
+    migrateFlatBinary,
+} from "./server-binary";
 import type { DownloadProgress, EnsureResult, ReleaseInfo } from "./server-binary";
 import { ScopeHeldError, ServerManager, askServerToExit, readScopeOwner, serverIsLive } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
@@ -865,16 +872,18 @@ export default class LilbeePlugin extends Plugin {
         onProgress?: ManagedServerProgressHandler,
         signal?: AbortSignal,
     ): Promise<EnsureResult | null> {
-        if (binary.installed() === null) {
+        const missing = binary.installed() === null;
+        if (missing) {
             this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
             this.setStatusClass("lilbee-status-downloading");
             onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_DOWNLOADING });
             this.updateStatusBar(`lilbee: ${MESSAGES.STATUS_FETCHING_RELEASE}`, DOT_STATE.PRIMARY);
             onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_FETCHING_RELEASE });
         }
-        try {
-            const installed = await binary.ensure({
+        const ensure = (release: string | undefined, controller: AbortController): Promise<EnsureResult> =>
+            binary.ensure({
                 includeDev: this.settings.includeDevBuilds,
+                release,
                 onProgress: (progress) => {
                     this.updateStatusBar(downloadStatusBar(progress), DOT_STATE.PRIMARY);
                     onProgress?.({
@@ -884,8 +893,11 @@ export default class LilbeePlugin extends Plugin {
                     });
                 },
                 onQuarantineFailed: () => this.showGatekeeperHelp(),
-                signal: this.startDownloadController(signal).signal,
+                signal: controller.signal,
             });
+        try {
+            const downloaded = missing ? await this.downloadNewestBinary(ensure, signal) : null;
+            const installed = downloaded ?? (await ensure(undefined, this.startDownloadController(signal)));
             this.finishDownload();
             this.setStatusClass(null);
             return installed;
@@ -904,6 +916,22 @@ export default class LilbeePlugin extends Plugin {
             onProgress?.({ phase: MANAGED_PHASE.ERROR, message: errorMessage(err, String(err)) });
             return null;
         }
+    }
+
+    /** First run: download the newest release as the one binary install in flight. While another
+     *  install runs, wait for it instead and return null. */
+    private async downloadNewestBinary(
+        ensure: (release: string, controller: AbortController) => Promise<EnsureResult>,
+        signal?: AbortSignal,
+    ): Promise<EnsureResult | null> {
+        const running = this.binaryInstall;
+        if (running) {
+            await running.done;
+            return null;
+        }
+        const controller = this.startDownloadController(signal);
+        const tag = getLatestRelease(this.settings.includeDevBuilds).then((release) => release.tag);
+        return this.claimBinaryInstall(tag, async () => ensure(await tag, controller));
     }
 
     /** Tell the user how to allow the unsigned server when macOS Gatekeeper blocks it. */
@@ -1274,8 +1302,10 @@ export default class LilbeePlugin extends Plugin {
             new Notice(
                 build ? MESSAGES.NOTICE_SERVER_SWITCHED_BUILD(build) : MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag),
             );
-        } catch {
-            if (!this.unloaded) new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
+        } catch (err) {
+            if (this.unloaded) return;
+            if (err instanceof ServerUpdateBusyError) new Notice(err.message);
+            else new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
         } finally {
             notice.hide();
         }
@@ -1346,7 +1376,32 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** The server binary install in flight (an update, a Settings install, or the first-run
+     *  download) and the release it fetches; cleared when it settles. */
+    private binaryInstall: { tag: Promise<string>; done: Promise<unknown> } | null = null;
+
+    private claimBinaryInstall<T>(tag: Promise<string>, install: () => Promise<T>): Promise<T> {
+        const done = install().finally(() => {
+            this.binaryInstall = null;
+        });
+        this.binaryInstall = { tag, done };
+        return done;
+    }
+
+    /** Install *release* and restart. One binary install runs at a time: a request for the
+     *  release it fetches joins it, and a request for another release is refused. */
     async updateServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
+        const running = this.binaryInstall;
+        if (running) {
+            const runningTag = await running.tag;
+            if (runningTag !== release.tag) throw new ServerUpdateBusyError(runningTag);
+            await running.done;
+            return;
+        }
+        await this.claimBinaryInstall(Promise.resolve(release.tag), () => this.installRelease(release, onProgress));
+    }
+
+    private async installRelease(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
         this.journal.lifecycle(
@@ -1631,7 +1686,7 @@ export default class LilbeePlugin extends Plugin {
                 const sessionId = view.currentSessionId();
                 if (!sessionId) return false;
                 if (!checking) {
-                    void this.app.workspace.revealLeaf(chatLeaf);
+                    this.revealChatLeaf(chatLeaf);
                     void view.forkSession(sessionId);
                 }
                 return true;
@@ -1645,7 +1700,7 @@ export default class LilbeePlugin extends Plugin {
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
                 if (!chatLeaf || !(chatLeaf.view instanceof ChatView)) return false;
                 if (!checking) {
-                    void this.app.workspace.revealLeaf(chatLeaf);
+                    this.revealChatLeaf(chatLeaf);
                     void chatLeaf.view.exportToFile();
                 }
                 return true;
@@ -3122,12 +3177,16 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Reveal an already-open chat leaf; its rail can predate a model change. */
+    private revealChatLeaf(leaf: WorkspaceLeaf): void {
+        void this.app.workspace.revealLeaf(leaf);
+        if (leaf.view instanceof ChatView) leaf.view.refreshRail();
+    }
+
     async activateChatView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         if (existing.length > 0) {
-            void this.app.workspace.revealLeaf(existing[0]);
-            // A rail opened before a model was activated still shows the old one.
-            this.refreshOpenChatRails();
+            this.revealChatLeaf(existing[0]);
             return;
         }
         if (this.openingChatLeaf) return;
@@ -3154,6 +3213,7 @@ export default class LilbeePlugin extends Plugin {
         this.openingChatLeaf = true;
         try {
             const workspace = this.app.workspace;
+            const openChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0] ?? null;
             const included = [
                 VIEW_TYPE_CHAT,
                 VIEW_TYPE_TASKS,
@@ -3178,7 +3238,8 @@ export default class LilbeePlugin extends Plugin {
             }
             for (const type of included) {
                 const leaf = workspace.getLeavesOfType(type)[0];
-                if (leaf) void workspace.revealLeaf(leaf);
+                if (leaf === openChat) this.revealChatLeaf(leaf);
+                else if (leaf) void workspace.revealLeaf(leaf);
             }
         } finally {
             this.openingChatLeaf = false;

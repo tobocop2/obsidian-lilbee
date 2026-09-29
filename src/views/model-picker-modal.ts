@@ -5,6 +5,7 @@ import type { CatalogEntry, ModelTask, SetModelResponse } from "../types";
 import { CATALOG_SOURCE, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import {
+    catalogThroughHosted,
     deepLinkToApiKeySettings,
     groupByProvider,
     hasReadyHostedRow,
@@ -130,7 +131,7 @@ export class ModelPickerModal extends Modal {
 
     private async fetchAndRender(): Promise<void> {
         const taskFilter: ModelTask = this.pickerScope;
-        const result = await this.plugin.api.catalog({ task: taskFilter, limit: PAGE_SIZE });
+        const result = await catalogThroughHosted(this.plugin.api, { task: taskFilter, limit: PAGE_SIZE });
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_LOAD_CATALOG);
             return;
@@ -139,7 +140,7 @@ export class ModelPickerModal extends Modal {
         // declared task doesn't match what we asked for (older builds, or
         // frontier providers tagged loosely), drop them so the chat picker
         // never shows embedding/vision/rerank models and vice versa.
-        this.allRows = result.value.models.filter((m) => m.task === taskFilter);
+        this.allRows = result.value.filter((m) => m.task === taskFilter);
         this.applyFilterAndRender();
     }
 
