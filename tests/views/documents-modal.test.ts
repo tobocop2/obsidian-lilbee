@@ -3,6 +3,7 @@ import { App, Notice } from "obsidian";
 import { MockElement, MockScope } from "../__mocks__/obsidian";
 import { DocumentsModal } from "../../src/views/documents-modal";
 import { ConfirmModal } from "../../src/views/confirm-modal";
+import { MESSAGES } from "../../src/locales/en";
 import type { DocumentEntry, DocumentsResponse } from "../../src/types";
 
 let mockConfirmResult = true;
@@ -341,6 +342,54 @@ describe("DocumentsModal", () => {
 
         const message = vi.mocked(ConfirmModal).mock.calls[0][1];
         expect(message).toBe("Remove 1 document(s) from the index? The files on disk stay where they are.");
+    });
+
+    it("shows the server's reason when a remove is refused with a 409", async () => {
+        vi.useRealTimers();
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md" })]));
+        plugin.api.removeDocuments.mockRejectedValue(
+            new Error('Server responded 409: {"detail":"another lilbee process holds the library lock"}'),
+        );
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const checkbox = el.findAll("lilbee-documents-checkbox")[0];
+        (checkbox as any).checked = true;
+        checkbox.trigger("change");
+        el.find("lilbee-documents-remove")!.trigger("click");
+        await tick();
+        await tick();
+
+        const messages = Notice.instances.map((n) => n.message);
+        expect(messages).toContain(
+            MESSAGES.ERROR_DELETE_DOCUMENTS_REASON("another lilbee process holds the library lock"),
+        );
+        expect(messages).not.toContain(MESSAGES.ERROR_DELETE_DOCUMENTS);
+    });
+
+    it("falls back to the generic text when a remove fails without a reason", async () => {
+        vi.useRealTimers();
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md" })]));
+        plugin.api.removeDocuments.mockRejectedValue("not an error object");
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const checkbox = el.findAll("lilbee-documents-checkbox")[0];
+        (checkbox as any).checked = true;
+        checkbox.trigger("change");
+        el.find("lilbee-documents-remove")!.trigger("click");
+        await tick();
+        await tick();
+
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_DELETE_DOCUMENTS);
     });
 
     it("handles remove failure", async () => {

@@ -830,6 +830,7 @@ export const MESSAGES = {
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
     ERROR_LOAD_DOCUMENTS: "lilbee: failed to load documents",
     ERROR_DELETE_DOCUMENTS: "lilbee: failed to delete documents",
+    ERROR_DELETE_DOCUMENTS_REASON: (reason: string) => `lilbee: could not delete documents: ${reason}`,
     ERROR_SWITCH_MODEL: "lilbee: failed to switch model",
     ERROR_PULL_MODEL: "lilbee: failed to pull {model}",
     ERROR_REMOVE_MODEL: "Failed to remove {model}",

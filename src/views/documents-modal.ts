@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import { ConfirmModal } from "./confirm-modal";
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
+import { bindEscapeToClose, debounce, DEBOUNCE_MS, extractServerErrorDetail } from "../utils";
 
 export class DocumentsModal extends Modal {
     private plugin: LilbeePlugin;
@@ -88,8 +88,9 @@ export class DocumentsModal extends Modal {
             new Notice(MESSAGES.NOTICE_DELETED(result.removed.length));
             if (result.not_found.length > 0) new Notice(MESSAGES.NOTICE_DELETE_NOT_FOUND(result.not_found.length));
             this.resetAndFetch();
-        } catch {
-            new Notice(MESSAGES.ERROR_DELETE_DOCUMENTS);
+        } catch (err) {
+            const reason = err instanceof Error ? extractServerErrorDetail(err.message) : null;
+            new Notice(reason ? MESSAGES.ERROR_DELETE_DOCUMENTS_REASON(reason) : MESSAGES.ERROR_DELETE_DOCUMENTS);
         }
     }
 }
