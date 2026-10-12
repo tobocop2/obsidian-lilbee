@@ -359,6 +359,14 @@ export interface SyncDone {
 export interface AddDone extends SyncDone {
     /** Sources the knowledge base already tracks; not registered again, and no user action needed. */
     tracked: string[];
+    /** Labels another source already holds; nothing was registered for them. */
+    name_taken: string[];
+    /** Paths inside a registered source or around the documents directory; none was registered. */
+    overlapping: string[];
+    /** Refused paths, as `name: reason` or a bare path that does not exist. */
+    errors: string[];
+    /** Registered folders a new parent folder took in. */
+    absorbed: string[];
 }
 
 /** Recovery options for a sync. Both default off (a plain incremental sync). */

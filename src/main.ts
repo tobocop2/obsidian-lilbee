@@ -194,6 +194,22 @@ function summarizeSyncResult(done: AddDone): string {
     return parts.join(", ");
 }
 
+/** One notice for each kind of refusal; true when the add refused anything. */
+function noticeAddRefusals(done: AddDone): boolean {
+    const kinds: [string[], (names: string) => string][] = [
+        [done.name_taken, MESSAGES.NOTICE_ADD_NAME_TAKEN],
+        [done.overlapping, MESSAGES.NOTICE_ADD_OVERLAPPING],
+        [done.errors, MESSAGES.NOTICE_ADD_REFUSED],
+    ];
+    let refused = false;
+    for (const [names, message] of kinds) {
+        if (names.length === 0) continue;
+        new Notice(message(names.join(", ")), NOTICE_ERROR_DURATION_MS);
+        refused = true;
+    }
+    return refused;
+}
+
 /** Warn about an index the server can no longer search, and say whether it did. */
 function noticeIndexMismatch(done: AddDone): boolean {
     if (!done.index_mismatch) return false;
@@ -266,14 +282,35 @@ export class FileProgressTracker {
     }
 }
 
+const stringList = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : []);
+
+const EMPTY_SYNC: SyncDone = {
+    added: [],
+    updated: [],
+    removed: [],
+    unchanged: 0,
+    failed: [],
+    skipped: [],
+    held_out: [],
+    index_mismatch: null,
+};
+
 export function parseAddDoneEvent(data: unknown): AddDone | null {
     if (!data || typeof data !== "object") return null;
     const obj = data as Record<string, unknown>;
-    // `tracked` sits on the add envelope beside `sync`, never inside it.
-    const tracked = Array.isArray(obj.tracked) ? (obj.tracked as string[]) : [];
+    // The add outcomes sit on the envelope beside `sync`, never inside it.
+    const outcomes = {
+        tracked: stringList(obj.tracked),
+        name_taken: stringList(obj.name_taken),
+        overlapping: stringList(obj.overlapping),
+        errors: stringList(obj.errors),
+        absorbed: stringList(obj.absorbed),
+    };
     const sync = obj.sync && typeof obj.sync === "object" ? (obj.sync as Record<string, unknown>) : obj;
-    const done = coerceSyncDone(sync);
-    return done === null ? null : { ...done, tracked };
+    // The server sends no `sync` when nothing reached the corpus.
+    const refused = outcomes.name_taken.length + outcomes.overlapping.length + outcomes.errors.length > 0;
+    const done = coerceSyncDone(sync) ?? (refused ? EMPTY_SYNC : null);
+    return done === null ? null : { ...done, ...outcomes };
 }
 
 function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
@@ -2880,6 +2917,10 @@ export default class LilbeePlugin extends Plugin {
             skipped: [],
             held_out: [],
             tracked: [],
+            name_taken: [],
+            overlapping: [],
+            errors: [],
+            absorbed: [],
             index_mismatch: null,
         };
         let done = 0;
@@ -2895,6 +2936,10 @@ export default class LilbeePlugin extends Plugin {
                         merged.skipped.push(...parsed.skipped);
                         merged.held_out.push(...parsed.held_out);
                         merged.tracked.push(...parsed.tracked);
+                        merged.name_taken.push(...parsed.name_taken);
+                        merged.overlapping.push(...parsed.overlapping);
+                        merged.errors.push(...parsed.errors);
+                        merged.absorbed.push(...parsed.absorbed);
                         merged.unchanged += parsed.unchanged;
                         // The last batch's verdict is the state the index ends in.
                         merged.index_mismatch = parsed.index_mismatch;
@@ -3005,9 +3050,13 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
-            if (syncResult && !noticeIndexMismatch(syncResult)) {
-                const summary = summarizeSyncResult(syncResult);
-                new Notice(summary ? MESSAGES.NOTICE_SYNC_SUMMARY(summary) : MESSAGES.STATUS_NOTHING_NEW);
+            if (syncResult) {
+                const refused = noticeAddRefusals(syncResult);
+                if (!noticeIndexMismatch(syncResult)) {
+                    const summary = summarizeSyncResult(syncResult);
+                    if (summary) new Notice(MESSAGES.NOTICE_SYNC_SUMMARY(summary));
+                    else if (!refused) new Notice(MESSAGES.STATUS_NOTHING_NEW);
+                }
             }
             this.taskQueue.complete(taskId);
         } catch (err) {

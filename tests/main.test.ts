@@ -904,6 +904,10 @@ describe("LilbeePlugin", () => {
                             skipped: [],
                             held_out: [{ filename: `${batch[0].name}.pdf`, reason: "no text extracted" }],
                             tracked: [`${batch[0].name}.tracked`],
+                            name_taken: [`${batch[0].name}.taken`],
+                            overlapping: [`${batch[0].name}.over`],
+                            errors: [`${batch[0].name}.err`],
+                            absorbed: [`${batch[0].name}.abs`],
                         },
                     };
                 })(),
@@ -928,6 +932,10 @@ describe("LilbeePlugin", () => {
             // Every batch's tracked names survive the merge; the sibling path must
             // not drop what the single-request path reports.
             expect(dones[0].data.tracked).toEqual(["f0.py.tracked", "f90.py.tracked"]);
+            expect(dones[0].data.name_taken).toEqual(["f0.py.taken", "f90.py.taken"]);
+            expect(dones[0].data.overlapping).toEqual(["f0.py.over", "f90.py.over"]);
+            expect(dones[0].data.errors).toEqual(["f0.py.err", "f90.py.err"]);
+            expect(dones[0].data.absorbed).toEqual(["f0.py.abs", "f90.py.abs"]);
         });
 
         it("uploadInBatches ignores an unparseable done from a batch", async () => {
@@ -5364,6 +5372,10 @@ describe("LilbeePlugin", () => {
                 skipped: ["e"],
                 held_out: [{ filename: "f", reason: "no text extracted" }],
                 tracked: [],
+                name_taken: [],
+                overlapping: [],
+                errors: [],
+                absorbed: [],
                 index_mismatch: null,
             });
 
@@ -5377,6 +5389,10 @@ describe("LilbeePlugin", () => {
                 skipped: [],
                 held_out: [],
                 tracked: [],
+                name_taken: [],
+                overlapping: [],
+                errors: [],
+                absorbed: [],
                 index_mismatch: null,
             });
 
@@ -5399,6 +5415,10 @@ describe("LilbeePlugin", () => {
                 skipped: ["z.pdf"],
                 held_out: [],
                 tracked: ["already-there"],
+                name_taken: [],
+                overlapping: [],
+                errors: [],
+                absorbed: [],
                 index_mismatch: null,
             });
 
@@ -5416,6 +5436,115 @@ describe("LilbeePlugin", () => {
             expect(parseAddDoneEvent("nope")).toBeNull();
             expect(parseAddDoneEvent({ not: "sync" })).toBeNull();
             expect(parseAddDoneEvent({ added: "not-an-array" })).toBeNull();
+        });
+
+        it("parseAddDoneEvent reads the refusal fields and an add with no sync", async () => {
+            const { parseAddDoneEvent } = await import("../src/main");
+
+            // Nothing reached the corpus: the server sends no `sync`.
+            expect(
+                parseAddDoneEvent({
+                    copied: [],
+                    name_taken: ["notes"],
+                    overlapping: ["/a/b"],
+                    errors: ["x.svg: vector graphic, not a document"],
+                    absorbed: ["old"],
+                }),
+            ).toEqual({
+                added: [],
+                updated: [],
+                removed: [],
+                unchanged: 0,
+                failed: [],
+                skipped: [],
+                held_out: [],
+                tracked: [],
+                name_taken: ["notes"],
+                overlapping: ["/a/b"],
+                errors: ["x.svg: vector graphic, not a document"],
+                absorbed: ["old"],
+                index_mismatch: null,
+            });
+
+            // Refusals beside a sync keep both.
+            const withSync = parseAddDoneEvent({
+                copied: ["a"],
+                name_taken: ["notes"],
+                sync: { added: ["a"], updated: [] },
+            });
+            expect(withSync?.added).toEqual(["a"]);
+            expect(withSync?.name_taken).toEqual(["notes"]);
+
+            // Older server: no refusal fields and no sync stays null.
+            expect(parseAddDoneEvent({ copied: [], errors: [] })).toBeNull();
+        });
+
+        it("addToLilbee shows one notice per kind of refusal and no failure mark", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* refusedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: [],
+                        name_taken: ["notes", "docs"],
+                        overlapping: [],
+                        errors: ["a.svg: vector graphic, not a document"],
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(refusedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_ADD_NAME_TAKEN("notes, docs"));
+            expect(messages).toContain(MESSAGES.NOTICE_ADD_REFUSED("a.svg: vector graphic, not a document"));
+            expect(messages.some((m) => m === MESSAGES.NOTICE_ADD_OVERLAPPING(""))).toBe(false);
+            expect(messages.some((m) => m.includes("nothing new to add"))).toBe(false);
+            expect((plugin as any).failedAddPaths.size).toBe(0);
+        });
+
+        it("addToLilbee names overlapping paths and still shows the sync summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* overlapDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: ["a"],
+                        overlapping: ["/v/inner"],
+                        errors: [],
+                        sync: { added: ["a"], updated: [] },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(overlapDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_ADD_OVERLAPPING("/v/inner"));
+            expect(messages).toContain("lilbee: 1 added");
+        });
+
+        it("addToLilbee from an older server (no refusal fields) shows only the summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* oldDone() {
+                yield { event: SSE_EVENT.DONE, data: { added: ["a"], updated: [] } };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(oldDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            expect(Notice.instances.map((n) => n.message)).toEqual(["lilbee: adding notes...", "lilbee: 1 added"]);
         });
 
         it("ignores malformed done payloads that are neither SyncDone nor nested", async () => {
