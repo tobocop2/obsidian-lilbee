@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import { MANAGED_DOCS_PREFIX, type ModelShowResponse, type StatusResponse } from "../types";
 import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, noticeForResultError, revealInFileExplorer } from "../utils";
+import { bindEscapeToClose, noticeForResultError, ocrModeLabel, revealInFileExplorer } from "../utils";
 import { modelShowRows } from "../utils/model-show-rows";
 import { remedyForWarning } from "../utils/warning-remedies";
 
@@ -167,14 +167,8 @@ export class StatusModal extends Modal {
         }
         await this.renderServedContext(table);
 
-        const ocrValue = status.config.enable_ocr;
-        const ocrLabel =
-            ocrValue === "true"
-                ? MESSAGES.STATUS_VALUE_OCR_ON
-                : ocrValue === "false"
-                  ? MESSAGES.STATUS_VALUE_OCR_OFF
-                  : MESSAGES.STATUS_VALUE_OCR_AUTO;
-        this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrLabel);
+        const ocrMode = status.config.ocr;
+        if (ocrMode !== undefined) this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrModeLabel(ocrMode));
     }
 
     private async renderModelDetails(table: HTMLTableElement, model: string): Promise<void> {

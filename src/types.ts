@@ -1117,6 +1117,14 @@ export interface EmbeddingModelResponse {
     model: string;
 }
 
+/** Which pages the server reads with OCR: the values of its `ocr` setting. */
+export type OcrMode = "auto" | "all" | "off";
+export const OCR_MODE = {
+    AUTO: "auto",
+    ALL: "all",
+    OFF: "off",
+} as const satisfies Record<string, OcrMode>;
+
 /** Table extraction backends the server accepts for `table_model`. */
 export const TABLE_MODEL = {
     DISABLED: "disabled",

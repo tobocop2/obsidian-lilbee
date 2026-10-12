@@ -5,6 +5,7 @@ import { StatusModal } from "../../src/views/status-modal";
 import { MESSAGES } from "../../src/locales/en";
 import { MockElement } from "../__mocks__/obsidian";
 import type LilbeePlugin from "../../src/main";
+import { OCR_MODE } from "../../src/types";
 import type { DocumentEntry, DocumentsResponse, StatusResponse } from "../../src/types";
 
 function makeDoc(overrides: Partial<DocumentEntry> = {}): DocumentEntry {
@@ -358,9 +359,10 @@ describe("StatusModal", () => {
         }
     });
 
-    it("shows OCR: Auto when enable_ocr is not set", async () => {
+    /** The label and value cells of the Models table, as [label, value] pairs. */
+    async function statusRows(config: Record<string, string>): Promise<Array<[string, string]>> {
         const plugin = makePlugin();
-        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus({ config })));
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
         const modal = new StatusModal(new App(), plugin);
@@ -371,49 +373,28 @@ describe("StatusModal", () => {
         });
 
         const content = (modal as any).contentEl as MockElement;
-        const values = content.findAll("lilbee-status-value");
-        const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("Auto");
+        const labels = content.findAll("lilbee-status-label").map((l: MockElement) => l.textContent);
+        const values = content.findAll("lilbee-status-value").map((v: MockElement) => v.textContent);
+        return labels.map((label, i) => [label, values[i]]);
+    }
+
+    it.each([
+        [OCR_MODE.AUTO, "Auto"],
+        [OCR_MODE.ALL, "All pages"],
+        [OCR_MODE.OFF, "Off"],
+    ])("shows the server's OCR mode %s as %s", async (mode, shown) => {
+        const rows = await statusRows({ chat_model: "mistral:7b", ocr: mode });
+        expect(rows).toContainEqual([MESSAGES.LABEL_STATUS_OCR, shown]);
     });
 
-    it("shows OCR: On when enable_ocr is true", async () => {
-        const plugin = makePlugin();
-        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: "true" } })),
-        );
-        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
-
-        const modal = new StatusModal(new App(), plugin);
-        modal.open();
-        await vi.waitFor(() => {
-            const content = (modal as any).contentEl as MockElement;
-            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
-        });
-
-        const content = (modal as any).contentEl as MockElement;
-        const values = content.findAll("lilbee-status-value");
-        const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("On");
+    it("shows the server's own word for an OCR mode the plugin does not know", async () => {
+        const rows = await statusRows({ chat_model: "mistral:7b", ocr: "scans_only" });
+        expect(rows).toContainEqual([MESSAGES.LABEL_STATUS_OCR, "scans_only"]);
     });
 
-    it("shows OCR: Off when enable_ocr is false", async () => {
-        const plugin = makePlugin();
-        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: "false" } })),
-        );
-        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
-
-        const modal = new StatusModal(new App(), plugin);
-        modal.open();
-        await vi.waitFor(() => {
-            const content = (modal as any).contentEl as MockElement;
-            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
-        });
-
-        const content = (modal as any).contentEl as MockElement;
-        const values = content.findAll("lilbee-status-value");
-        const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("Off");
+    it("shows no OCR row against a server that reports no OCR mode", async () => {
+        const rows = await statusRows({ chat_model: "mistral:7b" });
+        expect(rows.map(([label]) => label)).not.toContain(MESSAGES.LABEL_STATUS_OCR);
     });
 
     it("handles showModel failure gracefully", async () => {

@@ -565,15 +565,6 @@ describe("addFiles()", () => {
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.ocr_timeout).toBe(30);
     });
-
-    it("never sends a legacy enable_ocr flag", async () => {
-        fetchMock.mockResolvedValue(sseResponse([]));
-
-        await collect(client.addFiles(["/vault/a.md"]));
-
-        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.enable_ocr).toBeUndefined();
-    });
 });
 
 describe("uploadFiles()", () => {
@@ -626,15 +617,6 @@ describe("syncStream()", () => {
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.prune_ignored).toBe(true);
-    });
-
-    it("never sends a legacy enable_ocr flag", async () => {
-        fetchMock.mockResolvedValue(sseResponse([]));
-
-        await collect(client.syncStream());
-
-        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.enable_ocr).toBeUndefined();
     });
 
     it("sends force_rebuild true when the forceRebuild option is set", async () => {

@@ -75,6 +75,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
+    ocrModeLabel,
     openPluginSettingsById,
     renderExternalLink,
     SERVER_PROBE_TIMEOUT_MS,
@@ -2499,6 +2500,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 desc: MESSAGES.DESC_TABLE_EXTRACTION,
             }),
             this.localRow(tableModel.name, tableModel.desc, (setting) => this.applyTableModelRow(setting, tableModel)),
+            ...this.rowsOcrMode(),
             this.listRow({
                 key: "ocr_language",
                 name: MESSAGES.LABEL_OCR_LANGUAGE,
@@ -2565,6 +2567,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 },
                 { integer: false, min: 0 },
             ),
+        ];
+    }
+
+    /** The OCR mode picker, on a server whose schema publishes the modes; no row otherwise. */
+    private rowsOcrMode(): RowSpec[] {
+        const spec: ConfigRowSpec = { key: "ocr", name: MESSAGES.LABEL_OCR_MODE, desc: MESSAGES.DESC_OCR_MODE };
+        const choices = this.configChoices?.get(spec.key) ?? null;
+        if (choices === null) return [];
+        return [
+            {
+                ...spec,
+                apply: (setting) => {
+                    this.applyChoiceRow(setting, spec, choices, ocrModeLabel);
+                    this.hideUntilServerReports(setting.settingEl, spec.key);
+                },
+            },
         ];
     }
 
@@ -2656,18 +2674,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const choices = this.configChoices?.get(spec.key) ?? null;
         if (choices !== null)
             return this.localRow(spec.name, spec.desc, (setting) =>
-                this.applyLanguageChoiceRow(setting, spec, choices),
+                this.applyChoiceRow(setting, spec, choices, (choice) => choice),
             );
         const free: ConfigRowSpec = { ...spec, desc: MESSAGES.DESC_FTS_LANGUAGE_FREE_TEXT };
         return this.localRow(free.name, free.desc, (setting) => this.applyLanguageTextRow(setting, free));
     }
 
-    private applyLanguageChoiceRow(setting: Setting, spec: ConfigRowSpec, choices: string[]): void {
+    /** A picker over the values the server published for the key, each shown under `labelOf(value)`. */
+    private applyChoiceRow(
+        setting: Setting,
+        spec: ConfigRowSpec,
+        choices: string[],
+        labelOf: (choice: string) => string,
+    ): void {
         setting
             .setName(spec.name)
             .setDesc(spec.desc)
             .addDropdown((dropdown) => {
-                for (const choice of choices) dropdown.addOption(choice, choice);
+                for (const choice of choices) dropdown.addOption(choice, labelOf(choice));
                 const current = this.serverConfig?.[spec.key];
                 if (typeof current === "string") dropdown.setValue(current);
                 dropdown.onChange(async (value) => {

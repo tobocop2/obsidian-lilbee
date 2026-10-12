@@ -8,7 +8,7 @@ import {
     SESSION_FORK_MIN_SERVER_VERSION,
     SESSION_EXPORT_MIN_SERVER_VERSION,
 } from "./min-server-version";
-import { SERVER_MODE, WARM_PHASE } from "./types";
+import { OCR_MODE, SERVER_MODE, WARM_PHASE } from "./types";
 import type { HealthWarning, ServerMode, WarmProgress } from "./types";
 
 /**
@@ -117,6 +117,17 @@ export const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 /** How long a reachability probe waits for a server to answer. */
 export const SERVER_PROBE_TIMEOUT_MS = 5000;
+
+const OCR_MODE_LABELS = new Map<string, string>([
+    [OCR_MODE.AUTO, MESSAGES.LABEL_OCR_MODE_AUTO],
+    [OCR_MODE.ALL, MESSAGES.LABEL_OCR_MODE_ALL],
+    [OCR_MODE.OFF, MESSAGES.LABEL_OCR_MODE_OFF],
+]);
+
+/** The name shown for a value of the server's `ocr` setting; an unknown value keeps the server's word. */
+export function ocrModeLabel(mode: string): string {
+    return OCR_MODE_LABELS.get(mode) ?? mode;
+}
 
 export function formatAbbreviatedCount(count: number): string {
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
