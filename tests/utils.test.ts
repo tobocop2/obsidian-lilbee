@@ -20,6 +20,7 @@ import {
     meetsVersionFloor,
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
+    ocrModeLabel,
     percentFromSse,
     percentOfBytes,
     sameWarnings,
@@ -35,9 +36,19 @@ import {
 } from "../src/utils";
 import { isVersionOlder } from "../src/min-server-version";
 import { ServerStartingError, SessionTokenError } from "../src/api";
-import { SERVER_MODE } from "../src/types";
+import { OCR_MODE, SERVER_MODE } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ERROR_NAME } from "../src/types";
+
+describe("ocrModeLabel", () => {
+    it("names each mode of the server's ocr setting in plain words", () => {
+        expect(Object.values(OCR_MODE).map(ocrModeLabel)).toEqual(["Auto", "All pages", "Off"]);
+    });
+
+    it("keeps the server's word for a mode it does not know", () => {
+        expect(ocrModeLabel("scans_only")).toBe("scans_only");
+    });
+});
 
 describe("ensureUrlScheme", () => {
     it("returns URL unchanged when it starts with https://", () => {
