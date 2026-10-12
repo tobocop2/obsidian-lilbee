@@ -7164,6 +7164,40 @@ describe("ChatView — restored session guards", () => {
         expect(view.app.workspace.openLinkText).toHaveBeenCalledWith("notes.md", "");
     });
 
+    it("a restored memory source renders as a memory chip and opens the memories view", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            meta: {
+                id: "s6",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 1,
+            },
+            messages: [{ role: "assistant", content: "answer", sources: ["memory:abc", "notes.md"], ts: "t" }],
+            summary: "",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await (view as any).resumeSession("s6");
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const leaf = new WorkspaceLeaf(view.app as never);
+        view.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+
+        const memoryChip = container.find("lilbee-source-chip-memory")!;
+        expect(memoryChip.textContent).toContain(MESSAGES.LABEL_MEMORY_SOURCE);
+        expect(memoryChip.textContent).not.toContain("memory:abc");
+        memoryChip.trigger("click");
+
+        expect(view.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        expect(view.app.workspace.openLinkText).not.toHaveBeenCalled();
+        expect(container.findAll("lilbee-source-chip")).toHaveLength(2);
+    });
+
     it("restoring a transcript no-ops once the view has been torn down", async () => {
         const view = new ChatView(makeLeaf(), makePlugin());
         await view.onOpen();

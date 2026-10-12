@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import type { LilbeeClient } from "../api";
-import { CLAIM_TYPE, SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
+import { CLAIM_TYPE, MEMORY_SOURCE_PREFIX, SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
 import { MESSAGES } from "../locales/en";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
@@ -19,6 +19,22 @@ function documentResultToSource(result: DocumentResult): Source {
         page_end: excerpt?.page_end ?? null,
         line_start: excerpt?.line_start ?? null,
         line_end: excerpt?.line_end ?? null,
+    };
+}
+
+/** A persisted source path names a memory when it has the server's `memory:<id>` form. */
+export function memorySourceFromPath(path: string): Source | null {
+    if (!path.startsWith(MEMORY_SOURCE_PREFIX)) return null;
+    return {
+        source: path,
+        content_type: "",
+        distance: 0,
+        chunk: "",
+        page_start: null,
+        page_end: null,
+        line_start: null,
+        line_end: null,
+        memory_id: path.slice(MEMORY_SOURCE_PREFIX.length),
     };
 }
 

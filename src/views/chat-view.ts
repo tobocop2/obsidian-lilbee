@@ -41,7 +41,7 @@ import type {
 } from "../types";
 import { RateLimitedError, hasStatusLine, isHttpStatus } from "../api";
 
-import { renderAggregatedSourceChips } from "./results";
+import { memorySourceFromPath, renderAggregatedSourceChips, renderSourceChip } from "./results";
 import { displayLabelForRef, extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
@@ -1306,6 +1306,11 @@ export class ChatView extends ItemView {
     private renderRestoredSources(container: HTMLElement, sources: string[]): void {
         const chipsEl = this.createSourcesBlock(container);
         for (const path of sources) {
+            const memory = memorySourceFromPath(path);
+            if (memory) {
+                renderSourceChip(chipsEl, memory, this.app, this.plugin.api);
+                continue;
+            }
             const chip = chipsEl.createSpan({ cls: "lilbee-source-chip" });
             chip.createSpan({ text: path, cls: "lilbee-source-chip-file" });
             chip.addEventListener("click", () => void this.app.workspace.openLinkText(path, ""));

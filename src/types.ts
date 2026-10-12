@@ -96,6 +96,9 @@ export const REQUEST_OUTCOME = {
     STARTING: "starting",
 } as const satisfies Record<string, RequestOutcome>;
 
+/** Prefix of the `source` of a recalled memory (`memory:<id>`). */
+export const MEMORY_SOURCE_PREFIX = "memory:";
+
 export interface Source {
     source: string;
     content_type: string;
