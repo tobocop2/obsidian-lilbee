@@ -294,7 +294,7 @@ Your vault is full of more than markdown. lilbee handles the rest:
 
 - **Prose and structured files.** PDFs, Word / Excel / PowerPoint, ebooks, CSV / JSON / YAML. Each chunk keeps its section context.
 - **Code**, 150+ languages. Split along real functions and classes, not arbitrary line ranges.
-- **Scanned PDFs and photographed pages.** Read with OCR, including a local vision model that keeps tables and layout intact. It's a per-vault toggle in Settings.
+- **Scanned PDFs and photographed pages.** Read with OCR, including a local vision model that keeps tables and layout intact. Pick the OCR mode in Settings: auto reads only pages with no usable text, all pages reads every page, and off skips scans.
 
 <!-- demo: vision | tutorial/#scanned-pdf | a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover -->
 
