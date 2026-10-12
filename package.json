@@ -44,19 +44,19 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.4.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@types/node": "^26.6.3",
+    "@vitest/coverage-v8": "^5.0.2",
     "esbuild": "^0.28.2",
-    "eslint": "^10.9.1",
+    "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-obsidianmd": "^0.4.2",
     "husky": "^9.1.7",
     "nano-staged": "^1.0.2",
     "obsidian": "^1.13.1",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.9",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "typescript-eslint": "^8.68.0",
-    "vitest": "^4.1.11"
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.2"
   },
   "nano-staged": {
     "src/**/*.ts": [
