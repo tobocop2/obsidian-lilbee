@@ -210,7 +210,8 @@
           "models": "array",
           "next_offset": "number",
           "offset": "number",
-          "total": "number"
+          "total": "number",
+          "truncated": "boolean"
         },
         "streams": false
       }
@@ -219,7 +220,8 @@
       "PUT": {
         "fields": {
           "model": "string",
-          "reindex_required": "boolean"
+          "reindex_required": "boolean",
+          "warnings": "array"
         },
         "streams": false
       }
@@ -228,7 +230,8 @@
       "PUT": {
         "fields": {
           "model": "string",
-          "reindex_required": "boolean"
+          "reindex_required": "boolean",
+          "warnings": "array"
         },
         "streams": false
       }
@@ -259,7 +262,8 @@
       "PUT": {
         "fields": {
           "model": "string",
-          "reindex_required": "boolean"
+          "reindex_required": "boolean",
+          "warnings": "array"
         },
         "streams": false
       }
@@ -273,7 +277,8 @@
       "PUT": {
         "fields": {
           "model": "string",
-          "reindex_required": "boolean"
+          "reindex_required": "boolean",
+          "warnings": "array"
         },
         "streams": false
       }
@@ -463,6 +468,7 @@
           "document_count": "number",
           "entities": "object",
           "index": "object",
+          "ocr_note": "string",
           "skipped": "array",
           "skipped_total": "number",
           "sources": "array",
@@ -636,5 +642,5 @@
       }
     }
   },
-  "version": "0.6.90b446"
+  "version": "0.6.90b448"
 }

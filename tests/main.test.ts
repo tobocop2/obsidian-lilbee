@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
+import addSummary from "./fixtures/add-summary.json";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { electronDialog } from "../src/utils/file-dialog";
@@ -5483,6 +5484,27 @@ describe("LilbeePlugin", () => {
             expect(parseAddDoneEvent("nope")).toBeNull();
             expect(parseAddDoneEvent({ not: "sync" })).toBeNull();
             expect(parseAddDoneEvent({ added: "not-an-array" })).toBeNull();
+        });
+
+        it("parseAddDoneEvent reads the server's own add summary for a refusal and an absorbed folder", async () => {
+            const { parseAddDoneEvent } = await import("../src/main");
+
+            const refusal = parseAddDoneEvent(addSummary.refusal);
+            expect(refusal).toMatchObject({
+                name_taken: addSummary.refusal.name_taken,
+                overlapping: addSummary.refusal.overlapping,
+                errors: addSummary.refusal.errors,
+                absorbed: [],
+                added: [],
+            });
+
+            const absorbed = parseAddDoneEvent(addSummary.absorbed);
+            expect(absorbed).toMatchObject({
+                absorbed: addSummary.absorbed.absorbed,
+                added: addSummary.absorbed.sync.added,
+                name_taken: [],
+                errors: [],
+            });
         });
 
         it("parseAddDoneEvent reads the refusal fields and an add with no sync", async () => {
