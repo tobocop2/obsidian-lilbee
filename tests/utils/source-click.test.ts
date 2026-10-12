@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { App } from "../__mocks__/obsidian";
+import { App, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { sourceClickAction, executeSourceClick, SOURCE_ACTION } from "../../src/utils/source-click";
 import { CONTENT_TYPE } from "../../src/types";
 import type { Source } from "../../src/types";
@@ -221,7 +221,33 @@ describe("sourceClickAction — preview fallback", () => {
     });
 });
 
+describe("sourceClickAction — memory sources", () => {
+    it("returns memory for a recalled memory, even when a vault file has the same name", () => {
+        const vault = makeVault(true);
+        const source = makeSource({ source: "memory:abc", memory_id: "abc", content_type: "text/plain" });
+        expect(sourceClickAction(source, vault as never)).toEqual({ kind: SOURCE_ACTION.MEMORY });
+    });
+
+    it("keeps the normal path when memory_id is absent or null (older server)", () => {
+        const vault = makeVault(false);
+        const absent = makeSource();
+        const nulled = makeSource({ memory_id: null });
+        expect(sourceClickAction(absent, vault as never)).toEqual({ kind: SOURCE_ACTION.PREVIEW, source: absent });
+        expect(sourceClickAction(nulled, vault as never)).toEqual({ kind: SOURCE_ACTION.PREVIEW, source: nulled });
+    });
+});
+
 describe("executeSourceClick — dispatch", () => {
+    it("memory: opens the memories view and never the file preview", async () => {
+        const app = new App();
+        const leaf = new WorkspaceLeaf(app as never);
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+        await executeSourceClick(app as never, {} as LilbeeClient, { kind: SOURCE_ACTION.MEMORY });
+        expect(app.workspace.getLeavesOfType).toHaveBeenCalledWith("lilbee-memories");
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        expect(previewInstances).toHaveLength(0);
+    });
+
     it("vault-markdown: opens with eState.line ephemeral state", async () => {
         const app = new App();
         const api = {} as LilbeeClient;

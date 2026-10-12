@@ -58,6 +58,7 @@ import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./age
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
+import { noticeModelWarnings } from "./utils/model-warnings";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
 import { catalogThroughHosted, hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
@@ -2349,34 +2350,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // error. The visible predicate hides it until the key arrives.
         return [
             this.visibleRow(
-                this.numberRow(
-                    {
-                        key: "worker_pool_call_timeout_s",
-                        name: MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
-                        desc: MESSAGES.DESC_WORKER_POOL_CALL_TIMEOUT,
-                    },
-                    { integer: false, min: 0 },
-                ),
-                "worker_pool_call_timeout_s",
-            ),
-            this.visibleRow(
                 this.toggleRow({
                     key: "worker_pool_eager_start",
                     name: MESSAGES.LABEL_WORKER_POOL_EAGER_START,
                     desc: MESSAGES.DESC_WORKER_POOL_EAGER_START,
                 }),
                 "worker_pool_eager_start",
-            ),
-            this.visibleRow(
-                this.numberRow(
-                    {
-                        key: "worker_pool_max_idle_s",
-                        name: MESSAGES.LABEL_WORKER_POOL_MAX_IDLE,
-                        desc: MESSAGES.DESC_WORKER_POOL_MAX_IDLE,
-                    },
-                    { integer: false, min: 0 },
-                ),
-                "worker_pool_max_idle_s",
             ),
         ];
     }
@@ -2550,14 +2529,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     desc: MESSAGES.DESC_MAX_CHUNKS_PER_FILE,
                 },
                 { integer: true, min: 0 },
-            ),
-            this.numberRow(
-                {
-                    key: "tesseract_timeout",
-                    name: MESSAGES.LABEL_TESSERACT_TIMEOUT,
-                    desc: MESSAGES.DESC_TESSERACT_TIMEOUT,
-                },
-                { integer: false, min: 0 },
             ),
             this.numberRow(
                 {
@@ -3099,6 +3070,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return;
         }
         new Notice(MESSAGES.NOTICE_VISION_UPDATED);
+        noticeModelWarnings(result.value);
     }
 
     private async pullAndSetVision(entry: CatalogEntry): Promise<void> {

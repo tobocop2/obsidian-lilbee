@@ -151,7 +151,7 @@ There are several ways to get documents into your library:
 - **Sync vault** indexes everything new or changed and removes anything you've deleted. Run it from the palette, or turn on auto-sync (Settings → Sync) to have it run after a short delay whenever files change.
 - **Add current file** / **Add current folder**, or right-click → **Add to lilbee**, index a specific file or folder on demand.
 - **Rebuild index** drops the entire index and re-embeds from scratch — use it after changing the embedding model or chunking. It asks for confirmation first.
-- **Retry skipped documents** re-attempts files that yielded no content last time (for example a scan that needed OCR you've since enabled).
+- **Retry skipped documents** re-attempts files that yielded no content last time (for example a scan that you skipped with OCR mode off).
 
 All of this runs as background jobs in the [Task Center](#the-task-center). Chat and search keep working while indexing proceeds. Other jobs you start take a slot or wait in the queue, so check the [Task Center](#the-task-center) before you start a big sync.
 
@@ -181,7 +181,7 @@ lilbee uses four model **roles**, each independently chosen:
 | ------------- | -------------------------------------------------------------------------------- | -------------------- |
 | **Chat**      | Writes the answers                                                               | Picked in the wizard |
 | **Embedding** | Turns documents into something searchable; required for indexing and Search mode | Picked in the wizard |
-| **Vision**    | Reads scanned PDFs and image-only pages when OCR isn't enough                    | Disabled             |
+| **Vision**    | Reads scanned PDFs and image-only pages in place of Tesseract                    | Disabled             |
 | **Reranker**  | Reorders results for better relevance                                            | Disabled             |
 
 Pick or switch any role from Settings → **Models** (each has a dropdown plus a **Browse more…** button), from the chat toolbar, or with the **Pick chat model** / **Pick embedding model** commands.
@@ -264,8 +264,8 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 | **Search & Retrieval**      | **Results count** (1–20, default 12), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). Search strictness and Adaptive threshold are server settings. They apply to every client of this server, and each row has a reset. |
 | **Generation** _(advanced)_ | System prompts for answering with and without documents, **Chat mode**, **Creativity** (temperature), **Top P**, **Top K**, **Repetition penalty**, **Seed**, and caps like max tokens, reasoning length, keep-alive, and GPU memory fraction. Blank means "use the model's default."   |
 | **Retrieval (advanced)**    | Candidate-pool multiplier, minimum relevance score, max sources per answer, max chunks per source, and the MMR relevance/diversity balance.                                                                                                                                             |
-| **Ingest**                  | Chunk size and overlap (changing these invalidates the index), **Max chunks per file** (a file over the limit is skipped and reported; 0 means no limit), and OCR timeouts.                                                                                                              |
-| **Worker pool**             | Timeouts and idle behavior for the background model workers; whether to start them eagerly.                                                                                                                                                                                             |
+| **Ingest**                  | Chunk size and overlap (changing these invalidates the index), **Max chunks per file** (a file over the limit is skipped and reported; 0 means no limit), and the OCR mode (auto, all pages, off).                                                                                                            |
+| **Worker pool**             | Whether to start the background model workers eagerly.                                                                                                                                                                                           |
 | **Crawling**                | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, and URL exclude patterns.                                                                                                                                                                                        |
 | **Wiki (beta)**             | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons.                                                                                                                                                           |
 | **Advanced**                | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, and **Reset all** server-backed settings.                                                                          |
@@ -290,7 +290,7 @@ Text extraction is handled by [Kreuzberg](https://github.com/kreuzberg-dev/kreuz
 | Text   | `.md`, `.txt`, `.html`, `.rst`                                                                                      |
 | Code   | `.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, and [150+ more](https://github.com/Goldziher/tree-sitter-language-pack) |
 
-Scanned PDFs and image-only pages are read with OCR (Tesseract), or with a local or cloud **vision model** for higher quality on tables and layout. Set one under Settings → Models, or toggle OCR from the chat toolbar.
+Scanned PDFs and image-only pages are read with OCR (Tesseract), or with a local or cloud **vision model** for higher quality on tables and layout. Set one under Settings → Models. Pick the OCR mode under Settings → Ingest: auto reads only the pages with no usable text, all pages reads every page, and off skips scanned pages.
 
 ---
 

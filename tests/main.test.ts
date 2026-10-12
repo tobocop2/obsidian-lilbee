@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
+import addSummary from "./fixtures/add-summary.json";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, Plugin, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { electronDialog } from "../src/utils/file-dialog";
@@ -904,6 +905,10 @@ describe("LilbeePlugin", () => {
                             skipped: [],
                             held_out: [{ filename: `${batch[0].name}.pdf`, reason: "no text extracted" }],
                             tracked: [`${batch[0].name}.tracked`],
+                            name_taken: [`${batch[0].name}.taken`],
+                            overlapping: [`${batch[0].name}.over`],
+                            errors: [`${batch[0].name}.err`],
+                            absorbed: [`${batch[0].name}.abs`],
                         },
                     };
                 })(),
@@ -928,6 +933,64 @@ describe("LilbeePlugin", () => {
             // Every batch's tracked names survive the merge; the sibling path must
             // not drop what the single-request path reports.
             expect(dones[0].data.tracked).toEqual(["f0.py.tracked", "f90.py.tracked"]);
+            expect(dones[0].data.name_taken).toEqual(["f0.py.taken", "f90.py.taken"]);
+            expect(dones[0].data.overlapping).toEqual(["f0.py.over", "f90.py.over"]);
+            expect(dones[0].data.errors).toEqual(["f0.py.err", "f90.py.err"]);
+            expect(dones[0].data.absorbed).toEqual(["f0.py.abs", "f90.py.abs"]);
+        });
+
+        it("uploadInBatches keeps the first skip_records_error any batch reports", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const files = Array.from({ length: 200 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            const errors = [null, "first lock busy", "second lock busy"];
+            let call = 0;
+            (plugin as any).api.uploadFiles = vi.fn(() =>
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 0,
+                            failed: [],
+                            skipped: [],
+                            skip_records_error: errors[call++],
+                        },
+                    };
+                })(),
+            );
+            const events: { event: string; data: any }[] = [];
+            for await (const e of (plugin as any).uploadInBatches(files, new AbortController().signal)) events.push(e);
+            expect((plugin as any).api.uploadFiles).toHaveBeenCalledTimes(3);
+            const dones = events.filter((e) => e.event === SSE_EVENT.DONE);
+            expect(dones[0].data.skip_records_error).toBe("first lock busy");
+        });
+
+        it("an upload of two batches shows the skip_records_error one batch reports", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            Notice.clear();
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            let call = 0;
+            (plugin as any).api.uploadFiles = vi.fn(() =>
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: ["a"],
+                            updated: [],
+                            removed: [],
+                            unchanged: 0,
+                            failed: [],
+                            skipped: [],
+                            skip_records_error: call++ === 1 ? "Could not save the held-out list: lock busy" : null,
+                        },
+                    };
+                })(),
+            );
+            await (plugin as any).runUpload(files, []);
+            expect(Notice.instances.map((n) => n.message)).toContain("Could not save the held-out list: lock busy");
         });
 
         it("uploadInBatches ignores an unparseable done from a batch", async () => {
@@ -1067,6 +1130,61 @@ describe("LilbeePlugin", () => {
             const names = (uploads as any[]).map((u) => u.name).sort();
             expect(names).toEqual(["notes/alpha/index.md", "notes/beta/index.md"]);
             expect(new Set(names).size).toBe(2);
+        });
+
+        it("the local drop list is the server's list minus what the pinned server indexes", async () => {
+            const { UPLOAD_REFUSED_EXTENSIONS } = await import("../src/types");
+            const fixture: string[] = (await import("./fixtures/upload-refused-extensions.json")).default;
+            for (const ext of UPLOAD_REFUSED_EXTENSIONS) expect(fixture).toContain(ext);
+            // The pinned server (0.6.90b420) indexes .svg; only the server at main refuses it.
+            const indexedByPinnedServer = [".svg"];
+            const leftOut = fixture.filter((ext) => !UPLOAD_REFUSED_EXTENSIONS.includes(ext));
+            expect(leftOut).toEqual(indexedByPinnedServer);
+        });
+
+        it("dropRefusedUploads keeps files the server accepts and matches the extension like the server", async () => {
+            const { dropRefusedUploads } = await import("../src/main");
+            const file = (name: string) => ({ name, data: new ArrayBuffer(1) });
+            const { kept, leftOut } = dropRefusedUploads([
+                file("a.md"),
+                file("logo.SVG"),
+                file("dir.mp3/readme"),
+                file(".mp3"),
+                file("talk.MP4"),
+                file("noext"),
+                file("clip.wav"),
+            ]);
+            expect(kept.map((f) => f.name)).toEqual(["a.md", "logo.SVG", "dir.mp3/readme", ".mp3", "noext"]);
+            expect(leftOut).toBe(2);
+        });
+
+        it("runUpload leaves refused files out and says how many", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const runAddSpy = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
+            Notice.clear();
+            await (plugin as any).runUpload(
+                [
+                    { name: "a.py", data: new ArrayBuffer(1) },
+                    { name: "b.svg", data: new ArrayBuffer(1) },
+                    { name: "c.mp3", data: new ArrayBuffer(1) },
+                    { name: "d.mp4", data: new ArrayBuffer(1) },
+                ],
+                ["/v"],
+            );
+            expect(runAddSpy.mock.calls[0][0]).toEqual(["a.py", "b.svg"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_UPLOAD_LEFT_OUT(2)]);
+            expect(MESSAGES.NOTICE_UPLOAD_LEFT_OUT(2)).toBe(
+                "lilbee: left out 2 files lilbee does not read (audio and video)",
+            );
+        });
+
+        it("runUpload with only refused files says so and skips runAdd", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const runAddSpy = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
+            Notice.clear();
+            await (plugin as any).runUpload([{ name: "b.mp3", data: new ArrayBuffer(1) }], ["/v"]);
+            expect(runAddSpy).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_UPLOAD_LEFT_OUT(1)]);
         });
 
         it("runUpload with no files notices and skips runAdd", async () => {
@@ -3072,6 +3190,21 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
         });
 
+        it("an upload the server refuses with a 400 shows the server's reason", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            const body = JSON.stringify({ status_code: 400, detail: "'a.svg': vector graphic, not a document" });
+            plugin.api.uploadFiles = vi.fn().mockImplementation(() => {
+                throw new Error(`Server responded 400: ${body}`);
+            });
+            await (plugin as any).runUpload([{ name: "a.svg", data: new ArrayBuffer(1) }], ["/v/a.svg"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([
+                MESSAGES.ERROR_ADD_FAILED_DETAIL("'a.svg': vector graphic, not a document"),
+            ]);
+        });
+
         it("runAdd parks the task in WAITING state on already_ingesting and leaves failedAddPaths clean", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -4742,6 +4875,83 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("1 pages"))).toBe(true);
         });
 
+        it("counts crawl_page_failed events and adds them to the done notice", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/a" } };
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/b" } };
+                    yield {
+                        event: SSE_EVENT.CRAWL_PAGE_FAILED,
+                        data: { url: "https://example.com/b", reason: "empty" },
+                    };
+                    yield {
+                        event: SSE_EVENT.CRAWL_PAGE_FAILED,
+                        data: { url: "https://example.com/c", reason: "empty" },
+                    };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 3 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: crawl done: 3 pages, 2 failed");
+        });
+
+        it("a crawl shows the skip_records_error of the sync that follows", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: ["a.md"],
+                            updated: [],
+                            removed: [],
+                            failed: [],
+                            unchanged: 0,
+                            skip_records_error: "Could not save the held-out list: lock busy",
+                        },
+                    };
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            await vi.waitFor(() =>
+                expect(Notice.instances.map((n) => n.message)).toContain("Could not save the held-out list: lock busy"),
+            );
+        });
+
+        it("leaves 'failed' out of the done notice when no page failed", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/a" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: crawl done: 1 pages");
+        });
+
         it("handles CRAWL_ERROR event", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -5364,7 +5574,12 @@ describe("LilbeePlugin", () => {
                 skipped: ["e"],
                 held_out: [{ filename: "f", reason: "no text extracted" }],
                 tracked: [],
+                name_taken: [],
+                overlapping: [],
+                errors: [],
+                absorbed: [],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -5377,7 +5592,12 @@ describe("LilbeePlugin", () => {
                 skipped: [],
                 held_out: [],
                 tracked: [],
+                name_taken: [],
+                overlapping: [],
+                errors: [],
+                absorbed: [],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
@@ -5399,7 +5619,12 @@ describe("LilbeePlugin", () => {
                 skipped: ["z.pdf"],
                 held_out: [],
                 tracked: ["already-there"],
+                name_taken: [],
+                overlapping: [],
+                errors: [],
+                absorbed: [],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // The server's mismatch verdict rides through both shapes.
@@ -5416,6 +5641,171 @@ describe("LilbeePlugin", () => {
             expect(parseAddDoneEvent("nope")).toBeNull();
             expect(parseAddDoneEvent({ not: "sync" })).toBeNull();
             expect(parseAddDoneEvent({ added: "not-an-array" })).toBeNull();
+        });
+
+        it("parseAddDoneEvent reads the server's own add summary for a refusal and an absorbed folder", async () => {
+            const { parseAddDoneEvent } = await import("../src/main");
+
+            const refusal = parseAddDoneEvent(addSummary.refusal);
+            expect(refusal).toMatchObject({
+                name_taken: addSummary.refusal.name_taken,
+                overlapping: addSummary.refusal.overlapping,
+                errors: addSummary.refusal.errors,
+                absorbed: [],
+                added: [],
+            });
+
+            const absorbed = parseAddDoneEvent(addSummary.absorbed);
+            expect(absorbed).toMatchObject({
+                absorbed: addSummary.absorbed.absorbed,
+                added: addSummary.absorbed.sync.added,
+                skip_records_error: addSummary.absorbed.sync.skip_records_error,
+                name_taken: [],
+                errors: [],
+            });
+        });
+
+        it("parseAddDoneEvent reads the refusal fields and an add with no sync", async () => {
+            const { parseAddDoneEvent } = await import("../src/main");
+
+            // Nothing reached the corpus: the server sends no `sync`.
+            expect(
+                parseAddDoneEvent({
+                    copied: [],
+                    name_taken: ["notes"],
+                    overlapping: ["/a/b"],
+                    errors: ["x.svg: vector graphic, not a document"],
+                    absorbed: ["old"],
+                }),
+            ).toEqual({
+                added: [],
+                updated: [],
+                removed: [],
+                unchanged: 0,
+                failed: [],
+                skipped: [],
+                held_out: [],
+                tracked: [],
+                name_taken: ["notes"],
+                overlapping: ["/a/b"],
+                errors: ["x.svg: vector graphic, not a document"],
+                absorbed: ["old"],
+                index_mismatch: null,
+                skip_records_error: null,
+            });
+
+            // Refusals beside a sync keep both.
+            const withSync = parseAddDoneEvent({
+                copied: ["a"],
+                name_taken: ["notes"],
+                sync: { added: ["a"], updated: [] },
+            });
+            expect(withSync?.added).toEqual(["a"]);
+            expect(withSync?.name_taken).toEqual(["notes"]);
+
+            // Older server: no refusal fields and no sync stays null.
+            expect(parseAddDoneEvent({ copied: [], errors: [] })).toBeNull();
+        });
+
+        it("addToLilbee shows one notice per kind of refusal and no failure mark", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* refusedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: [],
+                        name_taken: ["notes", "docs"],
+                        overlapping: [],
+                        errors: ["a.svg: vector graphic, not a document"],
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(refusedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_ADD_NAME_TAKEN("notes, docs"));
+            expect(messages).toContain(MESSAGES.NOTICE_ADD_REFUSED("a.svg: vector graphic, not a document"));
+            expect(messages.some((m) => m === MESSAGES.NOTICE_ADD_OVERLAPPING(""))).toBe(false);
+            expect(messages.some((m) => m.includes("nothing new to add"))).toBe(false);
+            expect((plugin as any).failedAddPaths.size).toBe(0);
+        });
+
+        it("addToLilbee adds the folders taken in to the summary, and omits them when none", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* absorbedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: ["parent"],
+                        absorbed: ["a", "b"],
+                        errors: [],
+                        sync: { added: ["x"], updated: [] },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(absorbedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "parent", name: "parent" }));
+
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: 1 added, 2 folders taken in");
+
+            Notice.clear();
+            const single = absorbedDone;
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(
+                (async function* () {
+                    for await (const e of single()) yield { ...e, data: { ...e.data, absorbed: ["a"] } };
+                })(),
+            );
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "parent", name: "parent" }));
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: 1 added, 1 folder taken in");
+        });
+
+        it("addToLilbee names overlapping paths and still shows the sync summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* overlapDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: ["a"],
+                        overlapping: ["/v/inner"],
+                        errors: [],
+                        sync: { added: ["a"], updated: [] },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(overlapDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_ADD_OVERLAPPING("/v/inner"));
+            expect(messages).toContain("lilbee: 1 added");
+        });
+
+        it("addToLilbee from an older server (no refusal fields) shows only the summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* oldDone() {
+                yield { event: SSE_EVENT.DONE, data: { added: ["a"], updated: [] } };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(oldDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes", name: "notes" }));
+
+            expect(Notice.instances.map((n) => n.message)).toEqual(["lilbee: adding notes...", "lilbee: 1 added"]);
         });
 
         it("ignores malformed done payloads that are neither SyncDone nor nested", async () => {
@@ -10899,6 +11289,89 @@ describe("LilbeePlugin", () => {
             const messages = Notice.instances.map((n) => n.message);
             expect(messages.some((m) => m.includes("This index was built with 'nomic'"))).toBe(true);
             expect(messages.some((m) => m.includes("1 added"))).toBe(false);
+        });
+
+        it.each([
+            ["a message", "Could not save the held-out list: lock busy", true],
+            ["null", null, false],
+            ["empty", "", false],
+            ["absent", undefined, false],
+        ])("triggerSync shows the sync summary's skip_records_error when it is %s", async (_label, value, shown) => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* done() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["a.md"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        skip_records_error: value,
+                    },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(done());
+            await plugin.triggerSync();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.includes("Could not save the held-out list: lock busy")).toBe(shown);
+            expect(messages.some((m) => m.includes("1 added"))).toBe(true);
+        });
+
+        it("triggerSync shows skip_records_error beside the index-mismatch notice", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* done() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: [],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        index_mismatch: { message: "mismatch" },
+                        skip_records_error: "lock busy",
+                    },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(done());
+            await plugin.triggerSync();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain("mismatch");
+            expect(messages).toContain("lock busy");
+        });
+
+        it("addToLilbee shows skip_records_error of the nested sync summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* done() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: ["test.md"],
+                        errors: [],
+                        sync: {
+                            added: ["test.md"],
+                            updated: [],
+                            removed: [],
+                            failed: [],
+                            unchanged: 0,
+                            skip_records_error: "lock busy",
+                        },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(done());
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain("lock busy");
+            expect(messages.some((m) => m.includes("1 added"))).toBe(true);
         });
 
         it("triggerSync aborts the stream and reports an idle error when the server stalls", async () => {

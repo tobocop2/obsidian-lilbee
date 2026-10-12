@@ -1,0 +1,46 @@
+{
+  "refusal": {
+    "copied": [],
+    "errors": [
+      "clip.mp3: audio files are not supported"
+    ],
+    "name_taken": [
+      "notes"
+    ],
+    "overlapping": [
+      "/home/u/docs/sub"
+    ],
+    "absorbed": [],
+    "tracked": [],
+    "sync": null,
+    "already_ingesting": []
+  },
+  "absorbed": {
+    "copied": [
+      "docs"
+    ],
+    "errors": [],
+    "name_taken": [],
+    "overlapping": [],
+    "absorbed": [
+      "docs/sub"
+    ],
+    "tracked": [],
+    "sync": {
+      "added": [
+        "docs/a.md"
+      ],
+      "updated": [],
+      "removed": [],
+      "unchanged": 0,
+      "relocated": [],
+      "failed": [],
+      "skipped": [],
+      "held_out": [],
+      "truncated": 0,
+      "index_mismatch": null,
+      "skip_records_error": "could not save held-out list"
+    },
+    "already_ingesting": []
+  }
+}

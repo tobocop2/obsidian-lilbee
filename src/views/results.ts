@@ -1,6 +1,7 @@
 import { App } from "obsidian";
 import type { LilbeeClient } from "../api";
-import { CLAIM_TYPE, SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
+import { CLAIM_TYPE, MEMORY_SOURCE_PREFIX, SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
+import { MESSAGES } from "../locales/en";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 const MAX_EXCERPT_CHARS = 200;
@@ -18,6 +19,22 @@ function documentResultToSource(result: DocumentResult): Source {
         page_end: excerpt?.page_end ?? null,
         line_start: excerpt?.line_start ?? null,
         line_end: excerpt?.line_end ?? null,
+    };
+}
+
+/** A persisted source path names a memory when it has the server's `memory:<id>` form. */
+export function memorySourceFromPath(path: string): Source | null {
+    if (!path.startsWith(MEMORY_SOURCE_PREFIX)) return null;
+    return {
+        source: path,
+        content_type: "",
+        distance: 0,
+        chunk: "",
+        page_start: null,
+        page_end: null,
+        line_start: null,
+        line_end: null,
+        memory_id: path.slice(MEMORY_SOURCE_PREFIX.length),
     };
 }
 
@@ -94,6 +111,16 @@ export function renderDocumentResult(
     }
 }
 
+function renderMemoryChip(container: HTMLElement, source: Source, app: App, api: LilbeeClient): void {
+    const chip = container.createSpan({ cls: "lilbee-source-chip lilbee-source-chip-memory" });
+    chip.createSpan({ text: "M", cls: "lilbee-memory-type-badge" });
+    chip.createSpan({ text: MESSAGES.LABEL_MEMORY_SOURCE });
+    chip.addClass("lilbee-clickable");
+    chip.addEventListener("click", () => {
+        void executeSourceClick(app, api, sourceClickAction(source, app.vault));
+    });
+}
+
 /**
  * Render a source chip. Chips are always clickable: the default click dispatches
  * through `executeSourceClick` (vault deep-link or server preview modal). When
@@ -108,6 +135,10 @@ export function renderSourceChip(
     api: LilbeeClient,
     onWikiClick?: (slug: string) => void,
 ): void {
+    if (source.memory_id) {
+        renderMemoryChip(container, source, app, api);
+        return;
+    }
     const isWiki = source.chunk_type === SEARCH_CHUNK_TYPE.WIKI;
     const cls = isWiki ? "lilbee-source-chip lilbee-source-chip-wiki" : "lilbee-source-chip";
     const chip = container.createSpan({ cls });
@@ -157,7 +188,7 @@ export function renderAggregatedSourceChips(
     const groups = groupSourcesByFile(sources);
     for (const group of groups) {
         const first = group[0];
-        if (first.chunk_type === SEARCH_CHUNK_TYPE.WIKI) {
+        if (first.chunk_type === SEARCH_CHUNK_TYPE.WIKI || first.memory_id) {
             for (const s of group) renderSourceChip(container, s, app, api);
             continue;
         }

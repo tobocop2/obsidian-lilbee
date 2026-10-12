@@ -1638,6 +1638,7 @@
     white-space: nowrap;
 }
 
+.lilbee-status-detail,
 .lilbee-status-held-out-reason,
 .lilbee-status-held-out-more,
 .lilbee-status-held-out-retry {
@@ -3075,6 +3076,16 @@
 .lilbee-source-chip-wiki {
     background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent);
     color: var(--lilbee-color-wiki);
+}
+
+.lilbee-memory-type-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 7px;
+    border-radius: 8px;
+    margin-right: var(--size-4-1, 4px);
 }
 
 .lilbee-claim-fact {

@@ -96,6 +96,9 @@ export const REQUEST_OUTCOME = {
     STARTING: "starting",
 } as const satisfies Record<string, RequestOutcome>;
 
+/** Prefix of the `source` of a recalled memory (`memory:<id>`). */
+export const MEMORY_SOURCE_PREFIX = "memory:";
+
 export interface Source {
     source: string;
     content_type: string;
@@ -113,6 +116,8 @@ export interface Source {
      * where the file is not accessible as a vault-relative path.
      */
     vault_path?: string | null;
+    /** Set only on a recalled memory (`source` is `memory:<id>`); absent on older servers. */
+    memory_id?: string | null;
 }
 
 /**
@@ -158,14 +163,11 @@ export interface ConfigResponse {
     chat_mode?: ChatMode;
     embedding_model?: string;
     wiki?: boolean;
-    worker_pool_call_timeout_s?: number;
     worker_pool_eager_start?: boolean;
-    worker_pool_max_idle_s?: number;
     vision_load_budget_s?: number;
     chunk_size?: number;
     chunk_overlap?: number;
     max_chunks_per_file?: number;
-    tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;
     chat_compaction?: boolean;
@@ -309,6 +311,8 @@ export const DISCOVER_RAIL = {
 export interface SetModelResponse {
     model: string;
     reindex_required: boolean;
+    /** Notices about the change; the server leaves it empty or out when it has none. */
+    warnings?: string[];
 }
 
 export interface StatusResponse {
@@ -317,6 +321,8 @@ export interface StatusResponse {
     /** Held-out files, capped by the server; `skipped_total` is the real count. */
     skipped?: SkippedSource[];
     skipped_total?: number;
+    /** What happens to scanned pages: the engine that reads them, or that they are skipped. */
+    ocr_note?: string;
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
 }
@@ -353,13 +359,41 @@ export interface SyncDone {
     held_out: SkippedSource[];
     /** Absent on servers that do not report it; only a rebuild clears it. */
     index_mismatch?: IndexMismatch | null;
+    /** Set when this run could not save its list of held-out files; absent or null otherwise. */
+    skip_records_error?: string | null;
 }
 
 /** An add stream's terminal summary: the sync it ran, plus the add-only outcomes. */
 export interface AddDone extends SyncDone {
     /** Sources the knowledge base already tracks; not registered again, and no user action needed. */
     tracked: string[];
+    /** Labels another source already holds; nothing was registered for them. */
+    name_taken: string[];
+    /** Paths inside a registered source or around the documents directory; none was registered. */
+    overlapping: string[];
+    /** Refused paths, as `name: reason` or a bare path that does not exist. */
+    errors: string[];
+    /** Registered folders a new parent folder took in. */
+    absorbed: string[];
 }
+
+/** Audio and video extensions dropped before an upload; no server reads them. Lowercase, with the dot. */
+export const UPLOAD_REFUSED_EXTENSIONS: readonly string[] = [
+    ".m1v",
+    ".m2v",
+    ".m4a",
+    ".m4v",
+    ".mp3",
+    ".mp4",
+    ".mp4v",
+    ".mpe",
+    ".mpeg",
+    ".mpg",
+    ".mpg4",
+    ".mpga",
+    ".wav",
+    ".webm",
+];
 
 /** Recovery options for a sync. Both default off (a plain incremental sync). */
 export interface SyncOptions {
@@ -921,6 +955,7 @@ export const SSE_EVENT = {
     PULL: "pull",
     CRAWL_START: "crawl_start",
     CRAWL_PAGE: "crawl_page",
+    CRAWL_PAGE_FAILED: "crawl_page_failed",
     CRAWL_DONE: "crawl_done",
     CRAWL_ERROR: "crawl_error",
     WIKI_PHASE: "wiki_phase",

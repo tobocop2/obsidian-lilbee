@@ -10,6 +10,8 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
+import type { Result } from "../result";
+import type { SetModelResponse } from "../types";
 import {
     CATALOG_SOURCE,
     CHAT_MODE,
@@ -39,7 +41,7 @@ import type {
 } from "../types";
 import { RateLimitedError, hasStatusLine, isHttpStatus } from "../api";
 
-import { renderAggregatedSourceChips } from "./results";
+import { memorySourceFromPath, renderAggregatedSourceChips, renderSourceChip } from "./results";
 import { displayLabelForRef, extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
@@ -47,6 +49,7 @@ import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { addCloseButton } from "../components/close-button";
 import { applyConfig, applyEmbeddingModel } from "../utils/reindex";
+import { noticeModelWarnings } from "../utils/model-warnings";
 import { remedyForWarning } from "../utils/warning-remedies";
 import { MESSAGES } from "../locales/en";
 import {
@@ -120,7 +123,7 @@ interface OptionalRoleSpec {
     disabledLabel: string;
     tooltip: string;
     configKey: string;
-    setActive: (api: LilbeePlugin["api"], model: string) => Promise<{ isErr(): boolean }>;
+    setActive: (api: LilbeePlugin["api"], model: string) => Promise<Result<SetModelResponse, Error>>;
     failNotice: string;
 }
 
@@ -922,6 +925,7 @@ export class ChatView extends ItemView {
                 new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
                 return;
             }
+            noticeModelWarnings(result.value);
             this.optionalActive[spec.task] = value;
             this.fillOptionalRoles();
             void this.plugin.fetchActiveModel();
@@ -1302,6 +1306,11 @@ export class ChatView extends ItemView {
     private renderRestoredSources(container: HTMLElement, sources: string[]): void {
         const chipsEl = this.createSourcesBlock(container);
         for (const path of sources) {
+            const memory = memorySourceFromPath(path);
+            if (memory) {
+                renderSourceChip(chipsEl, memory, this.app, this.plugin.api);
+                continue;
+            }
             const chip = chipsEl.createSpan({ cls: "lilbee-source-chip" });
             chip.createSpan({ text: path, cls: "lilbee-source-chip-file" });
             chip.addEventListener("click", () => void this.app.workspace.openLinkText(path, ""));

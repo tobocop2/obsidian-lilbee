@@ -1,5 +1,6 @@
 import { vi, describe, it, expect } from "vitest";
-import { App, MockElement } from "../__mocks__/obsidian";
+import { App, MockElement, WorkspaceLeaf } from "../__mocks__/obsidian";
+import { MESSAGES } from "../../src/locales/en";
 import type { DocumentResult, Source } from "../../src/types";
 import type { LilbeeClient } from "../../src/api";
 
@@ -794,6 +795,45 @@ describe("renderSourceChip — wiki chunk_type", () => {
         expect(previewOpens).toHaveLength(1);
         expect(previewOpens[0].source.source).toBe("book.pdf");
         expect(previewOpens[0].source.page_start).toBe(5);
+    });
+});
+
+describe("memory sources", () => {
+    const memory: Source = {
+        source: "memory:abc",
+        content_type: "text/plain",
+        distance: 0.1,
+        chunk: "the user prefers tea",
+        page_start: 0,
+        page_end: 0,
+        line_start: 0,
+        line_end: 0,
+        memory_id: "abc",
+    };
+
+    it("renders a memory chip with no location, and a click opens the memories view", () => {
+        const container = makeContainer();
+        const app = makeApp();
+        const leaf = new WorkspaceLeaf(app as never);
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+        previewOpens.length = 0;
+        renderSourceChip(container as unknown as HTMLElement, memory, app, makeApi());
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.classList.contains("lilbee-source-chip-memory")).toBe(true);
+        expect(chip.children.find((c: any) => c.classList.contains("lilbee-memory-type-badge"))!.textContent).toBe("M");
+        expect(chip.textContent).toContain(MESSAGES.LABEL_MEMORY_SOURCE);
+        expect(chip.textContent).not.toContain("line");
+        chip.trigger("click");
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        expect(previewOpens).toHaveLength(0);
+    });
+
+    it("aggregated chips render a memory as its own chip beside document chips", () => {
+        const container = makeContainer();
+        const doc: Source = { ...memory, source: "a.md", memory_id: undefined, content_type: "text/markdown" };
+        renderAggregatedSourceChips(container as unknown as HTMLElement, [doc, memory], makeApp(), makeApi());
+        expect(container.findAll("lilbee-source-chip-grouped")).toHaveLength(1);
+        expect(container.findAll("lilbee-source-chip-memory")).toHaveLength(1);
     });
 });
 

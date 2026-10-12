@@ -5223,7 +5223,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
 
         const menu = openRailMenu(container, "lilbee-vision-model-select")!;
-        expect(menuTitles(menu)).toEqual(["(disabled)", "Browse catalog…"]);
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_VISION_DISABLED, "Browse catalog…"]);
         menu.itemTitled("Browse catalog…")!.click();
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
     });
@@ -5237,7 +5237,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
 
         const menu = openRailMenu(container, "lilbee-vision-model-select")!;
-        expect(menuTitles(menu)).toEqual(["(disabled)", "llava-7b", "qwen-vl", "Browse catalog…"]);
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_VISION_DISABLED, "llava-7b", "qwen-vl", "Browse catalog…"]);
         expect(menu.itemTitled("llava-7b")!.checked).toBe(true);
         expect(triggerText(container, "lilbee-vision-model-select")).toBe("llava-7b");
     });
@@ -5293,8 +5293,10 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         const visionDot = container.findAll("is-vision")[0];
         expect(visionDot.classList.contains("is-active")).toBe(false);
         // The chip shows the disabled label, and the menu checks Disabled.
-        expect(triggerText(container, "lilbee-vision-model-select")).toBe("(disabled)");
-        expect(openRailMenu(container, "lilbee-vision-model-select")!.itemTitled("(disabled)")!.checked).toBe(true);
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe(MESSAGES.LABEL_VISION_DISABLED);
+        expect(
+            openRailMenu(container, "lilbee-vision-model-select")!.itemTitled(MESSAGES.LABEL_VISION_DISABLED)!.checked,
+        ).toBe(true);
     });
 
     it("picking a Vision model calls setVisionModel and refreshes", async () => {
@@ -5312,6 +5314,43 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         expect(plugin.fetchActiveModel).toHaveBeenCalled();
     });
 
+    it("shows each warning of a Vision model change as a notice", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        (plugin.api as any).setVisionModel = vi
+            .fn()
+            .mockResolvedValue(
+                ok({ model: "qwen-vl", reindex_required: false, warnings: ["unused while OCR is off"] }),
+            );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        pickRailItem(container, "lilbee-vision-model-select", "qwen-vl");
+        await tick();
+
+        expect(Notice.instances.map((n) => n.message)).toContain("unused while OCR is off");
+    });
+
+    it("shows no warning notice when a Vision model change carries none", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        (plugin.api as any).setVisionModel = vi
+            .fn()
+            .mockResolvedValue(ok({ model: "qwen-vl", reindex_required: false }));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        Notice.clear();
+
+        pickRailItem(container, "lilbee-vision-model-select", "qwen-vl");
+        await tick();
+
+        expect(Notice.instances).toHaveLength(0);
+    });
+
     it("picking Disabled turns Vision off via setVisionModel('')", async () => {
         const plugin = makePlugin();
         configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
@@ -5320,7 +5359,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        pickRailItem(container, "lilbee-vision-model-select", "(disabled)");
+        pickRailItem(container, "lilbee-vision-model-select", MESSAGES.LABEL_VISION_DISABLED);
         await tick();
 
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("");
@@ -7125,6 +7164,40 @@ describe("ChatView — restored session guards", () => {
         expect(view.app.workspace.openLinkText).toHaveBeenCalledWith("notes.md", "");
     });
 
+    it("a restored memory source renders as a memory chip and opens the memories view", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            meta: {
+                id: "s6",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 1,
+            },
+            messages: [{ role: "assistant", content: "answer", sources: ["memory:abc", "notes.md"], ts: "t" }],
+            summary: "",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await (view as any).resumeSession("s6");
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const leaf = new WorkspaceLeaf(view.app as never);
+        view.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+
+        const memoryChip = container.find("lilbee-source-chip-memory")!;
+        expect(memoryChip.textContent).toContain(MESSAGES.LABEL_MEMORY_SOURCE);
+        expect(memoryChip.textContent).not.toContain("memory:abc");
+        memoryChip.trigger("click");
+
+        expect(view.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        expect(view.app.workspace.openLinkText).not.toHaveBeenCalled();
+        expect(container.findAll("lilbee-source-chip")).toHaveLength(2);
+    });
+
     it("restoring a transcript no-ops once the view has been torn down", async () => {
         const view = new ChatView(makeLeaf(), makePlugin());
         await view.onOpen();
@@ -7466,7 +7539,7 @@ describe("ChatView rail chip when no option matches the active model", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         expect(menuTitles(openRailMenu(container, "lilbee-vision-model-select"))).toEqual([
-            "(disabled)",
+            MESSAGES.LABEL_VISION_DISABLED,
             "llava-7b",
             "Browse catalog…",
         ]);

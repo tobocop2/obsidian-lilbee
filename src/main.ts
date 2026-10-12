@@ -106,6 +106,7 @@ import {
     type VaultAdapter,
     type SkippedSource,
     MANAGED_DOCS_PREFIX,
+    UPLOAD_REFUSED_EXTENSIONS,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -144,7 +145,7 @@ import { SearchModal } from "./views/search-modal";
 import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
-import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
+import { MemoriesView, openMemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
 import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "./views/placement-view";
 import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
@@ -191,11 +192,29 @@ function summarizeSyncResult(done: AddDone): string {
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
     if (done.tracked.length > 0) parts.push(`${done.tracked.length} already tracked`);
+    if (done.absorbed.length > 0) parts.push(MESSAGES.SYNC_PART_FOLDERS_TAKEN_IN(done.absorbed.length));
     return parts.join(", ");
 }
 
-/** Warn about an index the server can no longer search, and say whether it did. */
-function noticeIndexMismatch(done: AddDone): boolean {
+/** One notice for each kind of refusal; true when the add refused anything. */
+function noticeAddRefusals(done: AddDone): boolean {
+    const kinds: [string[], (names: string) => string][] = [
+        [done.name_taken, MESSAGES.NOTICE_ADD_NAME_TAKEN],
+        [done.overlapping, MESSAGES.NOTICE_ADD_OVERLAPPING],
+        [done.errors, MESSAGES.NOTICE_ADD_REFUSED],
+    ];
+    let refused = false;
+    for (const [names, message] of kinds) {
+        if (names.length === 0) continue;
+        new Notice(message(names.join(", ")), NOTICE_ERROR_DURATION_MS);
+        refused = true;
+    }
+    return refused;
+}
+
+/** Warn about a lost held-out list and about an index the server can no longer search; true when the index warning showed. */
+function noticeSyncProblems(done: AddDone): boolean {
+    if (done.skip_records_error) new Notice(done.skip_records_error, NOTICE_ERROR_DURATION_MS);
     if (!done.index_mismatch) return false;
     new Notice(done.index_mismatch.message, NOTICE_ERROR_DURATION_MS);
     return true;
@@ -266,14 +285,36 @@ export class FileProgressTracker {
     }
 }
 
+const stringList = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : []);
+
+const EMPTY_SYNC: SyncDone = {
+    added: [],
+    updated: [],
+    removed: [],
+    unchanged: 0,
+    failed: [],
+    skipped: [],
+    held_out: [],
+    index_mismatch: null,
+    skip_records_error: null,
+};
+
 export function parseAddDoneEvent(data: unknown): AddDone | null {
     if (!data || typeof data !== "object") return null;
     const obj = data as Record<string, unknown>;
-    // `tracked` sits on the add envelope beside `sync`, never inside it.
-    const tracked = Array.isArray(obj.tracked) ? (obj.tracked as string[]) : [];
+    // The add outcomes sit on the envelope beside `sync`, never inside it.
+    const outcomes = {
+        tracked: stringList(obj.tracked),
+        name_taken: stringList(obj.name_taken),
+        overlapping: stringList(obj.overlapping),
+        errors: stringList(obj.errors),
+        absorbed: stringList(obj.absorbed),
+    };
     const sync = obj.sync && typeof obj.sync === "object" ? (obj.sync as Record<string, unknown>) : obj;
-    const done = coerceSyncDone(sync);
-    return done === null ? null : { ...done, tracked };
+    // The server sends no `sync` when nothing reached the corpus.
+    const refused = outcomes.name_taken.length + outcomes.overlapping.length + outcomes.errors.length > 0;
+    const done = coerceSyncDone(sync) ?? (refused ? EMPTY_SYNC : null);
+    return done === null ? null : { ...done, ...outcomes };
 }
 
 function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
@@ -287,10 +328,22 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
         held_out: Array.isArray(obj.held_out) ? (obj.held_out as SkippedSource[]) : [],
         index_mismatch: (obj.index_mismatch as IndexMismatch | null | undefined) ?? null,
+        skip_records_error:
+            typeof obj.skip_records_error === "string" && obj.skip_records_error ? obj.skip_records_error : null,
     };
 }
 
 type UploadPayload = { name: string; data: ArrayBuffer };
+
+/** Drop audio and video files before an upload: no server reads them. */
+export function dropRefusedUploads(files: UploadPayload[]): { kept: UploadPayload[]; leftOut: number } {
+    const kept = files.filter((f) => {
+        const name = basename(f.name);
+        const dot = name.lastIndexOf(".");
+        return dot <= 0 || !UPLOAD_REFUSED_EXTENSIONS.includes(name.slice(dot).toLowerCase());
+    });
+    return { kept, leftOut: files.length - kept.length };
+}
 
 /** Split uploads into batches that stay under the server's per-request file
  *  count and body-size limits. A lone file over the byte budget still gets its
@@ -2847,15 +2900,17 @@ export default class LilbeePlugin extends Plugin {
         retryKeys: string[],
         retry?: () => void | Promise<void>,
     ): Promise<void> {
-        if (files.length === 0) {
-            new Notice(MESSAGES.STATUS_NOTHING_NEW);
+        const { kept, leftOut } = dropRefusedUploads(files);
+        if (leftOut > 0) new Notice(MESSAGES.NOTICE_UPLOAD_LEFT_OUT(leftOut));
+        if (kept.length === 0) {
+            if (leftOut === 0) new Notice(MESSAGES.STATUS_NOTHING_NEW);
             return;
         }
         await this.runAdd(
-            files.map((f) => f.name),
+            kept.map((f) => f.name),
             retryKeys,
             retry,
-            (signal) => this.uploadInBatches(files, signal),
+            (signal) => this.uploadInBatches(kept, signal),
             "Uploading files",
         );
     }
@@ -2880,7 +2935,12 @@ export default class LilbeePlugin extends Plugin {
             skipped: [],
             held_out: [],
             tracked: [],
+            name_taken: [],
+            overlapping: [],
+            errors: [],
+            absorbed: [],
             index_mismatch: null,
+            skip_records_error: null,
         };
         let done = 0;
         for (const batch of batches) {
@@ -2895,9 +2955,15 @@ export default class LilbeePlugin extends Plugin {
                         merged.skipped.push(...parsed.skipped);
                         merged.held_out.push(...parsed.held_out);
                         merged.tracked.push(...parsed.tracked);
+                        merged.name_taken.push(...parsed.name_taken);
+                        merged.overlapping.push(...parsed.overlapping);
+                        merged.errors.push(...parsed.errors);
+                        merged.absorbed.push(...parsed.absorbed);
                         merged.unchanged += parsed.unchanged;
                         // The last batch's verdict is the state the index ends in.
                         merged.index_mismatch = parsed.index_mismatch;
+                        // The first failure stands: a later batch that saves cleanly does not undo it.
+                        merged.skip_records_error ??= parsed.skip_records_error;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
@@ -3005,9 +3071,13 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
-            if (syncResult && !noticeIndexMismatch(syncResult)) {
-                const summary = summarizeSyncResult(syncResult);
-                new Notice(summary ? MESSAGES.NOTICE_SYNC_SUMMARY(summary) : MESSAGES.STATUS_NOTHING_NEW);
+            if (syncResult) {
+                const refused = noticeAddRefusals(syncResult);
+                if (!noticeSyncProblems(syncResult)) {
+                    const summary = summarizeSyncResult(syncResult);
+                    if (summary) new Notice(MESSAGES.NOTICE_SYNC_SUMMARY(summary));
+                    else if (!refused) new Notice(MESSAGES.STATUS_NOTHING_NEW);
+                }
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
@@ -3026,7 +3096,8 @@ export default class LilbeePlugin extends Plugin {
                 this.markAddFailed(retryKeys);
             } else {
                 console.error("[lilbee] add failed:", err);
-                const msg = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
+                const raw = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
+                const msg = extractServerErrorDetail(raw) ?? raw;
                 new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                 this.taskQueue.fail(taskId, msg);
                 this.markAddFailed(retryKeys);
@@ -3067,16 +3138,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async activateMemoriesView(): Promise<void> {
-        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES);
-        if (existing.length > 0) {
-            void this.app.workspace.revealLeaf(existing[0]);
-            return;
-        }
-        const leaf = this.app.workspace.getRightLeaf(false);
-        if (leaf) {
-            await leaf.setViewState({ type: VIEW_TYPE_MEMORIES, active: true });
-            void this.app.workspace.revealLeaf(leaf);
-        }
+        await openMemoriesView(this.app);
     }
 
     refreshMemoryViews(): void {
@@ -3492,6 +3554,7 @@ export default class LilbeePlugin extends Plugin {
         let setupResolved = false;
         try {
             let pageCount = 0;
+            let failedCount = 0;
             const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode, includeSubdomains);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
@@ -3538,10 +3601,14 @@ export default class LilbeePlugin extends Plugin {
                         this.taskQueue.update(taskId, -1, `${pageCount} pages`);
                         break;
                     }
+                    case SSE_EVENT.CRAWL_PAGE_FAILED: {
+                        failedCount++;
+                        break;
+                    }
                     case SSE_EVENT.CRAWL_DONE: {
                         const d = event.data as { pages_crawled?: number };
                         this.taskQueue.complete(taskId);
-                        new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount));
+                        new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount, failedCount));
                         void this.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
                         return;
                     }
@@ -3644,7 +3711,7 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
-            if (syncResult && !noticeIndexMismatch(syncResult)) {
+            if (syncResult && !noticeSyncProblems(syncResult)) {
                 const summary = summarizeSyncResult(syncResult);
                 if (summary) new Notice(MESSAGES.STATUS_SYNCED.replace("{summary}", summary));
             }

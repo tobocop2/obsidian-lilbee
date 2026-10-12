@@ -241,15 +241,12 @@ export const MESSAGES = {
     LABEL_WORKER_POOL: "Worker pool",
     LABEL_WORKER_POOL_HELP:
         "Tuning knobs for the background worker processes that run embedding, vision and rerank models.",
-    LABEL_WORKER_POOL_CALL_TIMEOUT: "Pool call timeout (s)",
     LABEL_WORKER_POOL_EAGER_START: "Eager start workers",
-    LABEL_WORKER_POOL_MAX_IDLE: "Worker idle timeout (s)",
     LABEL_INGEST: "Ingest",
     LABEL_INGEST_HELP: "How documents are split, OCR'd and prepared before they enter the index.",
     LABEL_CHUNK_SIZE: "Chunk size (tokens)",
     LABEL_CHUNK_OVERLAP: "Chunk overlap (tokens)",
     LABEL_MAX_CHUNKS_PER_FILE: "Max chunks per file",
-    LABEL_TESSERACT_TIMEOUT: "Tesseract per-page timeout (s)",
     LABEL_VISION_LOAD_BUDGET: "Vision OCR pool budget (s)",
     LABEL_RETRIEVAL_ADVANCED: "Retrieval (advanced)",
     LABEL_RETRIEVAL_ADVANCED_HELP:
@@ -350,10 +347,10 @@ export const MESSAGES = {
     NOTICE_RERANKER_UPDATED: "lilbee: reranker model updated",
     NOTICE_RERANKER_LOAD_FAILED: "lilbee: failed to load reranker options",
     LABEL_VISION_TITLE: "Vision model",
-    LABEL_VISION_DISABLED: "(disabled)",
+    LABEL_VISION_DISABLED: "(Tesseract only)",
     LABEL_VISION_HOSTED_GROUP: "Hosted via LiteLLM",
     DESC_VISION_MODEL:
-        "Used to read scanned PDFs when OCR fails. Separate from the chat model: vision models run only on image-only documents.",
+        'Reads scanned pages in place of Tesseract. With no vision model, Tesseract reads them. OCR mode "off" skips both. This model is separate from the chat model.',
     NOTICE_VISION_UPDATED: "lilbee: vision model updated",
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",
@@ -598,13 +595,8 @@ export const MESSAGES = {
         "Maximum reasoning characters before lilbee forces the model to answer (per-model overrides apply on top)",
     DESC_GEN_MODEL_KEEP_ALIVE: "Seconds the loaded model stays warm between calls (0 = unload immediately)",
     DESC_GEN_GPU_MEMORY_FRACTION: "Fraction of GPU memory the model is allowed to claim (0.1-1.0)",
-    DESC_WORKER_POOL_CALL_TIMEOUT:
-        "Per-call deadline for one worker-pool round-trip in seconds. Raise this for very large embed batches on slow machines",
     DESC_WORKER_POOL_EAGER_START:
         "Spawn every worker process when the lilbee server starts instead of on first use. Trades 1–3 seconds of cold-start per role for first-call latency.",
-    DESC_WORKER_POOL_MAX_IDLE:
-        "Shut a worker down after this many seconds idle to free RAM/VRAM. 0 disables idle reaping",
-    DESC_TESSERACT_TIMEOUT: "Per-page Tesseract timeout in seconds (used when no vision model is set)",
     DESC_VISION_LOAD_BUDGET:
         "Outer wall-clock budget for the vision-OCR pool drain in seconds. Includes load grace plus per-page time",
     DESC_CANDIDATE_MULTIPLIER: "Candidate-pool multiplier over top_k before reranking",
@@ -830,6 +822,7 @@ export const MESSAGES = {
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
     ERROR_LOAD_DOCUMENTS: "lilbee: failed to load documents",
     ERROR_DELETE_DOCUMENTS: "lilbee: failed to delete documents",
+    ERROR_DELETE_DOCUMENTS_REASON: (reason: string) => `lilbee: could not delete documents: ${reason}`,
     ERROR_SWITCH_MODEL: "lilbee: failed to switch model",
     ERROR_PULL_MODEL: "lilbee: failed to pull {model}",
     ERROR_REMOVE_MODEL: "Failed to remove {model}",
@@ -925,8 +918,15 @@ export const MESSAGES = {
     NOTICE_CHAT_EXPORTED: (path: string) => `Exported chat to ${path}`,
     ERROR_CHAT_EXPORT_FAILED: (reason: string) => `Could not export chat: ${reason}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
+    SYNC_PART_FOLDERS_TAKEN_IN: (count: number) => `${count} ${count === 1 ? "folder" : "folders"} taken in`,
+    NOTICE_UPLOAD_LEFT_OUT: (count: number) =>
+        `lilbee: left out ${count} ${count === 1 ? "file" : "files"} lilbee does not read (audio and video)`,
+    NOTICE_ADD_NAME_TAKEN: (names: string) => `lilbee: not added, another source already uses the name: ${names}`,
+    NOTICE_ADD_OVERLAPPING: (names: string) => `lilbee: not added, it overlaps a source lilbee already has: ${names}`,
+    NOTICE_ADD_REFUSED: (names: string) => `lilbee: could not add: ${names}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
-    NOTICE_CRAWL_DONE: (pages: number) => `lilbee: crawl done: ${pages} pages`,
+    NOTICE_CRAWL_DONE: (pages: number, failed = 0) =>
+        `lilbee: crawl done: ${pages} pages${failed > 0 ? `, ${failed} failed` : ""}`,
     NOTICE_ENTER_URL: "lilbee: please enter a URL",
     NOTICE_DOWNLOAD_CANCELLED: "lilbee: download cancelled",
     NOTICE_INDEXING_CANCELLED: "lilbee: indexing cancelled",
@@ -1374,6 +1374,7 @@ export const MESSAGES = {
 
     // Memory
     LABEL_MEMORIES_VIEW: "lilbee Memories",
+    LABEL_MEMORY_SOURCE: "Memory",
     LABEL_MEMORIES_TITLE: "Memories",
     MEMORIES_SEARCH_PLACEHOLDER: "Filter memories…",
     MEMORIES_FLAG_YES: "yes",

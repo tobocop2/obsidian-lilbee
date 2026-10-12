@@ -29,6 +29,7 @@ import {
     getRelevantSystemMemoryGB,
 } from "../utils";
 import { applyEmbeddingModel } from "../utils/reindex";
+import { noticeModelWarnings } from "../utils/model-warnings";
 import { renderModelCard, renderCompatTag } from "../components/model-card";
 import { renderModelDetail } from "../components/model-detail";
 import { ModelInfoModal } from "./model-info-modal";
@@ -985,7 +986,9 @@ export class CatalogModal extends Modal {
             return this.plugin.api.setRerankerModel(ref);
         }
         if (entry.task === MODEL_TASK.VISION) {
-            return this.plugin.api.setVisionModel(ref);
+            const visionResult = await this.plugin.api.setVisionModel(ref);
+            if (visionResult.isOk()) noticeModelWarnings(visionResult.value);
+            return visionResult;
         }
         const result = await this.plugin.api.setChatModel(ref);
         if (result.isOk()) this.plugin.activeModel = ref;

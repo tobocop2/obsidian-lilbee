@@ -755,7 +755,7 @@ describe("LilbeeSettingTab", () => {
             // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
             // + keyword search language. The API-key rows and the HF token row keep their own blur saver.
-            expect(textOnChanges.length).toBe(50);
+            expect(textOnChanges.length).toBe(47);
         });
     });
 
@@ -3654,7 +3654,7 @@ describe("managed mode settings", () => {
 
     describe("Ingest chunk fields commit", () => {
         // Ingest section text inputs sit at: [14] chunk_size, [15] chunk_overlap,
-        // [16] tesseract_timeout, [17] vision_load_budget_s.
+        // [16] vision_load_budget_s.
 
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
@@ -4057,8 +4057,8 @@ describe("managed mode settings", () => {
         });
 
         it.each([
-            ["managed", SERVER_MODE.MANAGED, 59],
-            ["external", SERVER_MODE.EXTERNAL, 60],
+            ["managed", SERVER_MODE.MANAGED, 56],
+            ["external", SERVER_MODE.EXTERNAL, 57],
         ])(
             "no text box in %s mode writes, saves, asks or notifies while the user types",
             async (_mode, serverMode, boxes) => {
@@ -5619,7 +5619,7 @@ describe("managed mode settings", () => {
 
             const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
                 .serverConfigHideableEls;
-            const item2 = hideable.get("worker_pool_call_timeout_s");
+            const item2 = hideable.get("worker_pool_eager_start");
             expect(item2).toBeDefined();
             expect(item2?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
 
@@ -5640,14 +5640,14 @@ describe("managed mode settings", () => {
 
             const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
                 .serverConfigHideableEls;
-            const row = hideable.get("worker_pool_call_timeout_s")!;
+            const row = hideable.get("worker_pool_eager_start")!;
             const filter = tab.containerEl.find("lilbee-settings-filter")!;
             filter.value = "does not match";
             filter.trigger("input");
             expect(row.style.display).toBe("none");
 
             (tab as unknown as { applyHideableConfigFields(cfg: ConfigResponse): void }).applyHideableConfigFields({
-                worker_pool_call_timeout_s: 30,
+                worker_pool_eager_start: true,
             });
 
             expect(row.style.display).toBe("none");
@@ -7529,6 +7529,29 @@ describe("managed mode settings", () => {
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_UPDATED)).toBe(true);
         });
 
+        it.each([
+            [
+                {
+                    model: "Qwen/Qwen2-VL-7B-Instruct",
+                    reindex_required: false,
+                    warnings: ["unused while OCR is off", "second"],
+                },
+                2,
+            ],
+            [{ model: "Qwen/Qwen2-VL-7B-Instruct", reindex_required: false, warnings: [] }, 0],
+            [{ model: "Qwen/Qwen2-VL-7B-Instruct", reindex_required: false }, 0],
+        ])("shows each warning of a vision model change as a notice (%j)", async (response, shown) => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(response));
+            const tab = makeTab(plugin);
+            await (tab as any).applyVisionSelection("Qwen/Qwen2-VL-7B-Instruct");
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_VISION_UPDATED);
+            const warnings = ["unused while OCR is off", "second"].filter((w) => messages.includes(w));
+            expect(warnings).toHaveLength(shown);
+        });
+
         it("selecting disabled calls setVisionModel('')", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -8419,9 +8442,7 @@ describe("managed mode settings", () => {
     });
 
     describe("worker pool settings", () => {
-        // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
-        // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
-        // ([0]=adaptive_threshold).
+        // Toggle [1] is worker_pool_eager_start ([0]=adaptive_threshold).
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -8431,26 +8452,20 @@ describe("managed mode settings", () => {
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
-            expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("none");
             expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("none");
-            expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("none");
         });
 
         it("reveals each worker-pool row when cfg keys are defined", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
-                worker_pool_call_timeout_s: 30,
                 worker_pool_eager_start: true,
-                worker_pool_max_idle_s: 120,
             });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
-            expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("");
             expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("");
-            expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("");
         });
 
         it("marks producer-hidden rows so clearing the search keeps them hidden", () => {
@@ -8461,7 +8476,7 @@ describe("managed mode settings", () => {
 
             const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
                 .serverConfigHideableEls;
-            const item = hideable.get("worker_pool_call_timeout_s");
+            const item = hideable.get("worker_pool_eager_start");
             expect(item).toBeDefined();
             expect(item?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
 
@@ -8481,37 +8496,17 @@ describe("managed mode settings", () => {
 
             const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
                 .serverConfigHideableEls;
-            const row = hideable.get("worker_pool_call_timeout_s")!;
+            const row = hideable.get("worker_pool_eager_start")!;
             const filter = tab.containerEl.find("lilbee-settings-filter")!;
             filter.value = "does not match";
             filter.trigger("input");
             expect(row.style.display).toBe("none");
 
             (tab as unknown as { applyHideableConfigFields(cfg: ConfigResponse): void }).applyHideableConfigFields({
-                worker_pool_call_timeout_s: 30,
+                worker_pool_eager_start: true,
             });
 
             expect(row.style.display).toBe("none");
-        });
-
-        it("PATCHes worker_pool_call_timeout_s with a parsed float", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
-
-            await textByName.get(MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT)!("12.5");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_call_timeout_s: 12.5 });
-        });
-
-        it("PATCHes worker_pool_max_idle_s with a parsed float", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
-
-            await textByName.get(MESSAGES.LABEL_WORKER_POOL_MAX_IDLE)!("90");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_max_idle_s: 90 });
         });
 
         it("PATCHes worker_pool_eager_start when the toggle flips", async () => {
@@ -8626,13 +8621,7 @@ describe("managed mode settings", () => {
     });
 
     describe("ingest settings", () => {
-        const INGEST_HIDEABLE_KEYS = [
-            "chunk_size",
-            "chunk_overlap",
-            "max_chunks_per_file",
-            "tesseract_timeout",
-            "vision_load_budget_s",
-        ];
+        const INGEST_HIDEABLE_KEYS = ["chunk_size", "chunk_overlap", "max_chunks_per_file", "vision_load_budget_s"];
 
         it("hides each ingest row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -8653,7 +8642,6 @@ describe("managed mode settings", () => {
                 chunk_size: 512,
                 chunk_overlap: 64,
                 max_chunks_per_file: 3000,
-                tesseract_timeout: 30,
                 vision_load_budget_s: 90,
             });
             mockChatPicker(plugin);
@@ -8686,16 +8674,6 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             for (const click of extraButtonOnClicks) await click();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_chunks_per_file: 3000 });
-        });
-
-        it("PATCHes tesseract_timeout with a parsed float", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
-
-            await textByName.get(MESSAGES.LABEL_TESSERACT_TIMEOUT)!("45.5");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ tesseract_timeout: 45.5 });
         });
 
         it("PATCHes vision_load_budget_s with a parsed float", async () => {
@@ -8743,28 +8721,6 @@ describe("managed mode settings", () => {
 
             await textByName.get(MESSAGES.LABEL_VISION_LOAD_BUDGET)!("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-        });
-
-        it("rejects tesseract_timeout when input is not a number", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
-
-            await textByName.get(MESSAGES.LABEL_TESSERACT_TIMEOUT)!("nope");
-            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-        });
-
-        it("surfaces a notice when the tesseract_timeout PATCH fails", async () => {
-            Notice.clear();
-            const plugin = makePlugin();
-            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textByName } = captureSettingCallbacks(() => tab.display());
-
-            await textByName.get(MESSAGES.LABEL_TESSERACT_TIMEOUT)!("30");
-            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
 

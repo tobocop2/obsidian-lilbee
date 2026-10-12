@@ -168,7 +168,7 @@ export class StatusModal extends Modal {
         await this.renderServedContext(table);
 
         const ocrMode = status.config.ocr;
-        if (ocrMode !== undefined) this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrModeLabel(ocrMode));
+        if (ocrMode !== undefined) this.addOcrRow(table, ocrModeLabel(ocrMode), status.ocr_note);
     }
 
     private async renderModelDetails(table: HTMLTableElement, model: string): Promise<void> {
@@ -219,6 +219,14 @@ export class StatusModal extends Modal {
         const row = table.createEl("tr");
         row.createEl("td", { text: label, cls: "lilbee-status-label" });
         row.createEl("td", { text: value, cls: "lilbee-status-value" });
+    }
+
+    /** The OCR mode, with the server's note on what happens to scanned pages beneath it. */
+    private addOcrRow(table: HTMLTableElement, mode: string, note: string | undefined): void {
+        const row = table.createEl("tr");
+        row.createEl("td", { text: MESSAGES.LABEL_STATUS_OCR, cls: "lilbee-status-label" });
+        const cell = row.createEl("td", { text: mode, cls: "lilbee-status-value" });
+        if (note) cell.createDiv({ cls: "lilbee-status-detail", text: note });
     }
 
     private addModelRow(table: HTMLTableElement, label: string, model: string): void {

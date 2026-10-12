@@ -275,6 +275,11 @@ describe("MESSAGES", () => {
             expect(MESSAGES.NOTICE_SYNC_SUMMARY("5 added, 2 updated")).toBe("lilbee: 5 added, 2 updated");
         });
 
+        it("NOTICE_CRAWL_DONE adds the failed count only when pages failed", () => {
+            expect(MESSAGES.NOTICE_CRAWL_DONE(10, 0)).toBe("lilbee: crawl done: 10 pages");
+            expect(MESSAGES.NOTICE_CRAWL_DONE(10, 2)).toBe("lilbee: crawl done: 10 pages, 2 failed");
+        });
+
         it("NOTICE_CRAWL_DONE produces correct output", () => {
             expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done: 10 pages");
         });
