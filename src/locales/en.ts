@@ -1116,6 +1116,9 @@ export const MESSAGES = {
     LABEL_TABLE_MODEL: "Table model",
     DESC_TABLE_MODEL:
         "Which model reads tables. Auto suits most documents; the wired and wireless variants suit tables with and without ruling lines.",
+    LABEL_OCR_MODE: "OCR mode",
+    DESC_OCR_MODE:
+        "Which pages lilbee reads with OCR when it adds a file. Auto reads only the pages that have no usable text. All pages reads every page of every file, which is much slower. Off reads none, so scanned pages add no text.",
     LABEL_OCR_LANGUAGE: "OCR languages",
     DESC_OCR_LANGUAGE:
         "Languages to expect when reading scanned pages, one per line. Three-letter codes, for example eng or deu.",

@@ -6,7 +6,14 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, MockElement, Setting, setApiVersion } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
-import { DEFAULT_SETTINGS, CAPABILITY, MEMORY_CONFIG_KEY, SERVER_MODE, type LilbeeSettings } from "../src/types";
+import {
+    DEFAULT_SETTINGS,
+    CAPABILITY,
+    MEMORY_CONFIG_KEY,
+    OCR_MODE,
+    SERVER_MODE,
+    type LilbeeSettings,
+} from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { formatDiskSize } from "../src/utils";
 import { err, ok } from "../src/result";
@@ -563,6 +570,18 @@ describe("visibility predicates", () => {
         expect(row?.visible?.()).toBe(false);
 
         (tab as any).serverConfig = { worker_pool_call_timeout_s: 30 };
+        expect(row?.visible?.()).toBe(true);
+    });
+
+    it("declares the OCR mode row only for a schema that lists the modes, hidden until the mode arrives", () => {
+        const tab = makeTab();
+        expect(findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_OCR_MODE)).toBeUndefined();
+
+        (tab as any).configChoices = new Map([["ocr", Object.values(OCR_MODE)]]);
+        const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_OCR_MODE);
+        expect(row?.visible?.()).toBe(false);
+
+        (tab as any).serverConfig = { ocr: OCR_MODE.AUTO };
         expect(row?.visible?.()).toBe(true);
     });
 

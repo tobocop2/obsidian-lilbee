@@ -7,6 +7,7 @@ import {
     DEFAULT_SETTINGS,
     MEMORY_CONFIG_KEY,
     MODEL_TASK,
+    OCR_MODE,
     SERVER_MODE,
     SERVER_VARIANT,
     SSE_EVENT,
@@ -9631,22 +9632,22 @@ describe("new server config fields", () => {
         expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
     });
 
+    /** Render once so the schema arrives, then capture the render it triggers. */
+    async function displayWithSchema(plugin: ReturnType<typeof makePlugin>): Promise<Captured> {
+        const tab = makeTab(plugin);
+        tab.display();
+        await new Promise((r) => setTimeout(r, 0));
+        const captured = captureSettingCallbacks(() => tab.display());
+        await new Promise((r) => setTimeout(r, 0));
+        return captured;
+    }
+
     describe("the keyword search language", () => {
         /** Recorded from GET /api/config/schema on a live server, so the row is built from real choices. */
         const FTS_CHOICES = configSchema.fields.find((field) => field.key === "fts_language")!.choices!;
 
         /** The error the client raises for the recorded refusal of a half-typed language. */
         const REFUSAL = `Server responded 400: ${JSON.stringify(configRefusal)}`;
-
-        /** Render once so the schema arrives, then capture the render it triggers. */
-        async function displayWithSchema(plugin: ReturnType<typeof makePlugin>): Promise<Captured> {
-            const tab = makeTab(plugin);
-            tab.display();
-            await new Promise((r) => setTimeout(r, 0));
-            const captured = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
-            return captured;
-        }
 
         function freeTextRow(plugin: ReturnType<typeof makePlugin>): Captured {
             const tab = makeTab(plugin);
@@ -9768,6 +9769,75 @@ describe("new server config fields", () => {
             expect(
                 Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FTS_LANGUAGE)),
             ).toBe(true);
+        });
+    });
+
+    describe("the OCR mode", () => {
+        /** Recorded from GET /api/config/schema on a live server. */
+        const OCR_CHOICES = configSchema.fields.find((field) => field.key === "ocr")!.choices!;
+
+        function hiddenRow(tab: LilbeeSettingTab): MockElement | undefined {
+            return (
+                tab as unknown as { serverConfigHideableEls: Map<string, MockElement> }
+            ).serverConfigHideableEls.get("ocr");
+        }
+
+        it("offers the modes the server published in plain words, and writes the one picked", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ ocr: OCR_MODE.ALL });
+            const captured = await displayWithSchema(plugin);
+
+            expect(OCR_CHOICES).toEqual(Object.values(OCR_MODE));
+            expect(captured.dropdownOptionsByName.get(MESSAGES.LABEL_OCR_MODE)).toEqual({
+                [OCR_MODE.AUTO]: "Auto",
+                [OCR_MODE.ALL]: "All pages",
+                [OCR_MODE.OFF]: "Off",
+            });
+            expect(captured.dropdownSetValuesByName.get(MESSAGES.LABEL_OCR_MODE)).toContain(OCR_MODE.ALL);
+            expect(captured.descByName.get(MESSAGES.LABEL_OCR_MODE)).toBe(MESSAGES.DESC_OCR_MODE);
+
+            await captured.dropdownByName.get(MESSAGES.LABEL_OCR_MODE)!(OCR_MODE.OFF);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ ocr: OCR_MODE.OFF });
+        });
+
+        it("shows the row once the server reports its mode, and hides it until then", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(hiddenRow(tab)?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
+
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ ocr: OCR_MODE.AUTO });
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(hiddenRow(tab)?.getAttribute("data-lilbee-hidden-by-capability")).toBeNull();
+        });
+
+        it("draws no row against a server whose schema has no OCR mode", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const older = { fields: configSchema.fields.filter((field) => field.key !== "ocr") };
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(older);
+            const captured = await displayWithSchema(plugin);
+
+            expect(captured.descByName.has(MESSAGES.LABEL_OCR_MODE)).toBe(false);
+            expect(captured.dropdownOptionsByName.has(MESSAGES.LABEL_OCR_MODE)).toBe(false);
+            expect(captured.textByName.has(MESSAGES.LABEL_OCR_MODE)).toBe(false);
+        });
+
+        it("draws no row against a server that publishes no schema", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+
+            expect(captured.descByName.has(MESSAGES.LABEL_OCR_MODE)).toBe(false);
+            expect(hiddenRow(tab)).toBeUndefined();
         });
     });
 
