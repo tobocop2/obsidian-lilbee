@@ -254,7 +254,7 @@ function makePlugin(): LilbeePlugin {
             forkSession: vi.fn(),
             getSessionMarkdown: vi.fn(),
         },
-        settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
+        settings: { topK: 5, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),

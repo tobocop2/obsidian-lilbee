@@ -60,7 +60,6 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             serverMode: "managed",
             setupCompleted: false,
             wikiEnabled: false,
-            enableOcr: null,
             ...((overrides.settings as Record<string, unknown>) || {}),
         },
         api: {
