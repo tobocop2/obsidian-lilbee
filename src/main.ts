@@ -212,8 +212,9 @@ function noticeAddRefusals(done: AddDone): boolean {
     return refused;
 }
 
-/** Warn about an index the server can no longer search, and say whether it did. */
-function noticeIndexMismatch(done: AddDone): boolean {
+/** Warn about a lost held-out list and about an index the server can no longer search; true when the index warning showed. */
+function noticeSyncProblems(done: AddDone): boolean {
+    if (done.skip_records_error) new Notice(done.skip_records_error, NOTICE_ERROR_DURATION_MS);
     if (!done.index_mismatch) return false;
     new Notice(done.index_mismatch.message, NOTICE_ERROR_DURATION_MS);
     return true;
@@ -295,6 +296,7 @@ const EMPTY_SYNC: SyncDone = {
     skipped: [],
     held_out: [],
     index_mismatch: null,
+    skip_records_error: null,
 };
 
 export function parseAddDoneEvent(data: unknown): AddDone | null {
@@ -326,6 +328,8 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
         held_out: Array.isArray(obj.held_out) ? (obj.held_out as SkippedSource[]) : [],
         index_mismatch: (obj.index_mismatch as IndexMismatch | null | undefined) ?? null,
+        skip_records_error:
+            typeof obj.skip_records_error === "string" && obj.skip_records_error ? obj.skip_records_error : null,
     };
 }
 
@@ -3066,7 +3070,7 @@ export default class LilbeePlugin extends Plugin {
 
             if (syncResult) {
                 const refused = noticeAddRefusals(syncResult);
-                if (!noticeIndexMismatch(syncResult)) {
+                if (!noticeSyncProblems(syncResult)) {
                     const summary = summarizeSyncResult(syncResult);
                     if (summary) new Notice(MESSAGES.NOTICE_SYNC_SUMMARY(summary));
                     else if (!refused) new Notice(MESSAGES.STATUS_NOTHING_NEW);
@@ -3698,7 +3702,7 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
-            if (syncResult && !noticeIndexMismatch(syncResult)) {
+            if (syncResult && !noticeSyncProblems(syncResult)) {
                 const summary = summarizeSyncResult(syncResult);
                 if (summary) new Notice(MESSAGES.STATUS_SYNCED.replace("{summary}", summary));
             }

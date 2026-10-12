@@ -356,6 +356,8 @@ export interface SyncDone {
     held_out: SkippedSource[];
     /** Absent on servers that do not report it; only a rebuild clears it. */
     index_mismatch?: IndexMismatch | null;
+    /** Set when this run could not save its list of held-out files; absent or null otherwise. */
+    skip_records_error?: string | null;
 }
 
 /** An add stream's terminal summary: the sync it ran, plus the add-only outcomes. */

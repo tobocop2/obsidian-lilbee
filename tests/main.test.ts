@@ -5425,6 +5425,7 @@ describe("LilbeePlugin", () => {
                 errors: [],
                 absorbed: [],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -5442,6 +5443,7 @@ describe("LilbeePlugin", () => {
                 errors: [],
                 absorbed: [],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
@@ -5468,6 +5470,7 @@ describe("LilbeePlugin", () => {
                 errors: [],
                 absorbed: [],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // The server's mismatch verdict rides through both shapes.
@@ -5502,6 +5505,7 @@ describe("LilbeePlugin", () => {
             expect(absorbed).toMatchObject({
                 absorbed: addSummary.absorbed.absorbed,
                 added: addSummary.absorbed.sync.added,
+                skip_records_error: addSummary.absorbed.sync.skip_records_error,
                 name_taken: [],
                 errors: [],
             });
@@ -5533,6 +5537,7 @@ describe("LilbeePlugin", () => {
                 errors: ["x.svg: vector graphic, not a document"],
                 absorbed: ["old"],
                 index_mismatch: null,
+                skip_records_error: null,
             });
 
             // Refusals beside a sync keep both.
@@ -11130,6 +11135,89 @@ describe("LilbeePlugin", () => {
             const messages = Notice.instances.map((n) => n.message);
             expect(messages.some((m) => m.includes("This index was built with 'nomic'"))).toBe(true);
             expect(messages.some((m) => m.includes("1 added"))).toBe(false);
+        });
+
+        it.each([
+            ["a message", "Could not save the held-out list: lock busy", true],
+            ["null", null, false],
+            ["empty", "", false],
+            ["absent", undefined, false],
+        ])("triggerSync shows the sync summary's skip_records_error when it is %s", async (_label, value, shown) => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* done() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["a.md"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        skip_records_error: value,
+                    },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(done());
+            await plugin.triggerSync();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.includes("Could not save the held-out list: lock busy")).toBe(shown);
+            expect(messages.some((m) => m.includes("1 added"))).toBe(true);
+        });
+
+        it("triggerSync shows skip_records_error beside the index-mismatch notice", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* done() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: [],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        index_mismatch: { message: "mismatch" },
+                        skip_records_error: "lock busy",
+                    },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(done());
+            await plugin.triggerSync();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain("mismatch");
+            expect(messages).toContain("lock busy");
+        });
+
+        it("addToLilbee shows skip_records_error of the nested sync summary", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* done() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: ["test.md"],
+                        errors: [],
+                        sync: {
+                            added: ["test.md"],
+                            updated: [],
+                            removed: [],
+                            failed: [],
+                            unchanged: 0,
+                            skip_records_error: "lock busy",
+                        },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(done());
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain("lock busy");
+            expect(messages.some((m) => m.includes("1 added"))).toBe(true);
         });
 
         it("triggerSync aborts the stream and reports an idle error when the server stalls", async () => {
