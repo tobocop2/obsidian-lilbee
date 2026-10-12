@@ -560,16 +560,16 @@ describe("visibility predicates", () => {
         expect(row?.visible?.()).toBe(true);
     });
 
-    it("hides worker-pool rows until the server reports each key", () => {
+    it("hides the worker-pool row until the server reports its key", () => {
         const tab = makeTab();
-        const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT);
+        const row = findRow(tab.getSettingDefinitions() as Definition[], MESSAGES.LABEL_WORKER_POOL_EAGER_START);
 
+        expect(row?.visible?.()).toBe(false);
+
+        (tab as any).serverConfig = { something_else: true };
         expect(row?.visible?.()).toBe(false);
 
         (tab as any).serverConfig = { worker_pool_eager_start: true };
-        expect(row?.visible?.()).toBe(false);
-
-        (tab as any).serverConfig = { worker_pool_call_timeout_s: 30 };
         expect(row?.visible?.()).toBe(true);
     });
 

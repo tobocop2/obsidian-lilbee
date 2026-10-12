@@ -241,15 +241,12 @@ export const MESSAGES = {
     LABEL_WORKER_POOL: "Worker pool",
     LABEL_WORKER_POOL_HELP:
         "Tuning knobs for the background worker processes that run embedding, vision and rerank models.",
-    LABEL_WORKER_POOL_CALL_TIMEOUT: "Pool call timeout (s)",
     LABEL_WORKER_POOL_EAGER_START: "Eager start workers",
-    LABEL_WORKER_POOL_MAX_IDLE: "Worker idle timeout (s)",
     LABEL_INGEST: "Ingest",
     LABEL_INGEST_HELP: "How documents are split, OCR'd and prepared before they enter the index.",
     LABEL_CHUNK_SIZE: "Chunk size (tokens)",
     LABEL_CHUNK_OVERLAP: "Chunk overlap (tokens)",
     LABEL_MAX_CHUNKS_PER_FILE: "Max chunks per file",
-    LABEL_TESSERACT_TIMEOUT: "Tesseract per-page timeout (s)",
     LABEL_VISION_LOAD_BUDGET: "Vision OCR pool budget (s)",
     LABEL_RETRIEVAL_ADVANCED: "Retrieval (advanced)",
     LABEL_RETRIEVAL_ADVANCED_HELP:
@@ -598,13 +595,8 @@ export const MESSAGES = {
         "Maximum reasoning characters before lilbee forces the model to answer (per-model overrides apply on top)",
     DESC_GEN_MODEL_KEEP_ALIVE: "Seconds the loaded model stays warm between calls (0 = unload immediately)",
     DESC_GEN_GPU_MEMORY_FRACTION: "Fraction of GPU memory the model is allowed to claim (0.1-1.0)",
-    DESC_WORKER_POOL_CALL_TIMEOUT:
-        "Per-call deadline for one worker-pool round-trip in seconds. Raise this for very large embed batches on slow machines",
     DESC_WORKER_POOL_EAGER_START:
         "Spawn every worker process when the lilbee server starts instead of on first use. Trades 1–3 seconds of cold-start per role for first-call latency.",
-    DESC_WORKER_POOL_MAX_IDLE:
-        "Shut a worker down after this many seconds idle to free RAM/VRAM. 0 disables idle reaping",
-    DESC_TESSERACT_TIMEOUT: "Per-page Tesseract timeout in seconds (used when no vision model is set)",
     DESC_VISION_LOAD_BUDGET:
         "Outer wall-clock budget for the vision-OCR pool drain in seconds. Includes load grace plus per-page time",
     DESC_CANDIDATE_MULTIPLIER: "Candidate-pool multiplier over top_k before reranking",

@@ -160,14 +160,11 @@ export interface ConfigResponse {
     chat_mode?: ChatMode;
     embedding_model?: string;
     wiki?: boolean;
-    worker_pool_call_timeout_s?: number;
     worker_pool_eager_start?: boolean;
-    worker_pool_max_idle_s?: number;
     vision_load_budget_s?: number;
     chunk_size?: number;
     chunk_overlap?: number;
     max_chunks_per_file?: number;
-    tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;
     chat_compaction?: boolean;
