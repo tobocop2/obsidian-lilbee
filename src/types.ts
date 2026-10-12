@@ -377,7 +377,7 @@ export interface AddDone extends SyncDone {
     absorbed: string[];
 }
 
-/** Extensions the server refuses in an upload (vector graphics, audio, video); lowercase, with the dot. */
+/** Audio and video extensions dropped before an upload; no server reads them. Lowercase, with the dot. */
 export const UPLOAD_REFUSED_EXTENSIONS: readonly string[] = [
     ".m1v",
     ".m2v",
@@ -391,7 +391,6 @@ export const UPLOAD_REFUSED_EXTENSIONS: readonly string[] = [
     ".mpg",
     ".mpg4",
     ".mpga",
-    ".svg",
     ".wav",
     ".webm",
 ];

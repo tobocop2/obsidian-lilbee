@@ -335,7 +335,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
 
 type UploadPayload = { name: string; data: ArrayBuffer };
 
-/** The server refuses a whole upload that holds one of its refused extensions, so drop those files first. */
+/** Drop audio and video files before an upload: no server reads them. */
 export function dropRefusedUploads(files: UploadPayload[]): { kept: UploadPayload[]; leftOut: number } {
     const kept = files.filter((f) => {
         const name = basename(f.name);
@@ -3096,7 +3096,8 @@ export default class LilbeePlugin extends Plugin {
                 this.markAddFailed(retryKeys);
             } else {
                 console.error("[lilbee] add failed:", err);
-                const msg = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
+                const raw = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
+                const msg = extractServerErrorDetail(raw) ?? raw;
                 new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                 this.taskQueue.fail(taskId, msg);
                 this.markAddFailed(retryKeys);
