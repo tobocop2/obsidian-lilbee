@@ -191,6 +191,7 @@ function summarizeSyncResult(done: AddDone): string {
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     if (done.held_out.length > 0) parts.push(`${done.held_out.length} held out`);
     if (done.tracked.length > 0) parts.push(`${done.tracked.length} already tracked`);
+    if (done.absorbed.length > 0) parts.push(MESSAGES.SYNC_PART_FOLDERS_TAKEN_IN(done.absorbed.length));
     return parts.join(", ");
 }
 

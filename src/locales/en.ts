@@ -925,6 +925,7 @@ export const MESSAGES = {
     NOTICE_CHAT_EXPORTED: (path: string) => `Exported chat to ${path}`,
     ERROR_CHAT_EXPORT_FAILED: (reason: string) => `Could not export chat: ${reason}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
+    SYNC_PART_FOLDERS_TAKEN_IN: (count: number) => `${count} ${count === 1 ? "folder" : "folders"} taken in`,
     NOTICE_ADD_NAME_TAKEN: (names: string) => `lilbee: not added, another source already uses the name: ${names}`,
     NOTICE_ADD_OVERLAPPING: (names: string) => `lilbee: not added, it overlaps a source lilbee already has: ${names}`,
     NOTICE_ADD_REFUSED: (names: string) => `lilbee: could not add: ${names}`,

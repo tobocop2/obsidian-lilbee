@@ -5507,6 +5507,39 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).failedAddPaths.size).toBe(0);
         });
 
+        it("addToLilbee adds the folders taken in to the summary, and omits them when none", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            Notice.clear();
+            async function* absorbedDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: ["parent"],
+                        absorbed: ["a", "b"],
+                        errors: [],
+                        sync: { added: ["x"], updated: [] },
+                    },
+                };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(absorbedDone());
+
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "parent", name: "parent" }));
+
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: 1 added, 2 folders taken in");
+
+            Notice.clear();
+            const single = absorbedDone;
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(
+                (async function* () {
+                    for await (const e of single()) yield { ...e, data: { ...e.data, absorbed: ["a"] } };
+                })(),
+            );
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "parent", name: "parent" }));
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: 1 added, 1 folder taken in");
+        });
+
         it("addToLilbee names overlapping paths and still shows the sync summary", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
