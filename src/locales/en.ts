@@ -347,10 +347,10 @@ export const MESSAGES = {
     NOTICE_RERANKER_UPDATED: "lilbee: reranker model updated",
     NOTICE_RERANKER_LOAD_FAILED: "lilbee: failed to load reranker options",
     LABEL_VISION_TITLE: "Vision model",
-    LABEL_VISION_DISABLED: "(disabled)",
+    LABEL_VISION_DISABLED: "(Tesseract only)",
     LABEL_VISION_HOSTED_GROUP: "Hosted via LiteLLM",
     DESC_VISION_MODEL:
-        "Used to read scanned PDFs when OCR fails. Separate from the chat model: vision models run only on image-only documents.",
+        'Reads scanned pages in place of Tesseract. With no vision model, Tesseract reads them. OCR mode "off" skips both. This model is separate from the chat model.',
     NOTICE_VISION_UPDATED: "lilbee: vision model updated",
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",

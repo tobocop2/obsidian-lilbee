@@ -5223,7 +5223,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
 
         const menu = openRailMenu(container, "lilbee-vision-model-select")!;
-        expect(menuTitles(menu)).toEqual(["(disabled)", "Browse catalog…"]);
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_VISION_DISABLED, "Browse catalog…"]);
         menu.itemTitled("Browse catalog…")!.click();
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
     });
@@ -5237,7 +5237,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
 
         const menu = openRailMenu(container, "lilbee-vision-model-select")!;
-        expect(menuTitles(menu)).toEqual(["(disabled)", "llava-7b", "qwen-vl", "Browse catalog…"]);
+        expect(menuTitles(menu)).toEqual([MESSAGES.LABEL_VISION_DISABLED, "llava-7b", "qwen-vl", "Browse catalog…"]);
         expect(menu.itemTitled("llava-7b")!.checked).toBe(true);
         expect(triggerText(container, "lilbee-vision-model-select")).toBe("llava-7b");
     });
@@ -5293,8 +5293,10 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         const visionDot = container.findAll("is-vision")[0];
         expect(visionDot.classList.contains("is-active")).toBe(false);
         // The chip shows the disabled label, and the menu checks Disabled.
-        expect(triggerText(container, "lilbee-vision-model-select")).toBe("(disabled)");
-        expect(openRailMenu(container, "lilbee-vision-model-select")!.itemTitled("(disabled)")!.checked).toBe(true);
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe(MESSAGES.LABEL_VISION_DISABLED);
+        expect(
+            openRailMenu(container, "lilbee-vision-model-select")!.itemTitled(MESSAGES.LABEL_VISION_DISABLED)!.checked,
+        ).toBe(true);
     });
 
     it("picking a Vision model calls setVisionModel and refreshes", async () => {
@@ -5357,7 +5359,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        pickRailItem(container, "lilbee-vision-model-select", "(disabled)");
+        pickRailItem(container, "lilbee-vision-model-select", MESSAGES.LABEL_VISION_DISABLED);
         await tick();
 
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("");
@@ -7503,7 +7505,7 @@ describe("ChatView rail chip when no option matches the active model", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         expect(menuTitles(openRailMenu(container, "lilbee-vision-model-select"))).toEqual([
-            "(disabled)",
+            MESSAGES.LABEL_VISION_DISABLED,
             "llava-7b",
             "Browse catalog…",
         ]);
