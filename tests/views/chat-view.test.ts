@@ -5312,6 +5312,43 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         expect(plugin.fetchActiveModel).toHaveBeenCalled();
     });
 
+    it("shows each warning of a Vision model change as a notice", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        (plugin.api as any).setVisionModel = vi
+            .fn()
+            .mockResolvedValue(
+                ok({ model: "qwen-vl", reindex_required: false, warnings: ["unused while OCR is off"] }),
+            );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        pickRailItem(container, "lilbee-vision-model-select", "qwen-vl");
+        await tick();
+
+        expect(Notice.instances.map((n) => n.message)).toContain("unused while OCR is off");
+    });
+
+    it("shows no warning notice when a Vision model change carries none", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        (plugin.api as any).setVisionModel = vi
+            .fn()
+            .mockResolvedValue(ok({ model: "qwen-vl", reindex_required: false }));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        Notice.clear();
+
+        pickRailItem(container, "lilbee-vision-model-select", "qwen-vl");
+        await tick();
+
+        expect(Notice.instances).toHaveLength(0);
+    });
+
     it("picking Disabled turns Vision off via setVisionModel('')", async () => {
         const plugin = makePlugin();
         configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });

@@ -58,6 +58,7 @@ import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./age
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
+import { noticeModelWarnings } from "./utils/model-warnings";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
 import { catalogThroughHosted, hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
@@ -3069,6 +3070,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return;
         }
         new Notice(MESSAGES.NOTICE_VISION_UPDATED);
+        noticeModelWarnings(result.value);
     }
 
     private async pullAndSetVision(entry: CatalogEntry): Promise<void> {

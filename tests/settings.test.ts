@@ -7529,6 +7529,29 @@ describe("managed mode settings", () => {
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_UPDATED)).toBe(true);
         });
 
+        it.each([
+            [
+                {
+                    model: "Qwen/Qwen2-VL-7B-Instruct",
+                    reindex_required: false,
+                    warnings: ["unused while OCR is off", "second"],
+                },
+                2,
+            ],
+            [{ model: "Qwen/Qwen2-VL-7B-Instruct", reindex_required: false, warnings: [] }, 0],
+            [{ model: "Qwen/Qwen2-VL-7B-Instruct", reindex_required: false }, 0],
+        ])("shows each warning of a vision model change as a notice (%j)", async (response, shown) => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(response));
+            const tab = makeTab(plugin);
+            await (tab as any).applyVisionSelection("Qwen/Qwen2-VL-7B-Instruct");
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_VISION_UPDATED);
+            const warnings = ["unused while OCR is off", "second"].filter((w) => messages.includes(w));
+            expect(warnings).toHaveLength(shown);
+        });
+
         it("selecting disabled calls setVisionModel('')", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({

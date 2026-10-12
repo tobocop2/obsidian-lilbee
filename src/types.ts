@@ -308,6 +308,8 @@ export const DISCOVER_RAIL = {
 export interface SetModelResponse {
     model: string;
     reindex_required: boolean;
+    /** Notices about the change; the server leaves it empty or out when it has none. */
+    warnings?: string[];
 }
 
 export interface StatusResponse {

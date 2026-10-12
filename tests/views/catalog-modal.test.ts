@@ -1576,6 +1576,36 @@ describe("CatalogModal", () => {
             expect(plugin.activeModel).toBe("");
         });
 
+        it("shows each warning of a vision model change as a notice", async () => {
+            const plugin = makePlugin();
+            plugin.api.setVisionModel.mockResolvedValue(
+                ok({ model: "Qwen/Qwen3-8B-GGUF", reindex_required: false, warnings: ["unused while OCR is off"] }),
+            );
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.VISION);
+            const useBtn = findButtons(contentEl(modal)).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain("unused while OCR is off");
+        });
+
+        it("shows no warning notice for a vision model change that carries none", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.VISION);
+            const useBtn = findButtons(contentEl(modal)).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.api.setVisionModel).toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).not.toContain("unused while OCR is off");
+        });
+
         it("uses setChatModel with hf_repo and stores it as plugin.activeModel", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
