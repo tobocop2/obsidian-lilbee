@@ -1077,6 +1077,53 @@ describe("LilbeePlugin", () => {
             expect(new Set(names).size).toBe(2);
         });
 
+        it("the refused-extension list matches the server's own list", async () => {
+            const { UPLOAD_REFUSED_EXTENSIONS } = await import("../src/types");
+            const fixture = (await import("./fixtures/upload-refused-extensions.json")).default;
+            expect([...UPLOAD_REFUSED_EXTENSIONS].sort()).toEqual(fixture);
+        });
+
+        it("dropRefusedUploads keeps files the server accepts and matches the extension like the server", async () => {
+            const { dropRefusedUploads } = await import("../src/main");
+            const file = (name: string) => ({ name, data: new ArrayBuffer(1) });
+            const { kept, leftOut } = dropRefusedUploads([
+                file("a.md"),
+                file("logo.SVG"),
+                file("dir.svg/readme"),
+                file(".svg"),
+                file("talk.mp4"),
+                file("noext"),
+                file("clip.wav"),
+            ]);
+            expect(kept.map((f) => f.name)).toEqual(["a.md", "dir.svg/readme", ".svg", "noext"]);
+            expect(leftOut).toBe(3);
+        });
+
+        it("runUpload leaves refused files out and says how many", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const runAddSpy = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
+            Notice.clear();
+            await (plugin as any).runUpload(
+                [
+                    { name: "a.py", data: new ArrayBuffer(1) },
+                    { name: "b.svg", data: new ArrayBuffer(1) },
+                    { name: "c.mp3", data: new ArrayBuffer(1) },
+                ],
+                ["/v"],
+            );
+            expect(runAddSpy.mock.calls[0][0]).toEqual(["a.py"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_UPLOAD_LEFT_OUT(2)]);
+        });
+
+        it("runUpload with only refused files says so and skips runAdd", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const runAddSpy = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
+            Notice.clear();
+            await (plugin as any).runUpload([{ name: "b.svg", data: new ArrayBuffer(1) }], ["/v"]);
+            expect(runAddSpy).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_UPLOAD_LEFT_OUT(1)]);
+        });
+
         it("runUpload with no files notices and skips runAdd", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             const runAddSpy = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);

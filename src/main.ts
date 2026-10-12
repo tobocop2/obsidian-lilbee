@@ -106,6 +106,7 @@ import {
     type VaultAdapter,
     type SkippedSource,
     MANAGED_DOCS_PREFIX,
+    UPLOAD_REFUSED_EXTENSIONS,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -329,6 +330,16 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
 }
 
 type UploadPayload = { name: string; data: ArrayBuffer };
+
+/** The server refuses a whole upload that holds one of its refused extensions, so drop those files first. */
+export function dropRefusedUploads(files: UploadPayload[]): { kept: UploadPayload[]; leftOut: number } {
+    const kept = files.filter((f) => {
+        const name = basename(f.name);
+        const dot = name.lastIndexOf(".");
+        return dot <= 0 || !UPLOAD_REFUSED_EXTENSIONS.includes(name.slice(dot).toLowerCase());
+    });
+    return { kept, leftOut: files.length - kept.length };
+}
 
 /** Split uploads into batches that stay under the server's per-request file
  *  count and body-size limits. A lone file over the byte budget still gets its
@@ -2885,15 +2896,17 @@ export default class LilbeePlugin extends Plugin {
         retryKeys: string[],
         retry?: () => void | Promise<void>,
     ): Promise<void> {
-        if (files.length === 0) {
-            new Notice(MESSAGES.STATUS_NOTHING_NEW);
+        const { kept, leftOut } = dropRefusedUploads(files);
+        if (leftOut > 0) new Notice(MESSAGES.NOTICE_UPLOAD_LEFT_OUT(leftOut));
+        if (kept.length === 0) {
+            if (leftOut === 0) new Notice(MESSAGES.STATUS_NOTHING_NEW);
             return;
         }
         await this.runAdd(
-            files.map((f) => f.name),
+            kept.map((f) => f.name),
             retryKeys,
             retry,
-            (signal) => this.uploadInBatches(files, signal),
+            (signal) => this.uploadInBatches(kept, signal),
             "Uploading files",
         );
     }

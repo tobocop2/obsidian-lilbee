@@ -371,6 +371,25 @@ export interface AddDone extends SyncDone {
     absorbed: string[];
 }
 
+/** Extensions the server refuses in an upload (vector graphics, audio, video); lowercase, with the dot. */
+export const UPLOAD_REFUSED_EXTENSIONS: readonly string[] = [
+    ".m1v",
+    ".m2v",
+    ".m4a",
+    ".m4v",
+    ".mp3",
+    ".mp4",
+    ".mp4v",
+    ".mpe",
+    ".mpeg",
+    ".mpg",
+    ".mpg4",
+    ".mpga",
+    ".svg",
+    ".wav",
+    ".webm",
+];
+
 /** Recovery options for a sync. Both default off (a plain incremental sync). */
 export interface SyncOptions {
     /** Drop the whole index and re-embed every document from scratch. */
