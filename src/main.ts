@@ -2940,6 +2940,7 @@ export default class LilbeePlugin extends Plugin {
             errors: [],
             absorbed: [],
             index_mismatch: null,
+            skip_records_error: null,
         };
         let done = 0;
         for (const batch of batches) {
@@ -2961,6 +2962,8 @@ export default class LilbeePlugin extends Plugin {
                         merged.unchanged += parsed.unchanged;
                         // The last batch's verdict is the state the index ends in.
                         merged.index_mismatch = parsed.index_mismatch;
+                        // The first failure stands: a later batch that saves cleanly does not undo it.
+                        merged.skip_records_error ??= parsed.skip_records_error;
                     }
                 } else if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };

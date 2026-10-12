@@ -939,6 +939,60 @@ describe("LilbeePlugin", () => {
             expect(dones[0].data.absorbed).toEqual(["f0.py.abs", "f90.py.abs"]);
         });
 
+        it("uploadInBatches keeps the first skip_records_error any batch reports", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const files = Array.from({ length: 200 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            const errors = [null, "first lock busy", "second lock busy"];
+            let call = 0;
+            (plugin as any).api.uploadFiles = vi.fn(() =>
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: [],
+                            updated: [],
+                            removed: [],
+                            unchanged: 0,
+                            failed: [],
+                            skipped: [],
+                            skip_records_error: errors[call++],
+                        },
+                    };
+                })(),
+            );
+            const events: { event: string; data: any }[] = [];
+            for await (const e of (plugin as any).uploadInBatches(files, new AbortController().signal)) events.push(e);
+            expect((plugin as any).api.uploadFiles).toHaveBeenCalledTimes(3);
+            const dones = events.filter((e) => e.event === SSE_EVENT.DONE);
+            expect(dones[0].data.skip_records_error).toBe("first lock busy");
+        });
+
+        it("an upload of two batches shows the skip_records_error one batch reports", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            Notice.clear();
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            let call = 0;
+            (plugin as any).api.uploadFiles = vi.fn(() =>
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: ["a"],
+                            updated: [],
+                            removed: [],
+                            unchanged: 0,
+                            failed: [],
+                            skipped: [],
+                            skip_records_error: call++ === 1 ? "Could not save the held-out list: lock busy" : null,
+                        },
+                    };
+                })(),
+            );
+            await (plugin as any).runUpload(files, []);
+            expect(Notice.instances.map((n) => n.message)).toContain("Could not save the held-out list: lock busy");
+        });
+
         it("uploadInBatches ignores an unparseable done from a batch", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
@@ -4823,6 +4877,38 @@ describe("LilbeePlugin", () => {
             await plugin.runCrawl("https://example.com", 0, 50);
 
             expect(Notice.instances.map((n) => n.message)).toContain("lilbee: crawl done: 3 pages, 2 failed");
+        });
+
+        it("a crawl shows the skip_records_error of the sync that follows", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: ["a.md"],
+                            updated: [],
+                            removed: [],
+                            failed: [],
+                            unchanged: 0,
+                            skip_records_error: "Could not save the held-out list: lock busy",
+                        },
+                    };
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            await vi.waitFor(() =>
+                expect(Notice.instances.map((n) => n.message)).toContain("Could not save the held-out list: lock busy"),
+            );
         });
 
         it("leaves 'failed' out of the done notice when no page failed", async () => {
