@@ -9662,6 +9662,9 @@ describe("new server config fields", () => {
             const captured = await displayWithSchema(plugin);
 
             expect(Object.keys(captured.dropdownOptionsByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!)).toEqual(FTS_CHOICES);
+            expect(captured.dropdownOptionsByName.get(MESSAGES.LABEL_FTS_LANGUAGE)).toEqual(
+                Object.fromEntries(FTS_CHOICES.map((choice) => [choice, choice])),
+            );
             expect(captured.dropdownSetValuesByName.get(MESSAGES.LABEL_FTS_LANGUAGE)).toContain("English");
             // No text box: a half-typed language can no longer be sent.
             expect(captured.textByName.has(MESSAGES.LABEL_FTS_LANGUAGE)).toBe(false);
