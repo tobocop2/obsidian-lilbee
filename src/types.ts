@@ -316,6 +316,8 @@ export interface StatusResponse {
     /** Held-out files, capped by the server; `skipped_total` is the real count. */
     skipped?: SkippedSource[];
     skipped_total?: number;
+    /** What happens to scanned pages: the engine that reads them, or that they are skipped. */
+    ocr_note?: string;
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
 }

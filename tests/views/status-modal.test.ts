@@ -360,9 +360,12 @@ describe("StatusModal", () => {
     });
 
     /** The label and value cells of the Models table, as [label, value] pairs. */
-    async function statusRows(config: Record<string, string>): Promise<Array<[string, string]>> {
+    async function statusRows(
+        config: Record<string, string>,
+        extra: Partial<StatusResponse> = {},
+    ): Promise<Array<[string, string]>> {
         const plugin = makePlugin();
-        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus({ config })));
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus({ config, ...extra })));
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
 
         const modal = new StatusModal(new App(), plugin);
@@ -375,8 +378,12 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const labels = content.findAll("lilbee-status-label").map((l: MockElement) => l.textContent);
         const values = content.findAll("lilbee-status-value").map((v: MockElement) => v.textContent);
+        ocrDetails = content.findAll("lilbee-status-detail").map((d: MockElement) => d.textContent);
         return labels.map((label, i) => [label, values[i]]);
     }
+
+    /** The detail lines of the last `statusRows` call. */
+    let ocrDetails: string[] = [];
 
     it.each([
         [OCR_MODE.AUTO, "Auto"],
@@ -395,6 +402,19 @@ describe("StatusModal", () => {
     it("shows no OCR row against a server that reports no OCR mode", async () => {
         const rows = await statusRows({ chat_model: "mistral:7b" });
         expect(rows.map(([label]) => label)).not.toContain(MESSAGES.LABEL_STATUS_OCR);
+    });
+
+    it("shows the server's OCR note as the detail of the OCR row", async () => {
+        const note = "Scanned pages are read with tesseract (eng).";
+        const rows = await statusRows({ chat_model: "mistral:7b", ocr: OCR_MODE.AUTO }, { ocr_note: note });
+        expect(rows).toContainEqual([MESSAGES.LABEL_STATUS_OCR, "Auto"]);
+        expect(ocrDetails).toEqual([note]);
+    });
+
+    it.each([[undefined], [""]])("shows no OCR detail when the server's OCR note is %j", async (note) => {
+        const rows = await statusRows({ chat_model: "mistral:7b", ocr: OCR_MODE.AUTO }, { ocr_note: note });
+        expect(rows).toContainEqual([MESSAGES.LABEL_STATUS_OCR, "Auto"]);
+        expect(ocrDetails).toEqual([]);
     });
 
     it("handles showModel failure gracefully", async () => {

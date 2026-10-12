@@ -1638,6 +1638,7 @@
     white-space: nowrap;
 }
 
+.lilbee-status-detail,
 .lilbee-status-held-out-reason,
 .lilbee-status-held-out-more,
 .lilbee-status-held-out-retry {
