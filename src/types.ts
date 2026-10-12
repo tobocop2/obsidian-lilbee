@@ -113,6 +113,8 @@ export interface Source {
      * where the file is not accessible as a vault-relative path.
      */
     vault_path?: string | null;
+    /** Set only on a recalled memory (`source` is `memory:<id>`); absent on older servers. */
+    memory_id?: string | null;
 }
 
 /**

@@ -2,6 +2,7 @@ import type { App, Vault } from "obsidian";
 import type { LilbeeClient } from "../api";
 import type { Source } from "../types";
 import { CONTENT_TYPE, isPdfContentType } from "../types";
+import { openMemoriesView } from "../views/memories-view";
 import { SourcePreviewModal } from "../views/source-preview-modal";
 
 /** Discriminator tags for `SourceClickAction`. */
@@ -9,6 +10,7 @@ export const SOURCE_ACTION = {
     VAULT_MARKDOWN: "vault-markdown",
     VAULT_NOTE: "vault-note",
     PREVIEW: "preview",
+    MEMORY: "memory",
 } as const;
 
 /**
@@ -19,11 +21,13 @@ export const SOURCE_ACTION = {
  *   and show the source-preview modal, whose embedded viewer can deep-link to
  *   a page (Obsidian's PDF viewer doesn't honour the `#page=N` fragment in
  *   `openLinkText`).
+ * - `memory`: a recalled memory has no file; open the memories view.
  */
 export type SourceClickAction =
     | { kind: typeof SOURCE_ACTION.VAULT_MARKDOWN; path: string; line: number }
     | { kind: typeof SOURCE_ACTION.VAULT_NOTE; path: string }
-    | { kind: typeof SOURCE_ACTION.PREVIEW; source: Source };
+    | { kind: typeof SOURCE_ACTION.PREVIEW; source: Source }
+    | { kind: typeof SOURCE_ACTION.MEMORY };
 
 function isMarkdownish(contentType: string): boolean {
     return contentType === CONTENT_TYPE.MARKDOWN || contentType === CONTENT_TYPE.HTML;
@@ -55,6 +59,7 @@ function vaultAction(source: Source, path: string): SourceClickAction {
  * can be resolved.
  */
 export function sourceClickAction(source: Source, vault: Vault): SourceClickAction {
+    if (source.memory_id) return { kind: SOURCE_ACTION.MEMORY };
     if (isPdfContentType(source.content_type)) {
         return { kind: SOURCE_ACTION.PREVIEW, source };
     }
@@ -83,6 +88,9 @@ export async function executeSourceClick(app: App, api: LilbeeClient, action: So
             return;
         case SOURCE_ACTION.PREVIEW:
             new SourcePreviewModal(app, api, action.source).open();
+            return;
+        case SOURCE_ACTION.MEMORY:
+            await openMemoriesView(app);
             return;
     }
 }

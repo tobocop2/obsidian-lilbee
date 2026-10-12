@@ -3077,6 +3077,16 @@
     color: var(--lilbee-color-wiki);
 }
 
+.lilbee-memory-type-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 7px;
+    border-radius: 8px;
+    margin-right: var(--size-4-1, 4px);
+}
+
 .lilbee-claim-fact {
     border-left-style: solid;
 }

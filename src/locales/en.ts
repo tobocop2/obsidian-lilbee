@@ -1379,6 +1379,7 @@ export const MESSAGES = {
 
     // Memory
     LABEL_MEMORIES_VIEW: "lilbee Memories",
+    LABEL_MEMORY_SOURCE: "Memory",
     LABEL_MEMORIES_TITLE: "Memories",
     MEMORIES_SEARCH_PLACEHOLDER: "Filter memories…",
     MEMORIES_FLAG_YES: "yes",

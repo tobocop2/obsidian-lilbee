@@ -144,7 +144,7 @@ import { SearchModal } from "./views/search-modal";
 import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
-import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
+import { MemoriesView, openMemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
 import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "./views/placement-view";
 import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
@@ -3117,16 +3117,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async activateMemoriesView(): Promise<void> {
-        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES);
-        if (existing.length > 0) {
-            void this.app.workspace.revealLeaf(existing[0]);
-            return;
-        }
-        const leaf = this.app.workspace.getRightLeaf(false);
-        if (leaf) {
-            await leaf.setViewState({ type: VIEW_TYPE_MEMORIES, active: true });
-            void this.app.workspace.revealLeaf(leaf);
-        }
+        await openMemoriesView(this.app);
     }
 
     refreshMemoryViews(): void {

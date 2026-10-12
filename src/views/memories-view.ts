@@ -1,4 +1,4 @@
-import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MEMORY_CONFIG_KEY, MEMORY_KIND, type MemoryItem } from "../types";
 import { addCloseButton } from "../components/close-button";
@@ -8,6 +8,20 @@ import { ConfirmModal } from "./confirm-modal";
 import { RememberModal } from "./remember-modal";
 
 export const VIEW_TYPE_MEMORIES = "lilbee-memories";
+
+/** Reveal the memories view, opening it in the right sidebar when it is not open. */
+export async function openMemoriesView(app: App): Promise<void> {
+    const existing = app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES);
+    if (existing.length > 0) {
+        void app.workspace.revealLeaf(existing[0]);
+        return;
+    }
+    const leaf = app.workspace.getRightLeaf(false);
+    if (leaf) {
+        await leaf.setViewState({ type: VIEW_TYPE_MEMORIES, active: true });
+        void app.workspace.revealLeaf(leaf);
+    }
+}
 
 export class MemoriesView extends ItemView {
     private plugin: LilbeePlugin;
