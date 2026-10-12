@@ -953,6 +953,7 @@ export const SSE_EVENT = {
     PULL: "pull",
     CRAWL_START: "crawl_start",
     CRAWL_PAGE: "crawl_page",
+    CRAWL_PAGE_FAILED: "crawl_page_failed",
     CRAWL_DONE: "crawl_done",
     CRAWL_ERROR: "crawl_error",
     WIKI_PHASE: "wiki_phase",

@@ -3550,6 +3550,7 @@ export default class LilbeePlugin extends Plugin {
         let setupResolved = false;
         try {
             let pageCount = 0;
+            let failedCount = 0;
             const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode, includeSubdomains);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
@@ -3596,10 +3597,14 @@ export default class LilbeePlugin extends Plugin {
                         this.taskQueue.update(taskId, -1, `${pageCount} pages`);
                         break;
                     }
+                    case SSE_EVENT.CRAWL_PAGE_FAILED: {
+                        failedCount++;
+                        break;
+                    }
                     case SSE_EVENT.CRAWL_DONE: {
                         const d = event.data as { pages_crawled?: number };
                         this.taskQueue.complete(taskId);
-                        new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount));
+                        new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount, failedCount));
                         void this.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
                         return;
                     }

@@ -4798,6 +4798,51 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("1 pages"))).toBe(true);
         });
 
+        it("counts crawl_page_failed events and adds them to the done notice", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/a" } };
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/b" } };
+                    yield {
+                        event: SSE_EVENT.CRAWL_PAGE_FAILED,
+                        data: { url: "https://example.com/b", reason: "empty" },
+                    };
+                    yield {
+                        event: SSE_EVENT.CRAWL_PAGE_FAILED,
+                        data: { url: "https://example.com/c", reason: "empty" },
+                    };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 3 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: crawl done: 3 pages, 2 failed");
+        });
+
+        it("leaves 'failed' out of the done notice when no page failed", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/a" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.map((n) => n.message)).toContain("lilbee: crawl done: 1 pages");
+        });
+
         it("handles CRAWL_ERROR event", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

@@ -925,7 +925,8 @@ export const MESSAGES = {
     NOTICE_ADD_OVERLAPPING: (names: string) => `lilbee: not added, it overlaps a source lilbee already has: ${names}`,
     NOTICE_ADD_REFUSED: (names: string) => `lilbee: could not add: ${names}`,
     NOTICE_SYNC_SUMMARY: (summary: string) => `lilbee: ${summary}`,
-    NOTICE_CRAWL_DONE: (pages: number) => `lilbee: crawl done: ${pages} pages`,
+    NOTICE_CRAWL_DONE: (pages: number, failed = 0) =>
+        `lilbee: crawl done: ${pages} pages${failed > 0 ? `, ${failed} failed` : ""}`,
     NOTICE_ENTER_URL: "lilbee: please enter a URL",
     NOTICE_DOWNLOAD_CANCELLED: "lilbee: download cancelled",
     NOTICE_INDEXING_CANCELLED: "lilbee: indexing cancelled",
