@@ -4584,11 +4584,9 @@ describe("managed mode settings", () => {
 
             await textByName.get(MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS)!("21");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            const reason = MESSAGES.NOTICE_FAILED_UPDATE_REASON(
-                MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS,
-                MESSAGES.REASON_AT_MOST(20),
+            expect(Notice.instances.map((n) => n.message)).toContain(
+                "lilbee: failed to update Retry attempts: enter 20 or less",
             );
-            expect(Notice.instances.map((n) => n.message)).toContain(reason);
         });
 
         it("accepts float for crawl_retry_max_backoff", async () => {
