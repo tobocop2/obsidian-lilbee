@@ -4565,6 +4565,32 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
+        it("accepts the largest retry attempt count for crawl_retry_max_attempts", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS)!("20");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_max_attempts: 20 });
+        });
+
+        it("refuses 21 for crawl_retry_max_attempts and tells the user the limit", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            Notice.clear();
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS)!("21");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            const reason = MESSAGES.NOTICE_FAILED_UPDATE_REASON(
+                MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS,
+                MESSAGES.REASON_AT_MOST(20),
+            );
+            expect(Notice.instances.map((n) => n.message)).toContain(reason);
+        });
+
         it("accepts float for crawl_retry_max_backoff", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
