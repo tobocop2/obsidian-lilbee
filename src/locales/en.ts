@@ -893,6 +893,7 @@ export const MESSAGES = {
     REASON_NOT_A_NUMBER: "enter a number",
     REASON_NOT_WHOLE_NUMBER: "enter a whole number",
     REASON_AT_LEAST: (min: number) => `enter ${min} or more`,
+    REASON_AT_MOST: (max: number) => `enter ${max} or less`,
     REASON_BETWEEN: (min: number, max: number) => `enter a number from ${min} to ${max}`,
     NOTICE_FIELD_UPDATED: (field: string) => `lilbee: ${field} updated`,
     NOTICE_FIELD_RESET: (field: string) => `lilbee: ${field} reset to default`,
