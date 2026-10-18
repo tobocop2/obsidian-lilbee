@@ -58,6 +58,22 @@ export interface HealthWarning {
 }
 
 /** `GET /api/health`. Every chat field is absent on older servers. */
+export type UpgradePhase = "waiting" | "table" | "done" | "failed";
+
+export const UPGRADE_PHASE = {
+    WAITING: "waiting",
+    TABLE: "table",
+    DONE: "done",
+    FAILED: "failed",
+} as const satisfies Record<string, UpgradePhase>;
+
+/** The one-time library upgrade a server reports in `/api/health` while it runs. */
+export interface LibraryUpgrade {
+    phase: UpgradePhase;
+    tables_done: number;
+    tables_total: number;
+}
+
 export interface HealthResponse {
     status: string;
     version: string;
@@ -75,6 +91,8 @@ export interface HealthResponse {
     chat_prefill_total?: number | null;
     /** Degradations the server is reporting; absent on older servers. */
     warnings?: HealthWarning[];
+    /** The library upgrade while it runs; null or absent otherwise. */
+    upgrade?: LibraryUpgrade | null;
 }
 
 /** Whether a citation states a fact from the source or an inference drawn from it. */
@@ -86,7 +104,7 @@ export const CLAIM_TYPE = {
 } as const satisfies Record<string, ClaimType>;
 
 /** How a `fetchResult` request concluded, reported to the status bar. */
-export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
+export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting" | "upgrading";
 
 export const REQUEST_OUTCOME = {
     OK: "ok",
@@ -94,6 +112,7 @@ export const REQUEST_OUTCOME = {
     SERVER_ERROR: "server_error",
     UNREACHABLE: "unreachable",
     STARTING: "starting",
+    UPGRADING: "upgrading",
 } as const satisfies Record<string, RequestOutcome>;
 
 /** Prefix of the `source` of a recalled memory (`memory:<id>`). */
@@ -323,6 +342,7 @@ export interface StatusResponse {
     skipped_total?: number;
     /** What happens to scanned pages: the engine that reads them, or that they are skipped. */
     ocr_note?: string;
+    /** The newest sources only; `document_count` is the real count and `/api/documents` pages the rest. */
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
 }
@@ -1505,6 +1525,7 @@ export const ERROR_NAME = {
     SESSION_TOKEN: "SessionTokenError",
     SERVER_STARTING: "ServerStartingError",
     RATE_LIMITED: "RateLimitedError",
+    LIBRARY_UPGRADING: "LibraryUpgradingError",
 } as const;
 
 export const WIZARD_STEP = {

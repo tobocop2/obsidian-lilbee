@@ -4490,6 +4490,50 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).externalServerVersion).toBe("");
         });
 
+        it("probe shows the upgrade progress while health reports an upgrade, then ready once it ends", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const healthWith = (upgrade: unknown) =>
+                vi.fn().mockResolvedValue({
+                    isErr: () => false,
+                    isOk: () => true,
+                    value: { status: "ok", version: "0.6.90b449", upgrade },
+                });
+            plugin.api.health = healthWith({ phase: "table", tables_done: 1, tables_total: 4, elapsed_s: 2 });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain(MESSAGES.STATUS_UPGRADING_PROGRESS(1, 4));
+
+            plugin.api.health = healthWith({ phase: "waiting", tables_done: 0, tables_total: 0, elapsed_s: 1 });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain(MESSAGES.STATUS_UPGRADING);
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("tables");
+
+            plugin.api.health = healthWith({ phase: "table", tables_done: 0, tables_total: 0, elapsed_s: 1 });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain(MESSAGES.STATUS_UPGRADING);
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("tables");
+
+            plugin.api.health = healthWith(null);
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
+        });
+
+        it("probe treats a finished upgrade as no upgrade", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: {
+                    status: "ok",
+                    version: "0.6.90b449",
+                    upgrade: { phase: "done", tables_done: 4, tables_total: 4, elapsed_s: 9 },
+                },
+            });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
+        });
+
         it("probe with non-ready chat status skips setStatusReady", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -6407,6 +6451,32 @@ describe("LilbeePlugin", () => {
             const before = (plugin.statusBarEl as any)?.textContent;
             (plugin as any).handleRequestOutcome("starting");
             expect((plugin.statusBarEl as any)?.textContent).toBe(before);
+        });
+
+        it("shows the upgrade state, not an error, on 'upgrading'", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).serverEverReady = true;
+            (plugin as any).handleRequestOutcome("upgrading");
+            expect((plugin.statusBarEl as any)?.textContent).toContain(MESSAGES.STATUS_UPGRADING);
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
+        });
+
+        it("keeps the upgrade pill when a later response reports ok during the upgrade", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({
+                isErr: () => false,
+                isOk: () => true,
+                value: {
+                    status: "ok",
+                    version: "0.6.90b449",
+                    upgrade: { phase: "table", tables_done: 2, tables_total: 5, elapsed_s: 4 },
+                },
+            });
+            await (plugin as any).probeServerHealth();
+            (plugin as any).handleRequestOutcome("ok");
+            expect((plugin.statusBarEl as any)?.textContent).toContain(MESSAGES.STATUS_UPGRADING_PROGRESS(2, 5));
         });
 
         it("managed mode does not flip to error on 'server_error' before the server has ever been ready", async () => {
