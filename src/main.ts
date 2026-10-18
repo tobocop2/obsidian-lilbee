@@ -77,6 +77,8 @@ import {
     CHAT_STATUS,
     type ChatStatus,
     type HealthResponse,
+    type LibraryUpgrade,
+    UPGRADE_PHASE,
     type HealthWarning,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
@@ -129,6 +131,7 @@ import {
     supportsSessionExport,
     supportsSessionFork,
     supportsSessions,
+    isUpgradeRunning,
     sameWarnings,
     warmStatusText,
     STREAM_IDLE_TIMEOUT_MS,
@@ -444,6 +447,8 @@ export default class LilbeePlugin extends Plugin {
     // True when the server is up but the chat role is still cold-loading (from /api/health).
     private chatStatus: ChatStatus = CHAT_STATUS.READY;
     private chatError: string | null = null;
+    /** The library upgrade the last health probe saw running; null once it ends. */
+    private libraryUpgrade: LibraryUpgrade | null = null;
     /** Degradations from the last health probe; surfaces read this. */
     healthWarnings: HealthWarning[] = [];
     private warmController: AbortController | null = null;
@@ -1648,6 +1653,10 @@ export default class LilbeePlugin extends Plugin {
             this.setStatusClass("lilbee-status-error");
             return;
         }
+        if (outcome === REQUEST_OUTCOME.UPGRADING) {
+            this.paintLibraryUpgrade(this.libraryUpgrade);
+            return;
+        }
         if (outcome === REQUEST_OUTCOME.SERVER_ERROR || outcome === REQUEST_OUTCOME.UNREACHABLE) {
             // Before the managed server has ever reached READY, a failed
             // request means it's still coming up — don't flash a red error.
@@ -2297,6 +2306,15 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass("lilbee-status-starting");
     }
 
+    private paintLibraryUpgrade(upgrade: LibraryUpgrade | null): void {
+        const text =
+            upgrade?.phase === UPGRADE_PHASE.TABLE && upgrade.tables_total > 0
+                ? MESSAGES.STATUS_UPGRADING_PROGRESS(upgrade.tables_done, upgrade.tables_total)
+                : MESSAGES.STATUS_UPGRADING;
+        this.updateStatusBar(text, DOT_STATE.PRIMARY);
+        this.setStatusClass("lilbee-status-starting");
+    }
+
     private setStatusReady(): void {
         // Running work owns the pill. Every successful response lands here, so
         // without this a sync's progress text is repainted as "ready" between
@@ -2307,6 +2325,7 @@ export default class LilbeePlugin extends Plugin {
         // is up. Without this the health probe's own OK outcome repaints "ready"
         // over the pill reflectChatStatus just painted.
         if (this.chatStatus === CHAT_STATUS.LOADING || this.chatStatus === CHAT_STATUS.ERROR) return;
+        if (this.libraryUpgrade) return;
         if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
             this.showNotInstalledStatus();
             return;
@@ -2360,7 +2379,13 @@ export default class LilbeePlugin extends Plugin {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
             }
+            const upgrade = health.value.upgrade;
+            this.libraryUpgrade = upgrade && isUpgradeRunning(upgrade) ? upgrade : null;
             this.reflectChatStatus(health.value);
+            if (this.libraryUpgrade) {
+                this.paintLibraryUpgrade(this.libraryUpgrade);
+                return;
+            }
             // reflectChatStatus early-returns when the chat status is unchanged,
             // so a "connecting..." from a mode switch would never clear. Promote
             // to ready explicitly after a successful probe.
@@ -2368,6 +2393,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         this.healthFailureStreak += 1;
+        this.libraryUpgrade = null;
         if (this.healthFailureStreak < HEALTH_FAILURE_STREAK_THRESHOLD) return;
         // Managed mode, pre-first-ready (fresh install, wizard still
         // downloading/booting): a failing probe is "starting", not "error".

@@ -61,6 +61,7 @@
 
 ### Fixed
 
+- While lilbee upgrades an older library in place, the status bar says "upgrading your library" with the table progress, and requests that the server turns away show a plain notice instead of a connection error.
 - Managed mode no longer piles up leftover server processes. A session that ended without a clean shutdown (a crash, a force quit, or a version upgrade) used to leave the old server running; the next launch would start a second one, the two would fight over the same data folder, and the new server would be killed in a loop ("server crashed after multiple restarts"). The plugin now clears any orphaned server for the vault before starting, tracks the server process directly, and shuts it down together with its background workers.
 - Managed mode no longer wedges into a "didn't produce a session token" loop when another process is already listening on 7433. The plugin lets the server pick any free port on every start.
 - The chat header dropdown always shows the active model name now, instead of falling back to "── Other... ──" when the featured catalog hadn't loaded yet.

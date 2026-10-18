@@ -35,7 +35,7 @@ import {
     supportsSessions,
 } from "../src/utils";
 import { isVersionOlder } from "../src/min-server-version";
-import { ServerStartingError, SessionTokenError } from "../src/api";
+import { LibraryUpgradingError, ServerStartingError, SessionTokenError } from "../src/api";
 import { OCR_MODE, SERVER_MODE } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ERROR_NAME } from "../src/types";
@@ -491,6 +491,22 @@ describe("noticeForResultError with serverMode", () => {
     it("returns the managed-mode token message for SessionTokenError under managed mode", () => {
         const out = noticeForResultError(new SessionTokenError(401, "stale"), "fallback", SERVER_MODE.MANAGED);
         expect(out).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID_MANAGED);
+    });
+});
+
+describe("library upgrade errors", () => {
+    it("noticeForResultError returns the plain upgrade notice", () => {
+        expect(noticeForResultError(new LibraryUpgradingError(), "generic fallback")).toBe(
+            MESSAGES.NOTICE_LIBRARY_UPGRADING,
+        );
+    });
+
+    it("noticeServerUnreachableIfApplicable handles it with one upgrade notice, not an error", () => {
+        _resetServerUnreachableDebounce();
+        Notice.clear();
+        expect(noticeServerUnreachableIfApplicable(new LibraryUpgradingError())).toBe(true);
+        expect(noticeServerUnreachableIfApplicable(new LibraryUpgradingError())).toBe(true);
+        expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_LIBRARY_UPGRADING]);
     });
 });
 

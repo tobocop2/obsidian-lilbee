@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App, Notice, TFile } from "obsidian";
 import { ok, err } from "../../src/result";
+import { LibraryUpgradingError } from "../../src/api";
 import { StatusModal } from "../../src/views/status-modal";
 import { MESSAGES } from "../../src/locales/en";
 import { MockElement } from "../__mocks__/obsidian";
@@ -301,6 +302,20 @@ describe("StatusModal", () => {
         });
 
         expect(Notice.instances.some((n: any) => n.message.includes("cannot connect"))).toBe(true);
+    });
+
+    it("shows the plain upgrade notice, not a connection error, while the library upgrades", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(err(new LibraryUpgradingError()));
+
+        const modal = new StatusModal(new App(), plugin);
+        const closeSpy = vi.spyOn(modal, "close");
+        modal.open();
+        await vi.waitFor(() => {
+            expect(closeSpy).toHaveBeenCalled();
+        });
+
+        expect(Notice.instances.map((n: any) => n.message)).toEqual([MESSAGES.NOTICE_LIBRARY_UPGRADING]);
     });
 
     it("shows error notice and closes on thrown error", async () => {

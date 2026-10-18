@@ -1,5 +1,5 @@
 import { Notice, type App, type Modal, type TFile } from "obsidian";
-import { ServerStartingError, SessionTokenError } from "./api";
+import { LibraryUpgradingError, ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
 import {
     isVersionOlder,
@@ -8,8 +8,8 @@ import {
     SESSION_FORK_MIN_SERVER_VERSION,
     SESSION_EXPORT_MIN_SERVER_VERSION,
 } from "./min-server-version";
-import { OCR_MODE, SERVER_MODE, WARM_PHASE } from "./types";
-import type { HealthWarning, ServerMode, WarmProgress } from "./types";
+import { OCR_MODE, SERVER_MODE, UPGRADE_PHASE, WARM_PHASE } from "./types";
+import type { HealthWarning, LibraryUpgrade, ServerMode, WarmProgress } from "./types";
 
 /**
  * Tag the modal's outer wrapper so the stylesheet keeps the close-X button
@@ -268,6 +268,7 @@ export function noticeForResultError(err: unknown, fallback: string, serverMode?
     if (err instanceof SessionTokenError) {
         return sessionTokenInvalidMessage(serverMode ?? SERVER_MODE.EXTERNAL);
     }
+    if (err instanceof LibraryUpgradingError) return MESSAGES.NOTICE_LIBRARY_UPGRADING;
     if (err instanceof Error) {
         const detail = extractServerErrorDetail(err.message);
         if (detail !== null && isRoleMismatchDetail(detail)) {
@@ -364,6 +365,11 @@ export function percentOfBytes(received: number, total: number | null): number |
     return Math.min(100, Math.round((received / total) * 100));
 }
 
+/** True while the upgrade is still going, which is the wait and each table. */
+export function isUpgradeRunning(upgrade: LibraryUpgrade): boolean {
+    return upgrade.phase === UPGRADE_PHASE.WAITING || upgrade.phase === UPGRADE_PHASE.TABLE;
+}
+
 /** Whether two warning sets name the same degradations, so a repaint is skipped
  *  while nothing has changed. */
 export function sameWarnings(a: HealthWarning[], b: HealthWarning[]): boolean {
@@ -449,11 +455,12 @@ function looksLikeConnectionRefused(err: Error): boolean {
 export function noticeServerUnreachableIfApplicable(err: unknown): boolean {
     if (err instanceof ServerStartingError) return true;
     if (!(err instanceof Error)) return false;
-    if (!looksLikeConnectionRefused(err)) return false;
+    const upgrading = err instanceof LibraryUpgradingError;
+    if (!upgrading && !looksLikeConnectionRefused(err)) return false;
     const now = Date.now();
     if (now - lastServerUnreachableAt > SERVER_UNREACHABLE_DEBOUNCE_MS) {
         lastServerUnreachableAt = now;
-        new Notice(MESSAGES.NOTICE_SERVER_UNREACHABLE);
+        new Notice(upgrading ? MESSAGES.NOTICE_LIBRARY_UPGRADING : MESSAGES.NOTICE_SERVER_UNREACHABLE);
     }
     return true;
 }

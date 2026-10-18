@@ -126,7 +126,29 @@ export class RateLimitedError extends Error {
     }
 }
 
+/**
+ * Thrown when the server answers 503 while it upgrades an older library in place.
+ * Never retried: the upgrade runs for a while and `/api/health` reports its progress.
+ */
+export class LibraryUpgradingError extends Error {
+    constructor() {
+        super("lilbee is upgrading the library");
+        this.name = ERROR_NAME.LIBRARY_UPGRADING;
+    }
+}
+
 const HTTP_SERVER_ERROR = 500;
+const HTTP_SERVICE_UNAVAILABLE = 503;
+
+/** True when a 503 body is the object the server sends while it upgrades, which always carries `upgrade`. */
+function isUpgradeBody(text: string): boolean {
+    try {
+        const body: unknown = JSON.parse(text);
+        return typeof body === "object" && body !== null && "upgrade" in body;
+    } catch {
+        return false;
+    }
+}
 
 /** True when the error carries the status line `assertOk` writes, so the server answered. */
 export function hasStatusLine(error: unknown): error is Error {
@@ -307,6 +329,7 @@ export class LilbeeClient {
         }
         if (!res.ok) {
             const text = await res.text().catch(() => "");
+            if (res.status === HTTP_SERVICE_UNAVAILABLE && isUpgradeBody(text)) throw new LibraryUpgradingError();
             throw new Error(`${SERVER_STATUS_PREFIX} ${res.status}: ${text}`);
         }
         return res;
@@ -416,6 +439,10 @@ export class LilbeeClient {
                 }
                 if (err instanceof RateLimitedError) {
                     this.recordOutcome(REQUEST_OUTCOME.SERVER_ERROR);
+                    throw err;
+                }
+                if (err instanceof LibraryUpgradingError) {
+                    this.recordOutcome(REQUEST_OUTCOME.UPGRADING);
                     throw err;
                 }
                 if (hasStatusLine(err)) {

@@ -739,6 +739,10 @@ export const MESSAGES = {
     STATUS_CONNECTING: "lilbee: connecting...",
     STATUS_ERROR: "lilbee: error",
     STATUS_AUTH_ERROR: "lilbee: auth error",
+    STATUS_UPGRADING: "lilbee: upgrading your library...",
+    STATUS_UPGRADING_PROGRESS: (done: number, total: number) =>
+        `lilbee: upgrading your library (${done} of ${total} tables)`,
+    NOTICE_LIBRARY_UPGRADING: "lilbee is upgrading your library. Try again in a few seconds.",
     NOTICE_SERVER_UNREACHABLE: "lilbee: server unreachable",
     STATUS_STOPPED: "lilbee: stopped",
     STATUS_NOT_INSTALLED: "lilbee: server not installed",

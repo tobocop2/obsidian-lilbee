@@ -1,5 +1,12 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, RateLimitedError, ServerStartingError, SessionTokenError, isHttpStatus } from "../src/api";
+import {
+    LilbeeClient,
+    LibraryUpgradingError,
+    RateLimitedError,
+    ServerStartingError,
+    SessionTokenError,
+    isHttpStatus,
+} from "../src/api";
 import type { Message, PlacementResponse, PlacementSpec } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -3106,5 +3113,67 @@ describe("agent config", () => {
 
         expect(result.isErr()).toBe(true);
         expect(result._unsafeUnwrapErr().message).toContain("Server responded 404");
+    });
+});
+
+describe("LibraryUpgradingError", () => {
+    function upgradingResponse(body: string): Response {
+        return {
+            ok: false,
+            status: 503,
+            headers: { get: (name: string) => (name === "Retry-After" ? "10" : null) },
+            text: () => Promise.resolve(body),
+            body: null,
+        } as unknown as Response;
+    }
+
+    const UPGRADE_BODY = JSON.stringify({
+        status_code: 503,
+        detail: "lilbee is upgrading the library. Try again in a few seconds.",
+        upgrade: { phase: "table", tables_done: 1, tables_total: 4, elapsed_s: 3.2 },
+    });
+
+    it("is thrown once, without a retry, when a 503 carries the upgrade body", async () => {
+        fetchMock.mockResolvedValue(upgradingResponse(UPGRADE_BODY));
+        await expect(client.listDocuments()).rejects.toMatchObject({ name: "LibraryUpgradingError" });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("is thrown when the upgrade object is null", async () => {
+        fetchMock.mockResolvedValue(
+            upgradingResponse(JSON.stringify({ status_code: 503, detail: "x", upgrade: null })),
+        );
+        await expect(client.listDocuments()).rejects.toBeInstanceOf(LibraryUpgradingError);
+    });
+
+    it("reports the upgrading outcome, not a server error", async () => {
+        const outcomes: string[] = [];
+        client.setOutcomeCallback((o) => outcomes.push(o));
+        fetchMock.mockResolvedValue(upgradingResponse(UPGRADE_BODY));
+        await client.listDocuments().catch(() => undefined);
+        expect(outcomes).toEqual(["upgrading"]);
+    });
+
+    it("leaves a 503 without the upgrade body as a server error", async () => {
+        const outcomes: string[] = [];
+        client.setOutcomeCallback((o) => outcomes.push(o));
+        fetchMock.mockResolvedValue(upgradingResponse(JSON.stringify({ detail: "down" })));
+        const err = await client.listDocuments().catch((e: unknown) => e);
+        expect(err).not.toBeInstanceOf(LibraryUpgradingError);
+        expect(outcomes).toEqual(["server_error"]);
+    });
+
+    it("leaves a 503 whose JSON body is not an object as a server error", async () => {
+        fetchMock.mockResolvedValue(upgradingResponse("null"));
+        const err = await client.listDocuments().catch((e: unknown) => e);
+        expect(err).not.toBeInstanceOf(LibraryUpgradingError);
+        expect((err as Error).message).toContain("503");
+    });
+
+    it("leaves a 503 with a body that is not JSON as a server error", async () => {
+        fetchMock.mockResolvedValue(upgradingResponse("<html>bad gateway</html>"));
+        const err = await client.listDocuments().catch((e: unknown) => e);
+        expect(err).not.toBeInstanceOf(LibraryUpgradingError);
+        expect((err as Error).message).toContain("503");
     });
 });
