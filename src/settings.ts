@@ -197,12 +197,16 @@ const ADAPTIVE_THRESHOLD: ConfigRowSpec = {
 const TOP_K_LIMITS: SliderLimits = { min: 1, max: 20, step: 1 };
 const WIKI_FAITHFULNESS_LIMITS: SliderLimits = { min: 0, max: 1, step: 0.05 };
 
+/** The most retries per URL the server accepts. */
+const CRAWL_RETRY_MAX_ATTEMPTS_LIMIT = 20;
+
 /** A crawl number typed into a text box. */
 interface CrawlNumericField extends ConfigRowSpec {
     placeholder: string;
     kind: "int" | "float";
     nullable: boolean;
     min?: number;
+    max?: number;
 }
 
 interface CrawlBoolField extends ConfigRowSpec {
@@ -307,6 +311,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "int",
         nullable: false,
         min: 0,
+        max: CRAWL_RETRY_MAX_ATTEMPTS_LIMIT,
     },
 ];
 
@@ -3227,6 +3232,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         return this.refuse(spec.name, MESSAGES.REASON_NOT_WHOLE_NUMBER);
                     if (field.min !== undefined && num < field.min)
                         return this.refuse(spec.name, MESSAGES.REASON_AT_LEAST(field.min));
+                    if (field.max !== undefined && num > field.max)
+                        return this.refuse(spec.name, MESSAGES.REASON_AT_MOST(field.max));
                     return this.pushConfig(spec.key, num, spec.name);
                 });
                 this.serverConfigInputs.set(spec.key, text.inputEl);
