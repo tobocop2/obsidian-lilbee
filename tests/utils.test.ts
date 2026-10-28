@@ -607,6 +607,10 @@ describe("isModelUnavailableError", () => {
         expect(isModelUnavailableError(null, "Remote and API models need the lilbee[litellm] extra.")).toBe(true);
     });
 
+    it("treats the providers-missing message as model-unavailable even without a code", () => {
+        expect(isModelUnavailableError(null, "Remote and API models need the lilbee[providers] extra.")).toBe(true);
+    });
+
     it("does not route auth errors to setup (API key is a settings problem)", () => {
         expect(isModelUnavailableError("auth", "missing key")).toBe(false);
     });

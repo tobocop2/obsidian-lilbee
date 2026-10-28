@@ -2680,7 +2680,7 @@ describe("getCapability()", () => {
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/external`, expect.anything());
     });
 
-    it("API_KEYS returns false when /api/models/external reports a litellm-not-installed error", async () => {
+    it("API_KEYS returns false when /api/models/external reports the providers extra missing", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ models: [], error: "litellm not installed" }));
         await expect(client.getCapability("api_keys")).resolves.toBe(false);
     });

@@ -867,7 +867,7 @@ export class ChatView extends ItemView {
     }
 
     /**
-     * Selectable models for a role: local installed builds + hosted (LiteLLM)
+     * Selectable models for a role: local installed builds + hosted
      * entries — mirroring the Settings model manager so only role-capable
      * models appear. Un-installed catalog builds are reached via "Browse catalog".
      */

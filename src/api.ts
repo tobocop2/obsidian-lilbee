@@ -503,7 +503,7 @@ export class LilbeeClient {
     private async probeCapability(cap: Capability): Promise<boolean> {
         switch (cap) {
             case CAPABILITY.API_KEYS:
-                return this.probeLitellmInstalled();
+                return this.probeProvidersInstalled();
             case CAPABILITY.CRAWLING:
                 return this.probeCrawlerInstalled(CRAWLER_STATUS_FIELD.PACKAGE);
             case CAPABILITY.CRAWLING_BROWSER:
@@ -513,7 +513,7 @@ export class LilbeeClient {
         }
     }
 
-    private async probeLitellmInstalled(): Promise<boolean> {
+    private async probeProvidersInstalled(): Promise<boolean> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/external`);
         const body = (await res.json()) as { models?: unknown; error?: unknown };
         return body.error === null || body.error === undefined;
