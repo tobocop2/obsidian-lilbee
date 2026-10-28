@@ -9,7 +9,7 @@ function makePlugin(renderMode: string = "http", browserReady: boolean = true) {
         runCrawl: vi.fn(),
         installCrawlerBrowser: vi.fn().mockResolvedValue(true),
         api: {
-            config: vi.fn().mockResolvedValue({ crawl_render_mode: renderMode }),
+            config: vi.fn().mockResolvedValue({ crawl_render_mode: renderMode, crawl_respect_robots_txt: true }),
             updateConfig: vi.fn().mockResolvedValue({}),
             getCapability: vi.fn().mockResolvedValue(browserReady),
         },
@@ -527,6 +527,26 @@ describe("CrawlModal", () => {
             expect(field(el, "lilbee-crawl-login-password").attributes.type).toBe("password");
             expect(field(el, "lilbee-crawl-login-cookie").attributes.type).toBe("password");
             expect(collectTexts(el.find("lilbee-crawl-login")!)).toContain(MESSAGES.NOTE_CRAWL_LOGIN);
+        });
+
+        it("shows the boxes only when the server reports the setting that ships with login", async () => {
+            const { el } = openModal();
+            await settle();
+            expect(isHidden(el.find("lilbee-crawl-login")!)).toBe(false);
+
+            const app = new App();
+            const older = makePlugin();
+            older.api.config.mockResolvedValue({ crawl_render_mode: "http" });
+            const modal = new CrawlModal(app as any, older as any);
+            modal.onOpen();
+            await settle();
+            expect(isHidden((modal.contentEl as unknown as MockElement).find("lilbee-crawl-login")!)).toBe(true);
+
+            older.api.config.mockRejectedValue(new Error("down"));
+            const failing = new CrawlModal(app as any, older as any);
+            failing.onOpen();
+            await settle();
+            expect(isHidden((failing.contentEl as unknown as MockElement).find("lilbee-crawl-login")!)).toBe(true);
         });
 
         it("sends the typed login to runCrawl and does not save it", () => {

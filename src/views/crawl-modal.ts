@@ -24,6 +24,9 @@ function parseOptionalCount(raw: string, opts: { allowZero: boolean }): ParseRes
 
 const asInput = (el: HTMLElement): HTMLInputElement => el as unknown as HTMLInputElement;
 
+/** A setting that shipped with the crawl login, so a server that reports it accepts the `login` object. */
+const LOGIN_SUPPORT_KEY = "crawl_respect_robots_txt";
+
 /** The login boxes; secrets are masked and nothing here is written to settings. */
 const LOGIN_FIELDS = [
     {
@@ -83,6 +86,12 @@ export class CrawlModal extends Modal {
         if (cfg !== null) {
             asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
         }
+    }
+
+    /** An older server ignores the `login` object, so the boxes wait for a server that reports the setting. */
+    private async revealLoginWhenSupported(loginBox: HTMLElement): Promise<void> {
+        const cfg = await this.plugin.api.config().catch(() => null);
+        if (cfg !== null && cfg[LOGIN_SUPPORT_KEY] !== undefined) loginBox.show();
     }
 
     onOpen(): void {
@@ -185,6 +194,8 @@ export class CrawlModal extends Modal {
         asInput(maxInput).value = "";
 
         const loginBox = contentEl.createEl("details", { cls: "lilbee-crawl-login" });
+        loginBox.hide();
+        void this.revealLoginWhenSupported(loginBox);
         loginBox.createEl("summary", { text: MESSAGES.LABEL_CRAWL_LOGIN });
         loginBox.createDiv({ cls: "lilbee-crawl-login-note", text: MESSAGES.NOTE_CRAWL_LOGIN });
         const loginInputs = new Map<keyof CrawlLogin, HTMLElement>();
