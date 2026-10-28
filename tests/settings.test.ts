@@ -24,6 +24,7 @@ import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
 import { ConfirmModal } from "../src/views/confirm-modal";
+import { CURATED_CONFIG_KEYS } from "../src/utils/config-fields";
 
 const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
@@ -755,7 +756,7 @@ describe("LilbeeSettingTab", () => {
             // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
             // + keyword search language. The API-key rows and the HF token row keep their own blur saver.
-            expect(textOnChanges.length).toBe(47);
+            expect(textOnChanges.length).toBe(49);
         });
     });
 
@@ -4057,8 +4058,8 @@ describe("managed mode settings", () => {
         });
 
         it.each([
-            ["managed", SERVER_MODE.MANAGED, 56],
-            ["external", SERVER_MODE.EXTERNAL, 57],
+            ["managed", SERVER_MODE.MANAGED, 62],
+            ["external", SERVER_MODE.EXTERNAL, 63],
         ])(
             "no text box in %s mode writes, saves, asks or notifies while the user types",
             async (_mode, serverMode, boxes) => {
@@ -4533,6 +4534,79 @@ describe("managed mode settings", () => {
 
             await textByName.get(MESSAGES.LABEL_CRAWL_TIMEOUT)!("   ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ["LABEL_CRAWL_TIMEOUT", "crawl_timeout"],
+            ["LABEL_CRAWL_MAX_DELAY_RANGE", "crawl_max_delay_range"],
+            ["LABEL_CRAWL_RETRY_MAX_BACKOFF", "crawl_retry_max_backoff"],
+        ] as const)("caps %s at the 3600 seconds the server enforces", async (label, key) => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES[label])!("3601");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON(MESSAGES[label], MESSAGES.REASON_AT_MOST(3600)),
+                ),
+            ).toBe(true);
+
+            await textByName.get(MESSAGES[label])!("3600");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: 3600 });
+        });
+
+        it("sends crawl_respect_robots_txt from its toggle", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_CRAWL_RESPECT_ROBOTS_TXT)!(false);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_respect_robots_txt: false });
+        });
+
+        it("sends crawl_user_agent as typed and an empty string to clear it", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES.LABEL_CRAWL_USER_AGENT)!("  my-bot/1.0 ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ crawl_user_agent: "my-bot/1.0" });
+            await textByName.get(MESSAGES.LABEL_CRAWL_USER_AGENT)!("   ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ crawl_user_agent: "" });
+        });
+
+        it("bounds crawl_browser_extra_wait_ms to 0 through 600000", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+            const field = textByName.get(MESSAGES.LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS)!;
+
+            await field("-1");
+            await field("600001");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            await field("600000");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_browser_extra_wait_ms: 600000 });
+        });
+
+        it("hides the newer crawl rows until the server reports their keys", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            for (const key of ["crawl_respect_robots_txt", "crawl_user_agent", "crawl_browser_extra_wait_ms"]) {
+                expect(hideable.get(key)?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
+            }
         });
 
         it("accepts float for crawl_mean_delay", async () => {
@@ -5082,6 +5156,10 @@ describe("managed mode settings", () => {
                 chunk_size: 512,
                 crawl_max_depth: 2,
                 openai_api_key: "",
+                llm_api_key: "",
+                deepseek_api_key: "",
+                mistral_api_key: "",
+                openrouter_api_key: "",
                 hf_token: "",
             };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
@@ -5151,6 +5229,23 @@ describe("managed mode settings", () => {
             row.inputEl.value = "AIza-test";
             await row.handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gemini_api_key: "AIza-test" });
+        });
+
+        it.each([
+            ["LABEL_LLM_API_KEY", "llm_api_key"],
+            ["LABEL_DEEPSEEK_API_KEY", "deepseek_api_key"],
+            ["LABEL_MISTRAL_API_KEY", "mistral_api_key"],
+            ["LABEL_OPENROUTER_API_KEY", "openrouter_api_key"],
+        ] as const)("calls updateConfig with %s on blur", async (label, key) => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
+
+            const row = blurByName.get(MESSAGES[label])!;
+            row.inputEl.value = "secret-value";
+            await row.handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: "secret-value" });
         });
 
         it("skips empty value on blur", async () => {
@@ -6165,13 +6260,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Find the wiki search mode dropdown — it's before the LLM provider dropdown
-            // The wiki search mode is added by renderWikiSettings, which adds one dropdown
-            // We need to find the right index. The wiki dropdown should have "all"/"wiki"/"raw" options.
-            // It should be the second-to-last dropdown since LLM provider is last
-            // Fleet section (last) adds the kv_cache_type dropdown after the LLM
-            // provider, so wiki search mode is now third-from-last.
-            const wikiSearchIdx = dropdownOnChanges.length - 3;
+            // The wiki search mode dropdown sits just before the fleet kv_cache_type dropdown.
+            const wikiSearchIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[wikiSearchIdx]("wiki");
             expect(plugin.settings.searchChunkType).toBe("wiki");
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -6331,49 +6421,6 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("LLM provider dropdown onChange", () => {
-        it("calls updateConfig with selected provider", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            // Last dropdown is the LLM provider (after server mode, chat model, sync mode)
-            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
-            // LLM provider, so the provider is now second-to-last.
-            const providerIdx = dropdownOnChanges.length - 2;
-            await dropdownOnChanges[providerIdx]("litellm");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
-        });
-
-        it("calls updateConfig when provider is set to auto", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
-            // LLM provider, so the provider is now second-to-last.
-            const providerIdx = dropdownOnChanges.length - 2;
-            await dropdownOnChanges[providerIdx]("auto");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "auto" });
-        });
-
-        it("shows error notice on failure", async () => {
-            const plugin = makePlugin();
-            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
-            // LLM provider, so the provider is now second-to-last.
-            const providerIdx = dropdownOnChanges.length - 2;
-            await dropdownOnChanges[providerIdx]("litellm");
-            expect(Notice.instances.some((n: any) => n.message.includes("failed to update LLM provider"))).toBe(true);
-        });
-    });
-
     describe("Fleet settings onChange", () => {
         it("kv_cache_type dropdown PATCHes the config", async () => {
             const plugin = makePlugin();
@@ -6473,10 +6520,10 @@ describe("managed mode settings", () => {
 
             // Layout (text-input order via addText): 0=port, 1-9=gen, 10-14=retrieval-advanced,
             // 15-18=ingest, 19-20=worker-pool, 21-30=crawling, 31=wikiVaultFolder,
-            // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken,
-            // 37=ollama URL, 38=lm_studio URL.
+            // 32=rerank_candidates, 33-39=apiKeys (openai, anthropic, gemini, llm, deepseek, mistral, openrouter),
+            // 40=hfToken, 41=ollama URL, 42=lm_studio URL.
             // Counted, not indexed: the point is that every credential row is masked.
-            expect(inputs.filter((i) => i.type === "password").length).toBe(4);
+            expect(inputs.filter((i) => i.type === "password").length).toBe(8);
         });
 
         it("sets HF token input type to password", () => {
@@ -6500,7 +6547,7 @@ describe("managed mode settings", () => {
             Setting.prototype.addText = origAddText;
 
             // HF token sits at index 35 in the new layout (num_ctx removed shifted earlier indices).
-            expect(inputs.filter((i) => i.type === "password").length).toBe(4);
+            expect(inputs.filter((i) => i.type === "password").length).toBe(8);
         });
     });
 
@@ -9837,5 +9884,271 @@ describe("new server config fields", () => {
         Notice.clear();
         await dropdownByName.get(MESSAGES.LABEL_TABLE_MODEL)!(TABLE_MODEL.TATR);
         expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    describe("the generic section for settings with no curated row", () => {
+        const field = (
+            key: string,
+            type: string,
+            extra: Partial<{
+                writable: boolean;
+                nullable: boolean;
+                choices: string[] | null;
+                reindex_required: boolean;
+                group: string;
+                help: string;
+            }> = {},
+        ) => ({
+            key,
+            type,
+            nullable: type.endsWith("|null"),
+            writable: true,
+            reindex_required: false,
+            group: "Retrieval",
+            help: `Help for ${key}`,
+            choices: null,
+            ...extra,
+        });
+
+        const SCHEMA = {
+            fields: [
+                field("chunk_size", "int"),
+                field("llm_provider", "str", { choices: ["auto", "remote"] }),
+                field("chat_model", "str", { writable: false }),
+                field("ann_index_threshold", "int"),
+                field("main_gpu", "int|null", { group: "System" }),
+                field("sse_heartbeat_interval", "float", { group: "System" }),
+                field("include_uncensored", "bool"),
+                field("concept_graph", "bool", { reindex_required: true }),
+                field("reranker_type", "str", { choices: ["cross", "none"] }),
+                field("llama_server_path", "str"),
+                field("zz_place", "str|null"),
+                field("force_ocr_pages", "list"),
+                field("vault_tags", "list|null"),
+                field("zz_roots", "dict"),
+                field("extra_roots", "dict|null"),
+                field("zz_level", "int", { choices: ["1", "2"] }),
+                field("memory_token_budget_zz", "int", { group: "Crawling" }),
+            ],
+        };
+
+        async function render(config: Record<string, unknown> = {}): Promise<{
+            plugin: ReturnType<typeof makePlugin>;
+            tab: LilbeeSettingTab;
+            captured: Captured;
+        }> {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(SCHEMA);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue(config);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            return { plugin, tab, captured };
+        }
+
+        it("shows no generic row until the server schema arrives", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { descByName } = captureSettingCallbacks(() => tab.display());
+            expect(descByName.has("ann_index_threshold")).toBe(false);
+        });
+
+        it("skips curated, refused and read-only settings", async () => {
+            const { captured } = await render();
+            for (const key of ["chunk_size", "llm_provider", "chat_model"]) {
+                expect(captured.descByName.has(key)).toBe(false);
+            }
+            for (const key of ["ann_index_threshold", "main_gpu", "zz_roots", "memory_token_budget_zz"]) {
+                expect(captured.descByName.has(key)).toBe(true);
+            }
+        });
+
+        it("describes each setting with its help, type, choices and re-index need", async () => {
+            const { captured } = await render();
+            expect(captured.descByName.get("ann_index_threshold")).toBe(
+                `Help for ann_index_threshold ${MESSAGES.DESC_MORE_SETTING_TYPE("int")}`,
+            );
+            expect(captured.descByName.get("reranker_type")).toBe(
+                `Help for reranker_type ${MESSAGES.DESC_MORE_SETTING_TYPE("str")} ${MESSAGES.DESC_MORE_SETTING_VALUES("cross, none")}`,
+            );
+            expect(captured.descByName.get("concept_graph")).toContain(MESSAGES.DESC_MORE_SETTING_REINDEX);
+        });
+
+        it("fills each control from the server config", async () => {
+            const { captured } = await render({
+                ann_index_threshold: 500,
+                zz_place: "gpu0",
+                reranker_type: "none",
+                force_ocr_pages: ["1", "2"],
+                zz_roots: { docs: "/tmp/docs" },
+                include_uncensored: true,
+                extra_roots: null,
+            });
+            expect(captured.fieldByName.get("extra_roots")!.inputEl.value).toBe("");
+            expect(captured.textInputByName.get("ann_index_threshold")!.value).toBe("500");
+            expect(captured.textInputByName.get("zz_place")!.value).toBe("gpu0");
+            expect(captured.dropdownSetValuesByName.get("reranker_type")).toContain("none");
+            expect(captured.fieldByName.get("force_ocr_pages")!.inputEl.value).toBe("1\n2");
+            expect(JSON.parse(captured.fieldByName.get("zz_roots")!.inputEl.value)).toEqual({ docs: "/tmp/docs" });
+        });
+
+        it("writes a toggle, a choice and a text value", async () => {
+            const { plugin, captured } = await render({ zz_place: "gpu0" });
+            await captured.toggleByName.get("include_uncensored")!(true);
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ include_uncensored: true });
+            await captured.dropdownByName.get("reranker_type")!("cross");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ reranker_type: "cross" });
+            await captured.dropdownByName.get("zz_level")!("2");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_level: 2 });
+            await captured.textByName.get("llama_server_path")!("  /opt/llama-server ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ llama_server_path: "/opt/llama-server" });
+            await captured.textByName.get("llama_server_path")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ llama_server_path: "" });
+            await captured.textByName.get("zz_place")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_place: null });
+        });
+
+        it("sends numbers, and refuses text, fractions for an int, and blanks that cannot clear", async () => {
+            const { plugin, captured } = await render({ main_gpu: 1 });
+            const threshold = captured.textByName.get("ann_index_threshold")!;
+            await threshold("abc");
+            await threshold("1.5");
+            await threshold("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON("ann_index_threshold", MESSAGES.REASON_NOT_WHOLE_NUMBER),
+                ),
+            ).toBe(true);
+            await threshold("250");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ ann_index_threshold: 250 });
+            await captured.textByName.get("sse_heartbeat_interval")!("2.5");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ sse_heartbeat_interval: 2.5 });
+            await captured.textByName.get("main_gpu")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ main_gpu: null });
+        });
+
+        it("sends a list one item per line, and an empty list when the setting cannot be null", async () => {
+            const { plugin, captured } = await render({ force_ocr_pages: ["1"], vault_tags: ["a"] });
+            await captured.textAreaByName.get("force_ocr_pages")!(" 1 \n\n 2 ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ force_ocr_pages: ["1", "2"] });
+            await captured.textAreaByName.get("force_ocr_pages")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ force_ocr_pages: [] });
+            await captured.textAreaByName.get("vault_tags")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ vault_tags: null });
+        });
+
+        it("sends a JSON object and refuses anything else", async () => {
+            const { plugin, captured } = await render();
+            const roots = captured.textAreaByName.get("zz_roots")!;
+            await roots('{"docs": "/tmp/docs"}');
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_roots: { docs: "/tmp/docs" } });
+            await roots("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_roots: {} });
+            await captured.textAreaByName.get("extra_roots")!("{}");
+            await captured.textAreaByName.get("extra_roots")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ extra_roots: null });
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await roots("{not json");
+            await roots("[1, 2]");
+            await roots("null");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.filter(
+                    (n) =>
+                        n.message ===
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON("zz_roots", MESSAGES.REASON_NOT_A_JSON_OBJECT),
+                ),
+            ).toHaveLength(3);
+        });
+
+        it("asks before a change that needs a re-index, and puts the toggle back on a no", async () => {
+            const { plugin, captured } = await render();
+            mockGenericConfirmResult = false;
+            await captured.toggleByName.get("concept_graph")!(true);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+            await captured.toggleByName.get("concept_graph")!(true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ concept_graph: true });
+        });
+
+        it("treats a setting named like a token as an ordinary number row", async () => {
+            const { plugin, captured } = await render({ memory_token_budget_zz: 400 });
+            expect(captured.descByName.has("memory_token_budget_zz")).toBe(true);
+            expect(captured.textInputByName.get("memory_token_budget_zz")!.type).not.toBe("password");
+            expect(captured.textInputByName.get("memory_token_budget_zz")!.value).toBe("400");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows a row only after the server reports its key", async () => {
+            const { tab } = await render({});
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            expect(hideable.get("ann_index_threshold")).toBeDefined();
+        });
+
+        it("groups the rows under the server's group names", async () => {
+            const { tab } = await render();
+            const headings = (tab as any).moreSettingsGroups().map((g: { heading: string }) => g.heading);
+            expect(headings).toEqual(["Crawling", "Retrieval", "System"].map((g) => MESSAGES.LABEL_MORE_SETTINGS(g)));
+        });
+
+        it("declares the groups for the 1.13 definitions", async () => {
+            const { tab } = await render();
+            const labels = (tab as any)
+                .getSettingDefinitions()
+                .filter((item: { heading?: string }) => item.heading?.startsWith(MESSAGES.LABEL_MORE_SETTINGS("")))
+                .map((item: { heading: string }) => item.heading);
+            expect(labels).toHaveLength(3);
+        });
+
+        it("leaves Reset all without API key fields and without settings the server refuses", async () => {
+            mockGenericConfirmResult = true;
+            const { plugin, tab, captured } = await render();
+            (tab as any).configDefaults = {
+                chunk_size: 512,
+                llm_provider: "auto",
+                memory_token_budget_zz: 400,
+                deepseek_api_key: "",
+                main_gpu: 0,
+            };
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                chunk_size: 512,
+                memory_token_budget_zz: 400,
+                main_gpu: 0,
+            });
+        });
+
+        it("covers every setting that a curated row registers", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const t = tab as any;
+            const registered = new Set<string>([
+                ...t.serverConfigInputs.keys(),
+                ...t.serverConfigToggles.keys(),
+                ...t.serverConfigDropdowns.keys(),
+                ...t.serverConfigSliders.keys(),
+                ...t.serverConfigTextAreas.keys(),
+                ...t.serverConfigHideableEls.keys(),
+            ]);
+            const writable = new Set(configSchema.fields.filter((f) => f.writable).map((f) => f.key));
+            const missing = [...registered].filter((key) => writable.has(key) && !CURATED_CONFIG_KEYS.has(key));
+            expect(missing).toEqual([]);
+            // Rows with a dedicated control that keeps its own state, not the shared maps.
+            const dedicated = ["chat_mode", "memory_auto_extract", "memory_enabled", "ocr", "wiki"];
+            const stale = [...CURATED_CONFIG_KEYS].filter(
+                (key) => writable.has(key) && !registered.has(key) && !dedicated.includes(key),
+            );
+            expect(stale).toEqual([]);
+        });
     });
 });

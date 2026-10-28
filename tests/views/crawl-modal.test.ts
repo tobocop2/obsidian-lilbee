@@ -9,7 +9,7 @@ function makePlugin(renderMode: string = "http", browserReady: boolean = true) {
         runCrawl: vi.fn(),
         installCrawlerBrowser: vi.fn().mockResolvedValue(true),
         api: {
-            config: vi.fn().mockResolvedValue({ crawl_render_mode: renderMode }),
+            config: vi.fn().mockResolvedValue({ crawl_render_mode: renderMode, crawl_respect_robots_txt: true }),
             updateConfig: vi.fn().mockResolvedValue({}),
             getCapability: vi.fn().mockResolvedValue(browserReady),
         },
@@ -197,7 +197,7 @@ describe("CrawlModal", () => {
         const closeSpy = vi.spyOn(modal, "close");
         setUrl(el, "https://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null, "http", false);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null, "http", false, undefined);
         expect(closeSpy).toHaveBeenCalled();
     });
 
@@ -205,7 +205,7 @@ describe("CrawlModal", () => {
         const { plugin, el } = openModal();
         setUrl(el, "https://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined, undefined);
     });
 
     it("Recursive on + Advanced filled → sends the parsed numbers", () => {
@@ -215,7 +215,7 @@ describe("CrawlModal", () => {
         (el.find("lilbee-crawl-depth") as any).value = "2";
         (el.find("lilbee-crawl-max-pages") as any).value = "20";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 2, 20, "http", false);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 2, 20, "http", false, undefined);
     });
 
     it("Recursive on + depth only → sends (n, null)", () => {
@@ -224,7 +224,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "3";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 3, null, "http", false);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 3, null, "http", false, undefined);
     });
 
     it("Recursive on + max only → sends (null, n)", () => {
@@ -233,7 +233,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "100";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 100, "http", false);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 100, "http", false, undefined);
     });
 
     it("max_pages=0 blocks submit with inline error", () => {
@@ -339,7 +339,7 @@ describe("CrawlModal", () => {
         expect(plugin.runCrawl).not.toHaveBeenCalled();
         (el.find("lilbee-crawl-max-pages") as any).value = "5";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 5, "http", false);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 5, "http", false, undefined);
         expect(err.textContent).toBe("");
     });
 
@@ -347,14 +347,14 @@ describe("CrawlModal", () => {
         const { plugin, el } = openModal();
         setUrl(el, "example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined, undefined);
     });
 
     it("preserves http:// when already present", () => {
         const { plugin, el } = openModal();
         setUrl(el, "http://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, null, "http", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, null, "http", undefined, undefined);
     });
 
     it("Recursive on + depth=0 → sends (0, null) (seed-only with recursive on is still valid)", () => {
@@ -363,7 +363,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "0";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", false);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", false, undefined);
     });
 
     it("renders the Use-browser toggle, unchecked by default", () => {
@@ -400,7 +400,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-subdomains-input") as any).checked = true;
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null, "http", true);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null, "http", true, undefined);
     });
 
     it("omits include-subdomains on a single-page crawl even when checked", () => {
@@ -408,7 +408,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-subdomains-input") as any).checked = true;
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined, undefined);
     });
 
     it("pre-sets the browser toggle from the server's crawl_render_mode", async () => {
@@ -427,7 +427,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-browser-input") as any).checked = true;
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser", undefined, undefined);
         expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
     });
 
@@ -435,7 +435,7 @@ describe("CrawlModal", () => {
         const { plugin, el } = openModal();
         setUrl(el, "https://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined, undefined);
         expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "http" });
     });
 
@@ -464,7 +464,7 @@ describe("CrawlModal", () => {
         clickCrawl(el);
         await Promise.resolve();
         await Promise.resolve();
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser", undefined);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser", undefined, undefined);
     });
 
     it("disables the Use-browser toggle and offers the install when Chromium is missing", async () => {
@@ -514,5 +514,70 @@ describe("CrawlModal", () => {
         await settle();
         expect(isHidden(el.find("lilbee-crawl-browser-setup") as MockElement)).toBe(true);
         expect((el.find("lilbee-crawl-browser-input") as any).disabled).toBe(false);
+    });
+
+    describe("login", () => {
+        const field = (el: MockElement, cls: string) => el.find(cls) as any;
+
+        it("offers authorization, username, password and cookie, with the secrets masked", () => {
+            const { el } = openModal();
+            expect(el.find("lilbee-crawl-login")!.tagName).toBe("DETAILS");
+            expect(field(el, "lilbee-crawl-login-authorization").attributes.type).toBe("password");
+            expect(field(el, "lilbee-crawl-login-username").attributes.type).toBe("text");
+            expect(field(el, "lilbee-crawl-login-password").attributes.type).toBe("password");
+            expect(field(el, "lilbee-crawl-login-cookie").attributes.type).toBe("password");
+            expect(collectTexts(el.find("lilbee-crawl-login")!)).toContain(MESSAGES.NOTE_CRAWL_LOGIN);
+        });
+
+        it("shows the boxes only when the server reports the setting that ships with login", async () => {
+            const { el } = openModal();
+            await settle();
+            expect(isHidden(el.find("lilbee-crawl-login")!)).toBe(false);
+
+            const app = new App();
+            const older = makePlugin();
+            older.api.config.mockResolvedValue({ crawl_render_mode: "http" });
+            const modal = new CrawlModal(app as any, older as any);
+            modal.onOpen();
+            await settle();
+            expect(isHidden((modal.contentEl as unknown as MockElement).find("lilbee-crawl-login")!)).toBe(true);
+
+            older.api.config.mockRejectedValue(new Error("down"));
+            const failing = new CrawlModal(app as any, older as any);
+            failing.onOpen();
+            await settle();
+            expect(isHidden((failing.contentEl as unknown as MockElement).find("lilbee-crawl-login")!)).toBe(true);
+        });
+
+        it("sends the typed login to runCrawl and does not save it", () => {
+            const { plugin, el } = openModal();
+            setUrl(el, "https://example.com");
+            field(el, "lilbee-crawl-login-username").value = "ann";
+            field(el, "lilbee-crawl-login-password").value = "pw";
+            field(el, "lilbee-crawl-login-cookie").value = " sid=1 ";
+            clickCrawl(el);
+            expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http", undefined, {
+                authorization: "",
+                username: "ann",
+                password: "pw",
+                cookie: "sid=1",
+            });
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "http" });
+        });
+
+        it("shows an error that names the field and keeps the modal open", () => {
+            const { plugin, modal, el } = openModal();
+            const closeSpy = vi.spyOn(modal, "close");
+            setUrl(el, "https://example.com");
+            field(el, "lilbee-crawl-login-password").value = "hunter2";
+            clickCrawl(el);
+            const error = el.find("lilbee-crawl-error")!;
+            expect(error.textContent).toBe(MESSAGES.ERROR_CRAWL_LOGIN_PASSWORD_NEEDS_USERNAME);
+            expect(error.textContent).not.toContain("hunter2");
+            expect((el.find("lilbee-crawl-login") as any).open).toBe(true);
+            expect(plugin.runCrawl).not.toHaveBeenCalled();
+            expect(closeSpy).not.toHaveBeenCalled();
+        });
     });
 });

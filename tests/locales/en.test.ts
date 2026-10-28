@@ -142,17 +142,21 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_EMBEDDING_MODEL).toBe(
                 "The AI model used to understand your documents. Changing requires re-indexing.",
             );
-            expect(MESSAGES.DESC_LLM_PROVIDER).toBe(
-                "Auto picks the best available. Use External to connect to OpenAI, Claude, or other services.",
-            );
-            expect(MESSAGES.DESC_LLM_PROVIDER_AUTO).toBe("Auto (recommended)");
-            expect(MESSAGES.DESC_LLM_PROVIDER_EXTERNAL).toBe("External (OpenAI, Claude, etc.)");
             expect(MESSAGES.LABEL_OPENAI_API_KEY).toBe("OpenAI API key");
-            expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models via litellm");
+            expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models");
             expect(MESSAGES.LABEL_ANTHROPIC_API_KEY).toBe("Anthropic API key");
-            expect(MESSAGES.DESC_ANTHROPIC_API_KEY).toBe("For Claude models via litellm");
+            expect(MESSAGES.DESC_ANTHROPIC_API_KEY).toBe("For Claude models");
             expect(MESSAGES.LABEL_GEMINI_API_KEY).toBe("Gemini API key");
-            expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
+            expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models");
+            expect(MESSAGES.LABEL_CRAWL_RESPECT_ROBOTS_TXT).toBe("Respect robots.txt");
+            expect(MESSAGES.LABEL_CRAWL_USER_AGENT).toBe("User agent");
+            expect(MESSAGES.LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS).toBe("Browser extra wait (ms)");
+            expect(MESSAGES.LABEL_LLM_API_KEY).toBe("Remote endpoint API key");
+            expect(MESSAGES.LABEL_DEEPSEEK_API_KEY).toBe("DeepSeek API key");
+            expect(MESSAGES.LABEL_MISTRAL_API_KEY).toBe("Mistral API key");
+            expect(MESSAGES.LABEL_OPENROUTER_API_KEY).toBe("OpenRouter API key");
+            expect(MESSAGES.LABEL_RERANKER_HOSTED_GROUP).toBe("Hosted");
+            expect(MESSAGES.LABEL_VISION_HOSTED_GROUP).toBe("Hosted");
             expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
             expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
                 "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically: leave this blank.",

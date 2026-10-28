@@ -45,6 +45,7 @@ import type {
     AgentSelection,
     CatalogEntry,
     ConfigResponse,
+    ConfigFieldSchema,
     ConfigSchemaResponse,
     InstalledModel,
     LilbeeSettings,
@@ -58,6 +59,7 @@ import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./age
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
+import { genericFields, HTTP_REFUSED_KEYS, type GenericField } from "./utils/config-fields";
 import { noticeModelWarnings } from "./utils/model-warnings";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
@@ -114,6 +116,10 @@ const CREDENTIAL_FIELDS = new Set([
     "openai_api_key",
     "anthropic_api_key",
     "gemini_api_key",
+    "llm_api_key",
+    "deepseek_api_key",
+    "mistral_api_key",
+    "openrouter_api_key",
     "hf_token",
     "manual_session_token",
 ]);
@@ -207,13 +213,28 @@ interface CrawlNumericField extends ConfigRowSpec {
     nullable: boolean;
     min?: number;
     max?: number;
+    hideable?: boolean;
 }
 
 interface CrawlBoolField extends ConfigRowSpec {
     kind: "bool";
+    hideable?: boolean;
 }
 
-type CrawlField = CrawlNumericField | CrawlBoolField;
+/** A crawl string typed into a text box; an empty box sends an empty string. */
+interface CrawlTextField extends ConfigRowSpec {
+    kind: "text";
+    placeholder: string;
+    hideable?: boolean;
+}
+
+type CrawlField = CrawlNumericField | CrawlBoolField | CrawlTextField;
+
+/** The most seconds the server accepts for a crawl timeout, delay or backoff. */
+const CRAWL_SECONDS_MAX = 3600;
+
+/** The most milliseconds the server accepts for the browser extra wait. */
+const CRAWL_BROWSER_WAIT_MS_MAX = 600000;
 
 const CRAWL_FIELDS: CrawlField[] = [
     {
@@ -242,6 +263,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "int",
         nullable: false,
         min: 1,
+        max: CRAWL_SECONDS_MAX,
     },
     {
         key: "crawl_mean_delay",
@@ -260,6 +282,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "float",
         nullable: false,
         min: 0,
+        max: CRAWL_SECONDS_MAX,
     },
     {
         key: "crawl_concurrent_requests",
@@ -302,6 +325,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "float",
         nullable: false,
         min: 0,
+        max: CRAWL_SECONDS_MAX,
     },
     {
         key: "crawl_retry_max_attempts",
@@ -312,6 +336,32 @@ const CRAWL_FIELDS: CrawlField[] = [
         nullable: false,
         min: 0,
         max: CRAWL_RETRY_MAX_ATTEMPTS_LIMIT,
+    },
+    {
+        key: "crawl_respect_robots_txt",
+        name: MESSAGES.LABEL_CRAWL_RESPECT_ROBOTS_TXT,
+        desc: MESSAGES.DESC_CRAWL_RESPECT_ROBOTS_TXT,
+        kind: "bool",
+        hideable: true,
+    },
+    {
+        key: "crawl_user_agent",
+        name: MESSAGES.LABEL_CRAWL_USER_AGENT,
+        desc: MESSAGES.DESC_CRAWL_USER_AGENT,
+        placeholder: MESSAGES.PLACEHOLDER_DEFAULT,
+        kind: "text",
+        hideable: true,
+    },
+    {
+        key: "crawl_browser_extra_wait_ms",
+        name: MESSAGES.LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS,
+        desc: MESSAGES.DESC_CRAWL_BROWSER_EXTRA_WAIT_MS,
+        placeholder: "0",
+        kind: "int",
+        nullable: false,
+        min: 0,
+        max: CRAWL_BROWSER_WAIT_MS_MAX,
+        hideable: true,
     },
 ];
 
@@ -476,6 +526,30 @@ const API_KEY_FIELDS: ApiKeyField[] = [
         desc: MESSAGES.DESC_GEMINI_API_KEY,
         provider: "gemini",
     },
+    {
+        key: "llm_api_key",
+        name: MESSAGES.LABEL_LLM_API_KEY,
+        desc: MESSAGES.DESC_LLM_API_KEY,
+        provider: "remote",
+    },
+    {
+        key: "deepseek_api_key",
+        name: MESSAGES.LABEL_DEEPSEEK_API_KEY,
+        desc: MESSAGES.DESC_DEEPSEEK_API_KEY,
+        provider: "deepseek",
+    },
+    {
+        key: "mistral_api_key",
+        name: MESSAGES.LABEL_MISTRAL_API_KEY,
+        desc: MESSAGES.DESC_MISTRAL_API_KEY,
+        provider: "mistral",
+    },
+    {
+        key: "openrouter_api_key",
+        name: MESSAGES.LABEL_OPENROUTER_API_KEY,
+        desc: MESSAGES.DESC_OPENROUTER_API_KEY,
+        provider: "openrouter",
+    },
 ];
 
 /** A local model server the lilbee server can talk to. */
@@ -574,6 +648,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     // The values the server accepts per config key, from /api/config/schema. Stays null on a
     // server without that route, which leaves the closed-set rows as free text.
     private configChoices: Map<string, string[]> | null = null;
+    // Every field /api/config/schema lists; the generic section reads the ones without a curated row.
+    private configFields: ConfigFieldSchema[] | null = null;
+    // Dict-valued settings, shown as JSON text.
+    private serverConfigJsonAreas: Map<string, HTMLTextAreaElement> = new Map();
     // Newest write started for a server-config key; the next write to that key waits for it.
     private configWrites: Map<string, Promise<unknown>> = new Map();
     // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
@@ -788,6 +866,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigTextAreas.clear();
         this.committedText.clear();
         this.serverConfigDropdowns.clear();
+        this.serverConfigJsonAreas.clear();
         this.serverConfigHideableEls.clear();
 
         const filterInput = containerEl.createEl("input", {
@@ -818,6 +897,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.applyDiagnosticsRow(new Setting(containerEl));
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
+        this.renderMoreSettings(containerEl);
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             this.renderUninstallSection(containerEl);
         }
@@ -866,6 +946,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             ),
             this.groupOf(MESSAGES.LABEL_ADVANCED, this.rowsAdvanced(), { help: MESSAGES.LABEL_ADVANCED_HELP }),
             this.groupOf(MESSAGES.LABEL_FLEET, this.rowsFleet(), { help: MESSAGES.LABEL_FLEET_HELP }),
+            ...this.moreSettingsGroups().map(({ heading, rows }) => this.groupOf(heading, rows)),
         ];
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             items.push(...this.defsUninstall());
@@ -2034,10 +2115,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.committedText.set(textArea, textArea.value);
             }
         }
+        for (const [key, textArea] of this.serverConfigJsonAreas) {
+            const v = cfg[key];
+            if (v === undefined) continue;
+            textArea.value = v === null ? "" : JSON.stringify(v, null, 2);
+            this.committedText.set(textArea, textArea.value);
+        }
         for (const [key, dropdown] of this.serverConfigDropdowns) {
             const v = cfg[key];
-            if (typeof v === "string") {
-                dropdown.setValue(v);
+            if (typeof v === "string" || typeof v === "number") {
+                dropdown.setValue(String(v));
             }
         }
     }
@@ -2164,6 +2251,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             if (field.choices !== null) choices.set(field.key, field.choices);
         }
         this.configChoices = choices;
+        this.configFields = schema.fields;
         this.refresh();
     }
 
@@ -2378,6 +2466,158 @@ export class LilbeeSettingTab extends PluginSettingTab {
             MESSAGES.LABEL_WORKER_POOL_HELP,
         );
         this.renderRows(details, this.rowsWorkerPool());
+    }
+
+    /** The settings the server lists that no curated row covers, one group per server group. */
+    private moreSettingsGroups(): Array<{ heading: string; rows: RowSpec[] }> {
+        if (this.configFields === null) return [];
+        const groups = new Map<string, RowSpec[]>();
+        for (const field of genericFields(this.configFields)) {
+            const rows = groups.get(field.group) ?? [];
+            rows.push(this.genericRow(field));
+            groups.set(field.group, rows);
+        }
+        return [...groups].map(([group, rows]) => ({ heading: MESSAGES.LABEL_MORE_SETTINGS(group), rows }));
+    }
+
+    private renderMoreSettings(containerEl: HTMLElement): void {
+        for (const { heading, rows } of this.moreSettingsGroups()) {
+            new Setting(containerEl).setName(heading).setHeading();
+            this.renderRows(containerEl, rows);
+        }
+    }
+
+    private genericRow(field: GenericField): RowSpec {
+        const spec: ConfigRowSpec = { key: field.key, name: field.key, desc: this.genericDesc(field) };
+        return { ...spec, apply: (setting: Setting): void => this.applyGenericRow(setting, spec, field) };
+    }
+
+    private genericDesc(field: GenericField): string {
+        const parts = [field.help, MESSAGES.DESC_MORE_SETTING_TYPE(field.type)];
+        if (field.choices.length > 0) parts.push(MESSAGES.DESC_MORE_SETTING_VALUES(field.choices.join(", ")));
+        if (field.reindexRequired) parts.push(MESSAGES.DESC_MORE_SETTING_REINDEX);
+        return parts.filter((part) => part !== "").join(" ");
+    }
+
+    private applyGenericRow(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.setName(spec.name).setDesc(spec.desc);
+        switch (field.kind) {
+            case "toggle":
+                this.addGenericToggle(setting, spec, field);
+                break;
+            case "choice":
+                this.addGenericChoice(setting, spec, field);
+                break;
+            case "number":
+                this.addGenericNumber(setting, spec, field);
+                break;
+            case "list":
+                this.addGenericList(setting, spec, field);
+                break;
+            case "json":
+                this.addGenericJson(setting, spec, field);
+                break;
+            case "text":
+                this.addGenericText(setting, spec, field);
+                break;
+        }
+        this.appendResetAffordance(setting, spec.key, spec.name);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+    }
+
+    /** Ask before a change that rebuilds the index; true when there is nothing to ask or the user agrees. */
+    private async confirmGenericReindex(field: GenericField): Promise<boolean> {
+        if (!field.reindexRequired) return true;
+        const modal = new ConfirmModal(this.app, MESSAGES.DESC_REINDEX_WARNING.replace("{field}", field.key));
+        modal.open();
+        return modal.result;
+    }
+
+    private async commitGeneric(field: GenericField, value: unknown): Promise<CommitOutcome> {
+        if (!(await this.confirmGenericReindex(field))) return COMMIT_OUTCOME.DROPPED;
+        return this.pushConfig(field.key, value, field.key);
+    }
+
+    private addGenericToggle(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addToggle((toggle) => {
+            toggle.onChange(async (value) => {
+                if (this.suppressChangeEvents) return;
+                const outcome = await this.commitGeneric(field, value);
+                if (outcome === COMMIT_OUTCOME.DROPPED) this.setValueSilently(() => toggle.setValue(!value));
+            });
+            this.serverConfigToggles.set(spec.key, toggle);
+        });
+    }
+
+    private addGenericChoice(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addDropdown((dropdown) => {
+            for (const choice of field.choices) dropdown.addOption(choice, choice);
+            dropdown.onChange(async (value) => {
+                await this.commitGeneric(field, field.numeric ? Number(value) : value);
+            });
+            this.serverConfigDropdowns.set(spec.key, dropdown);
+        });
+    }
+
+    private addGenericNumber(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addText((text) => {
+            text.setPlaceholder(field.nullable ? MESSAGES.PLACEHOLDER_NOT_SET : "").setValue("");
+            this.commitOnChange(text.inputEl, async (value) => {
+                const trimmed = value.trim();
+                if (trimmed === "") return field.nullable ? this.commitGeneric(field, null) : COMMIT_OUTCOME.DROPPED;
+                const num = Number(trimmed);
+                if (!Number.isFinite(num)) return this.refuse(spec.name, MESSAGES.REASON_NOT_A_NUMBER);
+                if (field.integer && !Number.isInteger(num)) {
+                    return this.refuse(spec.name, MESSAGES.REASON_NOT_WHOLE_NUMBER);
+                }
+                return this.commitGeneric(field, num);
+            });
+            this.serverConfigInputs.set(spec.key, text.inputEl);
+        });
+    }
+
+    private addGenericText(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addText((text) => {
+            text.setPlaceholder(field.nullable ? MESSAGES.PLACEHOLDER_NOT_SET : "").setValue("");
+            this.commitOnChange(text.inputEl, (value) => {
+                const trimmed = value.trim();
+                return this.commitGeneric(field, trimmed === "" && field.nullable ? null : trimmed);
+            });
+            this.serverConfigInputs.set(spec.key, text.inputEl);
+        });
+    }
+
+    private addGenericList(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addTextArea((area) => {
+            this.commitOnChange(area.inputEl, (value) => {
+                const items = value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter((line) => line !== "");
+                return this.commitGeneric(field, items.length === 0 && field.nullable ? null : items);
+            });
+            this.serverConfigTextAreas.set(spec.key, area.inputEl);
+        });
+    }
+
+    private addGenericJson(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addTextArea((area) => {
+            this.commitOnChange(area.inputEl, (value) => {
+                const trimmed = value.trim();
+                if (trimmed === "") return this.commitGeneric(field, field.nullable ? null : {});
+                let parsed: unknown;
+                try {
+                    parsed = JSON.parse(trimmed);
+                } catch {
+                    return Promise.resolve(this.refuse(spec.name, MESSAGES.REASON_NOT_A_JSON_OBJECT));
+                }
+                if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+                    return Promise.resolve(this.refuse(spec.name, MESSAGES.REASON_NOT_A_JSON_OBJECT));
+                }
+                return this.commitGeneric(field, parsed);
+            });
+            this.serverConfigJsonAreas.set(spec.key, area.inputEl);
+        });
     }
 
     /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
@@ -3197,9 +3437,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private crawlRow(field: CrawlField): RowSpec {
         const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
-        if (field.kind === "bool")
-            return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlBool(setting, spec));
-        return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlNumber(setting, spec, field));
+        const apply = (setting: Setting): void => {
+            if (field.kind === "bool") this.applyCrawlBool(setting, spec);
+            else if (field.kind === "text") this.applyCrawlText(setting, spec, field);
+            else this.applyCrawlNumber(setting, spec, field);
+            if (field.hideable === true) this.hideUntilServerReports(setting.settingEl, spec.key);
+        };
+        return field.hideable === true ? { ...spec, apply } : this.localRow(spec.name, spec.desc, apply);
     }
 
     private applyCrawlBool(setting: Setting, spec: ConfigRowSpec): void {
@@ -3236,6 +3480,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         return this.refuse(spec.name, MESSAGES.REASON_AT_MOST(field.max));
                     return this.pushConfig(spec.key, num, spec.name);
                 });
+                this.serverConfigInputs.set(spec.key, text.inputEl);
+            });
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
+
+    private applyCrawlText(setting: Setting, spec: ConfigRowSpec, field: CrawlTextField): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addText((text) => {
+                text.setPlaceholder(field.placeholder).setValue("");
+                this.commitOnChange(text.inputEl, (value) => this.pushConfig(spec.key, value.trim(), spec.name));
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.appendResetAffordance(setting, spec.key, spec.name);
@@ -3518,11 +3774,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private rowsAdvanced(): RowSpec[] {
-        const llm: ConfigRowSpec = {
-            key: "llm_provider",
-            name: MESSAGES.LABEL_LLM_PROVIDER,
-            desc: MESSAGES.DESC_LLM_PROVIDER,
-        };
         return [
             this.localRow(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT, MESSAGES.DESC_STORE_CONTENT_IN_VAULT, (setting) =>
                 this.applyStoreContentRow(setting),
@@ -3530,7 +3781,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.localRow(MESSAGES.LABEL_RERANKER_CANDIDATES, MESSAGES.DESC_RERANKER_CANDIDATES, (setting) =>
                 this.applyRerankCandidatesRow(setting),
             ),
-            this.localRow(llm.name, llm.desc, (setting) => this.applyLlmProviderRow(setting, llm)),
             ...this.gated(
                 API_KEY_FIELDS.map((field) =>
                     this.localRow(field.name, field.desc, (setting) => this.applyApiKeyRow(setting, field)),
@@ -3556,12 +3806,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         );
         this.applyStoreContentRow(new Setting(details));
         this.applyRerankCandidatesRow(new Setting(details));
-        const llm: ConfigRowSpec = {
-            key: "llm_provider",
-            name: MESSAGES.LABEL_LLM_PROVIDER,
-            desc: MESSAGES.DESC_LLM_PROVIDER,
-        };
-        this.applyLlmProviderRow(new Setting(details), llm);
         const apiKeysContainer = details.createDiv({ cls: "lilbee-api-keys-section" });
         this.apiKeysContainerEl = apiKeysContainer;
         for (const field of API_KEY_FIELDS) this.applyApiKeyRow(new Setting(apiKeysContainer), field);
@@ -3588,29 +3832,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
             });
         if (!managed) setting.settingEl.addClass("lilbee-setting-disabled");
-    }
-
-    private applyLlmProviderRow(setting: Setting, spec: ConfigRowSpec): void {
-        setting
-            .setName(spec.name)
-            .setDesc(spec.desc)
-            .addDropdown((dropdown) => {
-                dropdown
-                    .addOption("auto", MESSAGES.DESC_LLM_PROVIDER_AUTO)
-                    .addOption("llama-cpp", MESSAGES.DESC_LLM_PROVIDER_LOCAL)
-                    .addOption("litellm", MESSAGES.DESC_LLM_PROVIDER_EXTERNAL)
-                    .setValue("auto")
-                    .onChange(async (value) => {
-                        try {
-                            await applyConfig(this.plugin, { [spec.key]: value });
-                            new Notice(MESSAGES.NOTICE_LLM_UPDATED);
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_LLM);
-                        }
-                    });
-                this.serverConfigInputs.set(spec.key, dropdown.selectEl as unknown as HTMLInputElement);
-            });
-        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
     /** Keys are written on blur, so a partly typed key is never sent. */
@@ -3714,7 +3935,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         if (!confirmed) return;
                         const payload = { ...this.configDefaults };
                         // Never wipe credential fields: resetting an API key has no undo path.
-                        for (const k of CREDENTIAL_FIELDS) delete payload[k];
+                        for (const k of Object.keys(payload)) {
+                            if (CREDENTIAL_FIELDS.has(k) || HTTP_REFUSED_KEYS.has(k)) delete payload[k];
+                        }
                         if (Object.keys(payload).length === 0) return;
                         try {
                             await applyConfig(this.plugin, payload);

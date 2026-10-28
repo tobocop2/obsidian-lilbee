@@ -68,6 +68,7 @@ import {
     TASK_TYPE,
     type AgentClient,
     type BatchProgressPayload,
+    type CrawlLogin,
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
@@ -3568,6 +3569,7 @@ export default class LilbeePlugin extends Plugin {
         maxPages: number | null,
         renderMode?: CrawlRenderMode,
         includeSubdomains?: boolean,
+        login?: CrawlLogin,
     ): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         if (taskId === null) {
@@ -3581,7 +3583,15 @@ export default class LilbeePlugin extends Plugin {
         try {
             let pageCount = 0;
             let failedCount = 0;
-            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode, includeSubdomains);
+            const rawStream = this.api.crawl(
+                url,
+                depth,
+                maxPages,
+                controller.signal,
+                renderMode,
+                includeSubdomains,
+                login,
+            );
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {

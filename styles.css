@@ -5413,3 +5413,39 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-status-warning-message {
     color: var(--text-normal);
 }
+
+.lilbee-crawl-login {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-crawl-login > summary {
+    cursor: pointer;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    padding: var(--size-4-1, 4px) 0;
+    user-select: none;
+}
+
+.lilbee-crawl-login > summary:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-crawl-login-note {
+    font-size: var(--font-smaller, 12px);
+    color: var(--text-faint);
+    margin: var(--size-4-1, 4px) 0 var(--size-4-2, 8px);
+}
+
+.lilbee-crawl-login label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1, 4px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-crawl-login input {
+    width: 100%;
+    box-sizing: border-box;
+}

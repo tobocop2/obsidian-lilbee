@@ -1033,6 +1033,22 @@ describe("pullModel()", () => {
             });
         });
 
+        it("sends the login object in the body only when one is passed", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse(['event: crawl_done\ndata: {"pages_crawled":1,"files_written":1}\n\n']),
+            );
+            const login = { authorization: "", username: "ann", password: "pw", cookie: "sid=1" };
+
+            await collect(client.crawl("https://example.com", 0, null, undefined, "http", false, login));
+
+            const body = JSON.parse((fetchMock.mock.calls.at(-1)![1] as { body: string }).body);
+            expect(body.login).toEqual(login);
+
+            await collect(client.crawl("https://example.com", 0, null));
+            const plain = JSON.parse((fetchMock.mock.calls.at(-1)![1] as { body: string }).body);
+            expect("login" in plain).toBe(false);
+        });
+
         it("omits depth and max_pages from the body when they are not passed", async () => {
             fetchMock.mockResolvedValue(
                 sseResponse(['event: crawl_done\ndata: {"pages_crawled":1,"files_written":1}\n\n']),
@@ -2680,7 +2696,7 @@ describe("getCapability()", () => {
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/external`, expect.anything());
     });
 
-    it("API_KEYS returns false when /api/models/external reports a litellm-not-installed error", async () => {
+    it("API_KEYS returns false when /api/models/external reports the providers extra missing", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ models: [], error: "litellm not installed" }));
         await expect(client.getCapability("api_keys")).resolves.toBe(false);
     });

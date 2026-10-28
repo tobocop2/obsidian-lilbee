@@ -2,8 +2,9 @@ import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
-import { CAPABILITY, CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlRenderMode } from "../types";
+import { CAPABILITY, CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlLogin, type CrawlRenderMode } from "../types";
 import { applyConfig } from "../utils/reindex";
+import { buildCrawlLogin } from "../utils/crawl-login";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -22,6 +23,22 @@ function parseOptionalCount(raw: string, opts: { allowZero: boolean }): ParseRes
 }
 
 const asInput = (el: HTMLElement): HTMLInputElement => el as unknown as HTMLInputElement;
+
+/** The server added this setting in the same commit as the crawl login, so a server that reports it accepts the `login` object. */
+const SHIPPED_WITH_LOGIN_KEY = "crawl_respect_robots_txt";
+
+/** The login boxes; secrets are masked and nothing here is written to settings. */
+const LOGIN_FIELDS = [
+    {
+        key: "authorization",
+        cls: "lilbee-crawl-login-authorization",
+        label: MESSAGES.LABEL_CRAWL_LOGIN_AUTHORIZATION,
+        secret: true,
+    },
+    { key: "username", cls: "lilbee-crawl-login-username", label: MESSAGES.LABEL_CRAWL_LOGIN_USERNAME, secret: false },
+    { key: "password", cls: "lilbee-crawl-login-password", label: MESSAGES.LABEL_CRAWL_LOGIN_PASSWORD, secret: true },
+    { key: "cookie", cls: "lilbee-crawl-login-cookie", label: MESSAGES.LABEL_CRAWL_LOGIN_COOKIE, secret: true },
+] as const;
 
 export class CrawlModal extends Modal {
     private plugin: LilbeePlugin;
@@ -69,6 +86,12 @@ export class CrawlModal extends Modal {
         if (cfg !== null) {
             asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
         }
+    }
+
+    /** An older server ignores the `login` object, so the boxes wait for a server that reports the setting. */
+    private async revealLoginWhenSupported(loginBox: HTMLElement): Promise<void> {
+        const cfg = await this.plugin.api.config().catch(() => null);
+        if (cfg !== null && cfg[SHIPPED_WITH_LOGIN_KEY] !== undefined) loginBox.show();
     }
 
     onOpen(): void {
@@ -170,6 +193,24 @@ export class CrawlModal extends Modal {
         });
         asInput(maxInput).value = "";
 
+        const loginBox = contentEl.createEl("details", { cls: "lilbee-crawl-login" });
+        loginBox.hide();
+        void this.revealLoginWhenSupported(loginBox);
+        loginBox.createEl("summary", { text: MESSAGES.LABEL_CRAWL_LOGIN });
+        loginBox.createDiv({ cls: "lilbee-crawl-login-note", text: MESSAGES.NOTE_CRAWL_LOGIN });
+        const loginInputs = new Map<keyof CrawlLogin, HTMLElement>();
+        for (const field of LOGIN_FIELDS) {
+            const label = loginBox.createEl("label", { text: field.label });
+            loginInputs.set(
+                field.key,
+                label.createEl("input", {
+                    cls: field.cls,
+                    attr: { type: field.secret ? "password" : "text", autocomplete: "off" },
+                }),
+            );
+        }
+        const loginValue = (key: keyof CrawlLogin): string => asInput(loginInputs.get(key)!).value;
+
         // Error element lives OUTSIDE the Advanced disclosure so it's visible
         // even when the user collapses Advanced after typing bad input.
         const errorEl = contentEl.createDiv({ cls: "lilbee-crawl-error" });
@@ -220,6 +261,18 @@ export class CrawlModal extends Modal {
                 maxPages = maxRes.value;
             }
 
+            const loginResult = buildCrawlLogin({
+                authorization: loginValue("authorization"),
+                username: loginValue("username"),
+                password: loginValue("password"),
+                cookie: loginValue("cookie"),
+            });
+            if (loginResult.error) {
+                errorEl.setText(loginResult.error);
+                loginBox.open = true;
+                return;
+            }
+
             const renderMode: CrawlRenderMode = asInput(browserInput).checked
                 ? CRAWL_RENDER_MODE.BROWSER
                 : CRAWL_RENDER_MODE.HTTP;
@@ -228,7 +281,14 @@ export class CrawlModal extends Modal {
 
             // Subdomain scope only applies to link discovery, so a single-page crawl omits it.
             const includeSubdomains = recursive ? asInput(subdomainsInput).checked : undefined;
-            void this.plugin.runCrawl(url, depth, maxPages, renderMode, includeSubdomains);
+            void this.plugin.runCrawl(
+                url,
+                depth,
+                maxPages,
+                renderMode,
+                includeSubdomains,
+                loginResult.login ?? undefined,
+            );
             this.close();
         });
 

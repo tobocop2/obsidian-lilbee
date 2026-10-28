@@ -163,6 +163,7 @@ All of this runs as background jobs in the [Task Center](#the-task-center). Chat
 
 - Enter a URL. Tick **Crawl Recursively** to follow links within the same domain.
 - Under the advanced section you can cap the **Depth** and **Max Pages** for a single crawl.
+- Open **Login (optional)** to send an authorization header, a username and password, or a cookie to the starting site for that one crawl. lilbee does not store it. The box appears only when the server supports it.
 - Site-wide defaults — crawl depth, page limit, per-page timeout, request delay and jitter, concurrency, rate-limit retry/backoff, and URL exclude patterns — live in Settings → **Crawling**.
 
 ---
@@ -233,9 +234,8 @@ Wiki settings also include a **Summary accuracy** threshold and a **Default sear
 
 By default everything runs locally. To use a hosted model for a role:
 
-1. Settings → Advanced → **AI backend** → **External (OpenAI, Claude, etc.)**.
-2. Add the relevant key under Advanced: **OpenAI API key**, **Anthropic API key**, or **Gemini API key**. For gated Hugging Face downloads, add a **HuggingFace token**.
-3. In the catalog's **Frontier** tab (or a role's dropdown), pick a hosted model. Models needing a key you haven't added show a **Missing Key** pill.
+1. Add the relevant key under Settings → Advanced: **OpenAI API key**, **Anthropic API key**, **Gemini API key**, **DeepSeek API key**, **Mistral API key**, or **OpenRouter API key**. For gated Hugging Face downloads, add a **HuggingFace token**.
+2. In the catalog's **Frontier** tab (or a role's dropdown), pick a hosted model. Models needing a key you haven't added show a **Missing Key** pill.
 
 You can mix and match — for example a cloud vision model for OCR while chat and embedding stay local. The chat toolbar and status surfaces make it clear whenever a cloud model is active, so you know when text is leaving your machine. Only your query and the matched excerpts are sent; your files and index stay put.
 
@@ -266,11 +266,13 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 | **Retrieval (advanced)**    | Candidate-pool multiplier, minimum relevance score, max sources per answer, max chunks per source, and the MMR relevance/diversity balance.                                                                                                                                             |
 | **Ingest**                  | Chunk size and overlap (changing these invalidates the index), **Max chunks per file** (a file over the limit is skipped and reported; 0 means no limit), and the OCR mode (auto, all pages, off).                                                                                                            |
 | **Worker pool**             | Whether to start the background model workers eagerly.                                                                                                                                                                                           |
-| **Crawling**                | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, and URL exclude patterns.                                                                                                                                                                                        |
+| **Crawling**                | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, robots.txt, user agent, and URL exclude patterns.                                                                                                                                                                                        |
 | **Wiki (beta)**             | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons.                                                                                                                                                           |
-| **Advanced**                | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, and **Reset all** server-backed settings.                                                                          |
+| **Advanced**                | Store content in vault, rerank candidate count, API keys (OpenAI, Anthropic, Gemini, DeepSeek, Mistral, OpenRouter, the remote endpoint, Hugging Face), local server URLs, and **Reset all** server-backed settings.                                                                          |
 
 Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, and Wiki are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
+
+A **More settings** section lists every other writable server setting that has no row above. It is built from the server, so settings added in later lilbee versions appear without a plugin update. The server never lists secret settings, so none appear. Settings the server refuses over HTTP, and settings the plugin manages itself, are left out.
 
 Text and number fields save when you press Enter or leave the field. They save only when the value changed. A change that needs a re-index, such as chunk size, asks once for confirmation before it applies. Cancel puts the saved value back. A value the server refuses stays in the field, with the reason shown.
 

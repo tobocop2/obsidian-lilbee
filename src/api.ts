@@ -27,6 +27,7 @@ import type {
     CrawlerStatusResponse,
     ConfigUpdateResponse,
     ConversationState,
+    CrawlLogin,
     CrawlRenderMode,
     DatasetFormat,
     DocumentResult,
@@ -503,7 +504,7 @@ export class LilbeeClient {
     private async probeCapability(cap: Capability): Promise<boolean> {
         switch (cap) {
             case CAPABILITY.API_KEYS:
-                return this.probeLitellmInstalled();
+                return this.probeProvidersInstalled();
             case CAPABILITY.CRAWLING:
                 return this.probeCrawlerInstalled(CRAWLER_STATUS_FIELD.PACKAGE);
             case CAPABILITY.CRAWLING_BROWSER:
@@ -513,7 +514,7 @@ export class LilbeeClient {
         }
     }
 
-    private async probeLitellmInstalled(): Promise<boolean> {
+    private async probeProvidersInstalled(): Promise<boolean> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/external`);
         const body = (await res.json()) as { models?: unknown; error?: unknown };
         return body.error === null || body.error === undefined;
@@ -865,6 +866,7 @@ export class LilbeeClient {
         signal?: AbortSignal,
         renderMode?: CrawlRenderMode,
         includeSubdomains?: boolean,
+        login?: CrawlLogin,
     ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
@@ -872,6 +874,7 @@ export class LilbeeClient {
         if (maxPages !== undefined) body.max_pages = maxPages;
         if (renderMode !== undefined) body.render_mode = renderMode;
         if (includeSubdomains !== undefined) body.include_subdomains = includeSubdomains;
+        if (login !== undefined) body.login = login;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/crawl`,
             {
