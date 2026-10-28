@@ -6165,13 +6165,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Find the wiki search mode dropdown — it's before the LLM provider dropdown
-            // The wiki search mode is added by renderWikiSettings, which adds one dropdown
-            // We need to find the right index. The wiki dropdown should have "all"/"wiki"/"raw" options.
-            // It should be the second-to-last dropdown since LLM provider is last
-            // Fleet section (last) adds the kv_cache_type dropdown after the LLM
-            // provider, so wiki search mode is now third-from-last.
-            const wikiSearchIdx = dropdownOnChanges.length - 3;
+            // The wiki search mode dropdown sits just before the fleet kv_cache_type dropdown.
+            const wikiSearchIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[wikiSearchIdx]("wiki");
             expect(plugin.settings.searchChunkType).toBe("wiki");
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -6328,49 +6323,6 @@ describe("managed mode settings", () => {
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update Summary accuracy"))).toBe(
                 true,
             );
-        });
-    });
-
-    describe("LLM provider dropdown onChange", () => {
-        it("calls updateConfig with selected provider", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            // Last dropdown is the LLM provider (after server mode, chat model, sync mode)
-            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
-            // LLM provider, so the provider is now second-to-last.
-            const providerIdx = dropdownOnChanges.length - 2;
-            await dropdownOnChanges[providerIdx]("litellm");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
-        });
-
-        it("calls updateConfig when provider is set to auto", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
-            // LLM provider, so the provider is now second-to-last.
-            const providerIdx = dropdownOnChanges.length - 2;
-            await dropdownOnChanges[providerIdx]("auto");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "auto" });
-        });
-
-        it("shows error notice on failure", async () => {
-            const plugin = makePlugin();
-            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
-            // LLM provider, so the provider is now second-to-last.
-            const providerIdx = dropdownOnChanges.length - 2;
-            await dropdownOnChanges[providerIdx]("litellm");
-            expect(Notice.instances.some((n: any) => n.message.includes("failed to update LLM provider"))).toBe(true);
         });
     });
 

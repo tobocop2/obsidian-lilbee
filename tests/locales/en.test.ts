@@ -142,11 +142,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_EMBEDDING_MODEL).toBe(
                 "The AI model used to understand your documents. Changing requires re-indexing.",
             );
-            expect(MESSAGES.DESC_LLM_PROVIDER).toBe(
-                "Auto picks the best available. Use External to connect to OpenAI, Claude, or other services.",
-            );
-            expect(MESSAGES.DESC_LLM_PROVIDER_AUTO).toBe("Auto (recommended)");
-            expect(MESSAGES.DESC_LLM_PROVIDER_EXTERNAL).toBe("External (OpenAI, Claude, etc.)");
             expect(MESSAGES.LABEL_OPENAI_API_KEY).toBe("OpenAI API key");
             expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models via litellm");
             expect(MESSAGES.LABEL_ANTHROPIC_API_KEY).toBe("Anthropic API key");

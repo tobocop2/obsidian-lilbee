@@ -355,7 +355,6 @@ export const MESSAGES = {
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",
     PLACEHOLDER_RERANK_CANDIDATES: "20",
-    LABEL_LLM_PROVIDER: "AI backend",
     LABEL_OPENAI_API_KEY: "OpenAI API key",
     DESC_OPENAI_API_KEY: "For GPT models via litellm",
     LABEL_ANTHROPIC_API_KEY: "Anthropic API key",
@@ -620,10 +619,6 @@ export const MESSAGES = {
     DESC_MAX_CHUNKS_PER_FILE:
         "Most chunks one file can add to the index. A file over the limit is skipped and reported. 0 means no limit. Raise it for a long document at a small chunk size.",
     DESC_EMBEDDING_MODEL: "The AI model used to understand your documents. Changing requires re-indexing.",
-    DESC_LLM_PROVIDER: "Auto picks the best available. Use External to connect to OpenAI, Claude, or other services.",
-    DESC_LLM_PROVIDER_AUTO: "Auto (recommended)",
-    DESC_LLM_PROVIDER_LOCAL: "Local only (llama-cpp)",
-    DESC_LLM_PROVIDER_EXTERNAL: "External (OpenAI, Claude, etc.)",
     DESC_HF_TOKEN: "Needed for some models. Get one free at huggingface.co/settings/tokens",
     DESC_OLLAMA_BASE_URL:
         "Where your Ollama server is listening. Leave blank for the default (http://localhost:11434).",
@@ -909,8 +904,6 @@ export const MESSAGES = {
     NOTICE_HF_TOKEN_SAVED: "lilbee: HuggingFace token saved",
     NOTICE_FAILED_HF_TOKEN: "lilbee: failed to save HuggingFace token",
     NOTICE_FAILED_SAVE_KEY: "lilbee: failed to save API key",
-    NOTICE_LLM_UPDATED: "lilbee: LLM provider updated",
-    NOTICE_FAILED_LLM: "lilbee: failed to update LLM provider",
     NOTICE_LOCAL_SERVER_URL_UPDATED: "lilbee: local server URL updated",
     NOTICE_FAILED_LOCAL_SERVER_URL: "lilbee: failed to update local server URL",
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",

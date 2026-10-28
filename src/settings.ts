@@ -3518,11 +3518,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private rowsAdvanced(): RowSpec[] {
-        const llm: ConfigRowSpec = {
-            key: "llm_provider",
-            name: MESSAGES.LABEL_LLM_PROVIDER,
-            desc: MESSAGES.DESC_LLM_PROVIDER,
-        };
         return [
             this.localRow(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT, MESSAGES.DESC_STORE_CONTENT_IN_VAULT, (setting) =>
                 this.applyStoreContentRow(setting),
@@ -3530,7 +3525,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.localRow(MESSAGES.LABEL_RERANKER_CANDIDATES, MESSAGES.DESC_RERANKER_CANDIDATES, (setting) =>
                 this.applyRerankCandidatesRow(setting),
             ),
-            this.localRow(llm.name, llm.desc, (setting) => this.applyLlmProviderRow(setting, llm)),
             ...this.gated(
                 API_KEY_FIELDS.map((field) =>
                     this.localRow(field.name, field.desc, (setting) => this.applyApiKeyRow(setting, field)),
@@ -3556,12 +3550,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         );
         this.applyStoreContentRow(new Setting(details));
         this.applyRerankCandidatesRow(new Setting(details));
-        const llm: ConfigRowSpec = {
-            key: "llm_provider",
-            name: MESSAGES.LABEL_LLM_PROVIDER,
-            desc: MESSAGES.DESC_LLM_PROVIDER,
-        };
-        this.applyLlmProviderRow(new Setting(details), llm);
         const apiKeysContainer = details.createDiv({ cls: "lilbee-api-keys-section" });
         this.apiKeysContainerEl = apiKeysContainer;
         for (const field of API_KEY_FIELDS) this.applyApiKeyRow(new Setting(apiKeysContainer), field);
@@ -3588,29 +3576,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
             });
         if (!managed) setting.settingEl.addClass("lilbee-setting-disabled");
-    }
-
-    private applyLlmProviderRow(setting: Setting, spec: ConfigRowSpec): void {
-        setting
-            .setName(spec.name)
-            .setDesc(spec.desc)
-            .addDropdown((dropdown) => {
-                dropdown
-                    .addOption("auto", MESSAGES.DESC_LLM_PROVIDER_AUTO)
-                    .addOption("llama-cpp", MESSAGES.DESC_LLM_PROVIDER_LOCAL)
-                    .addOption("litellm", MESSAGES.DESC_LLM_PROVIDER_EXTERNAL)
-                    .setValue("auto")
-                    .onChange(async (value) => {
-                        try {
-                            await applyConfig(this.plugin, { [spec.key]: value });
-                            new Notice(MESSAGES.NOTICE_LLM_UPDATED);
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_LLM);
-                        }
-                    });
-                this.serverConfigInputs.set(spec.key, dropdown.selectEl as unknown as HTMLInputElement);
-            });
-        this.appendResetAffordance(setting, spec.key, spec.name);
     }
 
     /** Keys are written on blur, so a partly typed key is never sent. */
