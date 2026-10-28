@@ -114,6 +114,10 @@ const CREDENTIAL_FIELDS = new Set([
     "openai_api_key",
     "anthropic_api_key",
     "gemini_api_key",
+    "llm_api_key",
+    "deepseek_api_key",
+    "mistral_api_key",
+    "openrouter_api_key",
     "hf_token",
     "manual_session_token",
 ]);
@@ -475,6 +479,30 @@ const API_KEY_FIELDS: ApiKeyField[] = [
         name: MESSAGES.LABEL_GEMINI_API_KEY,
         desc: MESSAGES.DESC_GEMINI_API_KEY,
         provider: "gemini",
+    },
+    {
+        key: "llm_api_key",
+        name: MESSAGES.LABEL_LLM_API_KEY,
+        desc: MESSAGES.DESC_LLM_API_KEY,
+        provider: "remote",
+    },
+    {
+        key: "deepseek_api_key",
+        name: MESSAGES.LABEL_DEEPSEEK_API_KEY,
+        desc: MESSAGES.DESC_DEEPSEEK_API_KEY,
+        provider: "deepseek",
+    },
+    {
+        key: "mistral_api_key",
+        name: MESSAGES.LABEL_MISTRAL_API_KEY,
+        desc: MESSAGES.DESC_MISTRAL_API_KEY,
+        provider: "mistral",
+    },
+    {
+        key: "openrouter_api_key",
+        name: MESSAGES.LABEL_OPENROUTER_API_KEY,
+        desc: MESSAGES.DESC_OPENROUTER_API_KEY,
+        provider: "openrouter",
     },
 ];
 

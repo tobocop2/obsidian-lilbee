@@ -143,11 +143,17 @@ describe("MESSAGES", () => {
                 "The AI model used to understand your documents. Changing requires re-indexing.",
             );
             expect(MESSAGES.LABEL_OPENAI_API_KEY).toBe("OpenAI API key");
-            expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models via litellm");
+            expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models");
             expect(MESSAGES.LABEL_ANTHROPIC_API_KEY).toBe("Anthropic API key");
-            expect(MESSAGES.DESC_ANTHROPIC_API_KEY).toBe("For Claude models via litellm");
+            expect(MESSAGES.DESC_ANTHROPIC_API_KEY).toBe("For Claude models");
             expect(MESSAGES.LABEL_GEMINI_API_KEY).toBe("Gemini API key");
-            expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
+            expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models");
+            expect(MESSAGES.LABEL_LLM_API_KEY).toBe("Remote endpoint API key");
+            expect(MESSAGES.LABEL_DEEPSEEK_API_KEY).toBe("DeepSeek API key");
+            expect(MESSAGES.LABEL_MISTRAL_API_KEY).toBe("Mistral API key");
+            expect(MESSAGES.LABEL_OPENROUTER_API_KEY).toBe("OpenRouter API key");
+            expect(MESSAGES.LABEL_RERANKER_HOSTED_GROUP).toBe("Hosted");
+            expect(MESSAGES.LABEL_VISION_HOSTED_GROUP).toBe("Hosted");
             expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
             expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
                 "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically: leave this blank.",

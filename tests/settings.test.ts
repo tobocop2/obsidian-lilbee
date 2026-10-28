@@ -4057,8 +4057,8 @@ describe("managed mode settings", () => {
         });
 
         it.each([
-            ["managed", SERVER_MODE.MANAGED, 56],
-            ["external", SERVER_MODE.EXTERNAL, 57],
+            ["managed", SERVER_MODE.MANAGED, 60],
+            ["external", SERVER_MODE.EXTERNAL, 61],
         ])(
             "no text box in %s mode writes, saves, asks or notifies while the user types",
             async (_mode, serverMode, boxes) => {
@@ -5082,6 +5082,10 @@ describe("managed mode settings", () => {
                 chunk_size: 512,
                 crawl_max_depth: 2,
                 openai_api_key: "",
+                llm_api_key: "",
+                deepseek_api_key: "",
+                mistral_api_key: "",
+                openrouter_api_key: "",
                 hf_token: "",
             };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
@@ -5151,6 +5155,23 @@ describe("managed mode settings", () => {
             row.inputEl.value = "AIza-test";
             await row.handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gemini_api_key: "AIza-test" });
+        });
+
+        it.each([
+            ["LABEL_LLM_API_KEY", "llm_api_key"],
+            ["LABEL_DEEPSEEK_API_KEY", "deepseek_api_key"],
+            ["LABEL_MISTRAL_API_KEY", "mistral_api_key"],
+            ["LABEL_OPENROUTER_API_KEY", "openrouter_api_key"],
+        ] as const)("calls updateConfig with %s on blur", async (label, key) => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { blurByName } = captureSettingCallbacks(() => tab.display());
+
+            const row = blurByName.get(MESSAGES[label])!;
+            row.inputEl.value = "secret-value";
+            await row.handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: "secret-value" });
         });
 
         it("skips empty value on blur", async () => {
@@ -6425,10 +6446,10 @@ describe("managed mode settings", () => {
 
             // Layout (text-input order via addText): 0=port, 1-9=gen, 10-14=retrieval-advanced,
             // 15-18=ingest, 19-20=worker-pool, 21-30=crawling, 31=wikiVaultFolder,
-            // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken,
-            // 37=ollama URL, 38=lm_studio URL.
+            // 32=rerank_candidates, 33-39=apiKeys (openai, anthropic, gemini, llm, deepseek, mistral, openrouter),
+            // 40=hfToken, 41=ollama URL, 42=lm_studio URL.
             // Counted, not indexed: the point is that every credential row is masked.
-            expect(inputs.filter((i) => i.type === "password").length).toBe(4);
+            expect(inputs.filter((i) => i.type === "password").length).toBe(8);
         });
 
         it("sets HF token input type to password", () => {
@@ -6452,7 +6473,7 @@ describe("managed mode settings", () => {
             Setting.prototype.addText = origAddText;
 
             // HF token sits at index 35 in the new layout (num_ctx removed shifted earlier indices).
-            expect(inputs.filter((i) => i.type === "password").length).toBe(4);
+            expect(inputs.filter((i) => i.type === "password").length).toBe(8);
         });
     });
 
