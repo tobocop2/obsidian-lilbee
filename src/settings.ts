@@ -219,6 +219,9 @@ interface CrawlBoolField extends ConfigRowSpec {
 
 type CrawlField = CrawlNumericField | CrawlBoolField;
 
+/** The most seconds the server accepts for a crawl timeout, delay or backoff. */
+const CRAWL_SECONDS_MAX = 3600;
+
 const CRAWL_FIELDS: CrawlField[] = [
     {
         key: "crawl_max_depth",
@@ -246,6 +249,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "int",
         nullable: false,
         min: 1,
+        max: CRAWL_SECONDS_MAX,
     },
     {
         key: "crawl_mean_delay",
@@ -264,6 +268,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "float",
         nullable: false,
         min: 0,
+        max: CRAWL_SECONDS_MAX,
     },
     {
         key: "crawl_concurrent_requests",
@@ -306,6 +311,7 @@ const CRAWL_FIELDS: CrawlField[] = [
         kind: "float",
         nullable: false,
         min: 0,
+        max: CRAWL_SECONDS_MAX,
     },
     {
         key: "crawl_retry_max_attempts",

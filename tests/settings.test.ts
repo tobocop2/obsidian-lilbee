@@ -4535,6 +4535,30 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
+        it.each([
+            ["LABEL_CRAWL_TIMEOUT", "crawl_timeout"],
+            ["LABEL_CRAWL_MAX_DELAY_RANGE", "crawl_max_delay_range"],
+            ["LABEL_CRAWL_RETRY_MAX_BACKOFF", "crawl_retry_max_backoff"],
+        ] as const)("caps %s at the 3600 seconds the server enforces", async (label, key) => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES[label])!("3601");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON(MESSAGES[label], MESSAGES.REASON_AT_MOST(3600)),
+                ),
+            ).toBe(true);
+
+            await textByName.get(MESSAGES[label])!("3600");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: 3600 });
+        });
+
         it("accepts float for crawl_mean_delay", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
