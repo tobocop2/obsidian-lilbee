@@ -167,6 +167,18 @@ export const MESSAGES = {
     TOOLTIP_CRAWL_DEPTH: "How many links deep to follow from the starting page. Blank means no limit.",
     TOOLTIP_CRAWL_MAX_PAGES: "Stop after fetching this many pages. Blank means no limit.",
     HINT_CRAWL_BLANK_NO_LIMIT: "blank = no limit",
+    LABEL_CRAWL_LOGIN: "Login (optional)",
+    NOTE_CRAWL_LOGIN:
+        "Sent to the starting site for this crawl only. lilbee does not store it, and links to other hosts do not get it.",
+    LABEL_CRAWL_LOGIN_AUTHORIZATION: "Authorization header",
+    LABEL_CRAWL_LOGIN_USERNAME: "Username",
+    LABEL_CRAWL_LOGIN_PASSWORD: "Password",
+    LABEL_CRAWL_LOGIN_COOKIE: "Cookie header",
+    ERROR_CRAWL_LOGIN_CONTROL_CHARACTER: (field: string) => `The ${field} has a control character. Remove it.`,
+    ERROR_CRAWL_LOGIN_NOT_ASCII: (field: string) =>
+        `The ${field} has a character outside ASCII. An HTTP header cannot carry it.`,
+    ERROR_CRAWL_LOGIN_PASSWORD_NEEDS_USERNAME: "The password needs a username.",
+    ERROR_CRAWL_LOGIN_AUTHORIZATION_AND_USERNAME: "Give an authorization header or a username, not both.",
     ERROR_CRAWL_MAX_PAGES_POSITIVE: "Max pages must be a positive integer or blank",
     ERROR_CRAWL_DEPTH_INVALID: "Depth cap must be a non-negative integer or blank",
     LABEL_SERVER_MODE: "Server mode",

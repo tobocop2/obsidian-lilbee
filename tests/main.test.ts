@@ -4779,6 +4779,7 @@ describe("LilbeePlugin", () => {
                 expect.any(AbortSignal),
                 undefined,
                 undefined,
+                undefined,
             );
             expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
             expect(syncSpy).toHaveBeenCalled();
@@ -4853,6 +4854,7 @@ describe("LilbeePlugin", () => {
                 expect.any(AbortSignal),
                 undefined,
                 undefined,
+                undefined,
             );
         });
 
@@ -4875,6 +4877,7 @@ describe("LilbeePlugin", () => {
                 null,
                 expect.any(AbortSignal),
                 "browser",
+                undefined,
                 undefined,
             );
         });
@@ -4899,6 +4902,32 @@ describe("LilbeePlugin", () => {
                 expect.any(AbortSignal),
                 "http",
                 true,
+                undefined,
+            );
+        });
+
+        it("forwards the login to api.crawl", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+            const login = { authorization: "Bearer t", username: "", password: "", cookie: "" };
+
+            await plugin.runCrawl("https://example.com", 0, null, "http", undefined, login);
+
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                0,
+                null,
+                expect.any(AbortSignal),
+                "http",
+                undefined,
+                login,
             );
         });
 

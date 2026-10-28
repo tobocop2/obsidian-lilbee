@@ -27,6 +27,7 @@ import type {
     CrawlerStatusResponse,
     ConfigUpdateResponse,
     ConversationState,
+    CrawlLogin,
     CrawlRenderMode,
     DatasetFormat,
     DocumentResult,
@@ -865,6 +866,7 @@ export class LilbeeClient {
         signal?: AbortSignal,
         renderMode?: CrawlRenderMode,
         includeSubdomains?: boolean,
+        login?: CrawlLogin,
     ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
@@ -872,6 +874,7 @@ export class LilbeeClient {
         if (maxPages !== undefined) body.max_pages = maxPages;
         if (renderMode !== undefined) body.render_mode = renderMode;
         if (includeSubdomains !== undefined) body.include_subdomains = includeSubdomains;
+        if (login !== undefined) body.login = login;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/crawl`,
             {

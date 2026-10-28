@@ -216,6 +216,14 @@ export interface ConfigResponse {
 
 export type CrawlRenderMode = "http" | "browser";
 
+/** The login one crawl sends to its start host; an empty field is unset. */
+export interface CrawlLogin {
+    authorization: string;
+    username: string;
+    password: string;
+    cookie: string;
+}
+
 export const CRAWL_RENDER_MODE = {
     HTTP: "http",
     BROWSER: "browser",
