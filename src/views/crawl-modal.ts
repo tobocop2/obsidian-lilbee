@@ -24,8 +24,8 @@ function parseOptionalCount(raw: string, opts: { allowZero: boolean }): ParseRes
 
 const asInput = (el: HTMLElement): HTMLInputElement => el as unknown as HTMLInputElement;
 
-/** A setting that shipped with the crawl login, so a server that reports it accepts the `login` object. */
-const LOGIN_SUPPORT_KEY = "crawl_respect_robots_txt";
+/** The server added this setting in the same commit as the crawl login, so a server that reports it accepts the `login` object. */
+const SHIPPED_WITH_LOGIN_KEY = "crawl_respect_robots_txt";
 
 /** The login boxes; secrets are masked and nothing here is written to settings. */
 const LOGIN_FIELDS = [
@@ -91,7 +91,7 @@ export class CrawlModal extends Modal {
     /** An older server ignores the `login` object, so the boxes wait for a server that reports the setting. */
     private async revealLoginWhenSupported(loginBox: HTMLElement): Promise<void> {
         const cfg = await this.plugin.api.config().catch(() => null);
-        if (cfg !== null && cfg[LOGIN_SUPPORT_KEY] !== undefined) loginBox.show();
+        if (cfg !== null && cfg[SHIPPED_WITH_LOGIN_KEY] !== undefined) loginBox.show();
     }
 
     onOpen(): void {

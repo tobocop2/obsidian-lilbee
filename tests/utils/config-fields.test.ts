@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import configSchema from "../fixtures/config-schema.json";
-import { CURATED_CONFIG_KEYS, genericFields, HTTP_REFUSED_KEYS, isSecretKey } from "../../src/utils/config-fields";
+import {
+    CURATED_CONFIG_KEYS,
+    genericFields,
+    HTTP_REFUSED_KEYS,
+    MANAGED_ELSEWHERE_KEYS,
+} from "../../src/utils/config-fields";
 import type { ConfigFieldSchema } from "../../src/types";
 
 function field(key: string, type: string, extra: Partial<ConfigFieldSchema> = {}): ConfigFieldSchema {
@@ -70,17 +75,26 @@ describe("genericFields", () => {
         expect(keys).toEqual(["zz_z", "zz_a", "zz_b"]);
     });
 
-    it("flags credential-like keys as secret", () => {
-        expect(isSecretKey("crawl_login_password")).toBe(true);
-        expect(isSecretKey("deepseek_api_key")).toBe(true);
-        expect(isSecretKey("chunk_size")).toBe(false);
-        expect(genericFields([field("zz_token", "str")])[0].secret).toBe(true);
+    it("keeps token-named settings, since the server omits write-only secrets itself", () => {
+        const [row] = genericFields([field("zz_max_tokens", "int")]);
+        expect(row.key).toBe("zz_max_tokens");
+        expect(row.kind).toBe("number");
+    });
+
+    it("leaves out the settings the plugin manages through its own flows", () => {
+        for (const key of ["documents_dir", "vault_base", "linked_roots", "placement", "num_ctx"]) {
+            expect(MANAGED_ELSEWHERE_KEYS.has(key)).toBe(true);
+            expect(genericFields([field(key, "str")])).toEqual([]);
+        }
     });
 
     it("lists every writable setting in the recorded server schema that has no curated row", () => {
         const writable = configSchema.fields.filter((f) => f.writable);
         const rows = genericFields(configSchema.fields as ConfigFieldSchema[]);
-        const expected = writable.filter((f) => !CURATED_CONFIG_KEYS.has(f.key) && !HTTP_REFUSED_KEYS.has(f.key));
+        const expected = writable.filter(
+            (f) =>
+                !CURATED_CONFIG_KEYS.has(f.key) && !HTTP_REFUSED_KEYS.has(f.key) && !MANAGED_ELSEWHERE_KEYS.has(f.key),
+        );
         expect(rows).toHaveLength(expected.length);
         expect(rows.length).toBeGreaterThan(60);
         expect(rows.map((r) => r.key)).not.toContain("llm_provider");

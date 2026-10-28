@@ -9922,13 +9922,13 @@ describe("new server config fields", () => {
                 field("concept_graph", "bool", { reindex_required: true }),
                 field("reranker_type", "str", { choices: ["cross", "none"] }),
                 field("llama_server_path", "str"),
-                field("placement", "str|null"),
+                field("zz_place", "str|null"),
                 field("force_ocr_pages", "list"),
                 field("vault_tags", "list|null"),
-                field("linked_roots", "dict"),
+                field("zz_roots", "dict"),
                 field("extra_roots", "dict|null"),
                 field("zz_level", "int", { choices: ["1", "2"] }),
-                field("crawl_login_password", "str", { group: "Crawling" }),
+                field("memory_token_budget_zz", "int", { group: "Crawling" }),
             ],
         };
 
@@ -9963,7 +9963,7 @@ describe("new server config fields", () => {
             for (const key of ["chunk_size", "llm_provider", "chat_model"]) {
                 expect(captured.descByName.has(key)).toBe(false);
             }
-            for (const key of ["ann_index_threshold", "main_gpu", "linked_roots", "crawl_login_password"]) {
+            for (const key of ["ann_index_threshold", "main_gpu", "zz_roots", "memory_token_budget_zz"]) {
                 expect(captured.descByName.has(key)).toBe(true);
             }
         });
@@ -9982,23 +9982,23 @@ describe("new server config fields", () => {
         it("fills each control from the server config", async () => {
             const { captured } = await render({
                 ann_index_threshold: 500,
-                placement: "gpu0",
+                zz_place: "gpu0",
                 reranker_type: "none",
                 force_ocr_pages: ["1", "2"],
-                linked_roots: { docs: "/tmp/docs" },
+                zz_roots: { docs: "/tmp/docs" },
                 include_uncensored: true,
                 extra_roots: null,
             });
             expect(captured.fieldByName.get("extra_roots")!.inputEl.value).toBe("");
             expect(captured.textInputByName.get("ann_index_threshold")!.value).toBe("500");
-            expect(captured.textInputByName.get("placement")!.value).toBe("gpu0");
+            expect(captured.textInputByName.get("zz_place")!.value).toBe("gpu0");
             expect(captured.dropdownSetValuesByName.get("reranker_type")).toContain("none");
             expect(captured.fieldByName.get("force_ocr_pages")!.inputEl.value).toBe("1\n2");
-            expect(JSON.parse(captured.fieldByName.get("linked_roots")!.inputEl.value)).toEqual({ docs: "/tmp/docs" });
+            expect(JSON.parse(captured.fieldByName.get("zz_roots")!.inputEl.value)).toEqual({ docs: "/tmp/docs" });
         });
 
         it("writes a toggle, a choice and a text value", async () => {
-            const { plugin, captured } = await render({ placement: "gpu0" });
+            const { plugin, captured } = await render({ zz_place: "gpu0" });
             await captured.toggleByName.get("include_uncensored")!(true);
             expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ include_uncensored: true });
             await captured.dropdownByName.get("reranker_type")!("cross");
@@ -10009,8 +10009,8 @@ describe("new server config fields", () => {
             expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ llama_server_path: "/opt/llama-server" });
             await captured.textByName.get("llama_server_path")!("");
             expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ llama_server_path: "" });
-            await captured.textByName.get("placement")!("");
-            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ placement: null });
+            await captured.textByName.get("zz_place")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_place: null });
         });
 
         it("sends numbers, and refuses text, fractions for an int, and blanks that cannot clear", async () => {
@@ -10047,11 +10047,11 @@ describe("new server config fields", () => {
 
         it("sends a JSON object and refuses anything else", async () => {
             const { plugin, captured } = await render();
-            const roots = captured.textAreaByName.get("linked_roots")!;
+            const roots = captured.textAreaByName.get("zz_roots")!;
             await roots('{"docs": "/tmp/docs"}');
-            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ linked_roots: { docs: "/tmp/docs" } });
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_roots: { docs: "/tmp/docs" } });
             await roots("");
-            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ linked_roots: {} });
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_roots: {} });
             await captured.textAreaByName.get("extra_roots")!("{}");
             await captured.textAreaByName.get("extra_roots")!("");
             expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ extra_roots: null });
@@ -10064,7 +10064,7 @@ describe("new server config fields", () => {
                 Notice.instances.filter(
                     (n) =>
                         n.message ===
-                        MESSAGES.NOTICE_FAILED_UPDATE_REASON("linked_roots", MESSAGES.REASON_NOT_A_JSON_OBJECT),
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON("zz_roots", MESSAGES.REASON_NOT_A_JSON_OBJECT),
                 ),
             ).toHaveLength(3);
         });
@@ -10079,25 +10079,18 @@ describe("new server config fields", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ concept_graph: true });
         });
 
-        it("masks a secret, never fills it, and writes it on leaving the box", async () => {
-            const { plugin, captured } = await render({ crawl_login_password: "leaked" });
-            const input = captured.textInputByName.get("crawl_login_password")!;
-            expect(input.type).toBe("password");
-            expect(input.value).toBe("");
-            const blur = captured.blurByName.get("crawl_login_password")!;
-            blur.inputEl.value = "  ";
-            await blur.handler();
+        it("treats a setting named like a token as an ordinary number row", async () => {
+            const { plugin, captured } = await render({ memory_token_budget_zz: 400 });
+            expect(captured.descByName.has("memory_token_budget_zz")).toBe(true);
+            expect(captured.textInputByName.get("memory_token_budget_zz")!.type).not.toBe("password");
+            expect(captured.textInputByName.get("memory_token_budget_zz")!.value).toBe("400");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            blur.inputEl.value = " s3cret ";
-            await blur.handler();
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_login_password: "s3cret" });
         });
 
         it("shows a row only after the server reports its key", async () => {
             const { tab } = await render({});
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
             expect(hideable.get("ann_index_threshold")).toBeDefined();
-            expect(hideable.has("crawl_login_password")).toBe(false);
         });
 
         it("groups the rows under the server's group names", async () => {
@@ -10115,17 +10108,22 @@ describe("new server config fields", () => {
             expect(labels).toHaveLength(3);
         });
 
-        it("leaves Reset all without credentials and without settings the server refuses", async () => {
+        it("leaves Reset all without API key fields and without settings the server refuses", async () => {
             mockGenericConfirmResult = true;
             const { plugin, tab, captured } = await render();
             (tab as any).configDefaults = {
                 chunk_size: 512,
                 llm_provider: "auto",
-                crawl_login_password: "",
+                memory_token_budget_zz: 400,
+                deepseek_api_key: "",
                 main_gpu: 0,
             };
             await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512, main_gpu: 0 });
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                chunk_size: 512,
+                memory_token_budget_zz: 400,
+                main_gpu: 0,
+            });
         });
 
         it("covers every setting that a curated row registers", async () => {

@@ -924,7 +924,6 @@ export const MESSAGES = {
     DESC_MORE_SETTING_TYPE: (type: string) => `Type: ${type}.`,
     DESC_MORE_SETTING_VALUES: (values: string) => `Values: ${values}.`,
     DESC_MORE_SETTING_REINDEX: "Changing it needs a re-index.",
-    PLACEHOLDER_SECRET_NOT_SHOWN: "Not shown. Type a new value.",
     REASON_AT_MOST: (max: number) => `enter ${max} or less`,
     REASON_BETWEEN: (min: number, max: number) => `enter a number from ${min} to ${max}`,
     NOTICE_FIELD_UPDATED: (field: string) => `lilbee: ${field} updated`,

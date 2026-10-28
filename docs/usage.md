@@ -272,7 +272,7 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 
 Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, and Wiki are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
 
-A **More settings** section lists every other writable server setting that has no row above. It is built from the server, so settings added in later lilbee versions appear without a plugin update. Secret settings are masked, and settings the server refuses over HTTP are left out.
+A **More settings** section lists every other writable server setting that has no row above. It is built from the server, so settings added in later lilbee versions appear without a plugin update. The server never lists secret settings, so none appear. Settings the server refuses over HTTP, and settings the plugin manages itself, are left out.
 
 Text and number fields save when you press Enter or leave the field. They save only when the value changed. A change that needs a re-index, such as chunk size, asks once for confirmation before it applies. Cancel puts the saved value back. A value the server refuses stays in the field, with the reason shown.
 

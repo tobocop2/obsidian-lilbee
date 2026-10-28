@@ -59,7 +59,7 @@ import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./age
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
-import { genericFields, HTTP_REFUSED_KEYS, isSecretKey, type GenericField } from "./utils/config-fields";
+import { genericFields, HTTP_REFUSED_KEYS, type GenericField } from "./utils/config-fields";
 import { noticeModelWarnings } from "./utils/model-warnings";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
@@ -2468,8 +2468,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderRows(details, this.rowsWorkerPool());
     }
 
-    /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
-     * hidden until the connected server reports the key, so older servers show none. */
     /** The settings the server lists that no curated row covers, one group per server group. */
     private moreSettingsGroups(): Array<{ heading: string; rows: RowSpec[] }> {
         if (this.configFields === null) return [];
@@ -2489,11 +2487,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** A secret row has no key: the server never reports it, so it must not wait for it. */
     private genericRow(field: GenericField): RowSpec {
         const spec: ConfigRowSpec = { key: field.key, name: field.key, desc: this.genericDesc(field) };
-        const apply = (setting: Setting): void => this.applyGenericRow(setting, spec, field);
-        return field.secret ? { name: spec.name, desc: spec.desc, apply } : { ...spec, apply };
+        return { ...spec, apply: (setting: Setting): void => this.applyGenericRow(setting, spec, field) };
     }
 
     private genericDesc(field: GenericField): string {
@@ -2505,10 +2501,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private applyGenericRow(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
         setting.setName(spec.name).setDesc(spec.desc);
-        if (field.secret) {
-            this.addGenericSecret(setting, spec);
-            return;
-        }
         switch (field.kind) {
             case "toggle":
                 this.addGenericToggle(setting, spec, field);
@@ -2544,18 +2536,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private async commitGeneric(field: GenericField, value: unknown): Promise<CommitOutcome> {
         if (!(await this.confirmGenericReindex(field))) return COMMIT_OUTCOME.DROPPED;
         return this.pushConfig(field.key, value, field.key);
-    }
-
-    /** Written on leaving the box, never filled from the server, and skipped when empty. */
-    private addGenericSecret(setting: Setting, spec: ConfigRowSpec): void {
-        setting.addText((text) => {
-            text.setPlaceholder(MESSAGES.PLACEHOLDER_SECRET_NOT_SHOWN).setValue("");
-            text.inputEl.type = "password";
-            text.inputEl.addEventListener("blur", () => {
-                const trimmed = text.inputEl.value.trim();
-                if (trimmed !== "") void this.pushConfig(spec.key, trimmed, spec.name);
-            });
-        });
     }
 
     private addGenericToggle(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
@@ -2640,6 +2620,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
     }
 
+    /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
+     * hidden until the connected server reports the key, so older servers show none. */
     private rowsFleet(): RowSpec[] {
         const kv: ConfigRowSpec = {
             key: "kv_cache_type",
@@ -3954,8 +3936,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         const payload = { ...this.configDefaults };
                         // Never wipe credential fields: resetting an API key has no undo path.
                         for (const k of Object.keys(payload)) {
-                            if (CREDENTIAL_FIELDS.has(k) || isSecretKey(k) || HTTP_REFUSED_KEYS.has(k))
-                                delete payload[k];
+                            if (CREDENTIAL_FIELDS.has(k) || HTTP_REFUSED_KEYS.has(k)) delete payload[k];
                         }
                         if (Object.keys(payload).length === 0) return;
                         try {

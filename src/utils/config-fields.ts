@@ -87,8 +87,19 @@ export const CURATED_CONFIG_KEYS: ReadonlySet<string> = new Set([
 /** Settings the server rejects over HTTP, so a row for them could only fail. */
 export const HTTP_REFUSED_KEYS: ReadonlySet<string> = new Set(["llm_provider"]);
 
-/** A key that names a credential. Its row is masked and never filled from the server. */
-const SECRET_KEY = /(api_key|token|password|secret|cookie|authorization|credential)/;
+/**
+ * Settings the plugin runs through its own flows or hides on purpose, so a raw row would
+ * fight the flow. documents_dir and vault_base follow the vault; linked_roots is kept by
+ * the add and remove commands; placement is owned by the placement view; num_ctx is sized
+ * by the server for the active model.
+ */
+export const MANAGED_ELSEWHERE_KEYS: ReadonlySet<string> = new Set([
+    "documents_dir",
+    "vault_base",
+    "linked_roots",
+    "placement",
+    "num_ctx",
+]);
 
 const NULLABLE_SUFFIX = "|null";
 
@@ -103,7 +114,6 @@ export interface GenericField {
     /** True for an int or float, including when a closed set of choices holds the values. */
     numeric: boolean;
     nullable: boolean;
-    secret: boolean;
     /** The closed set of values; empty when the setting is open. */
     choices: string[];
     help: string;
@@ -132,15 +142,16 @@ function kindOf(base: string, choices: string[]): GenericKind {
     }
 }
 
-/** Whether the key names a credential. */
-export function isSecretKey(key: string): boolean {
-    return SECRET_KEY.test(key);
-}
-
 /** The writable settings that have no curated row, sorted by the server's group and then by key. */
 export function genericFields(fields: ConfigFieldSchema[]): GenericField[] {
     return fields
-        .filter((f) => f.writable && !CURATED_CONFIG_KEYS.has(f.key) && !HTTP_REFUSED_KEYS.has(f.key))
+        .filter(
+            (f) =>
+                f.writable &&
+                !CURATED_CONFIG_KEYS.has(f.key) &&
+                !HTTP_REFUSED_KEYS.has(f.key) &&
+                !MANAGED_ELSEWHERE_KEYS.has(f.key),
+        )
         .map((f): GenericField => {
             const base = baseType(f.type);
             const choices = f.choices ?? [];
@@ -151,7 +162,6 @@ export function genericFields(fields: ConfigFieldSchema[]): GenericField[] {
                 integer: base === "int",
                 numeric: base === "int" || base === "float",
                 nullable: f.nullable || f.type.endsWith(NULLABLE_SUFFIX),
-                secret: isSecretKey(f.key),
                 choices,
                 help: f.help,
                 group: f.group,
