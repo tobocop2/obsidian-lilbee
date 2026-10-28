@@ -148,6 +148,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_ANTHROPIC_API_KEY).toBe("For Claude models");
             expect(MESSAGES.LABEL_GEMINI_API_KEY).toBe("Gemini API key");
             expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models");
+            expect(MESSAGES.LABEL_CRAWL_RESPECT_ROBOTS_TXT).toBe("Respect robots.txt");
+            expect(MESSAGES.LABEL_CRAWL_USER_AGENT).toBe("User agent");
+            expect(MESSAGES.LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS).toBe("Browser extra wait (ms)");
             expect(MESSAGES.LABEL_LLM_API_KEY).toBe("Remote endpoint API key");
             expect(MESSAGES.LABEL_DEEPSEEK_API_KEY).toBe("DeepSeek API key");
             expect(MESSAGES.LABEL_MISTRAL_API_KEY).toBe("Mistral API key");

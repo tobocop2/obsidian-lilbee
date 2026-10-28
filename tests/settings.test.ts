@@ -755,7 +755,7 @@ describe("LilbeeSettingTab", () => {
             // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
             // + keyword search language. The API-key rows and the HF token row keep their own blur saver.
-            expect(textOnChanges.length).toBe(47);
+            expect(textOnChanges.length).toBe(49);
         });
     });
 
@@ -4057,8 +4057,8 @@ describe("managed mode settings", () => {
         });
 
         it.each([
-            ["managed", SERVER_MODE.MANAGED, 60],
-            ["external", SERVER_MODE.EXTERNAL, 61],
+            ["managed", SERVER_MODE.MANAGED, 62],
+            ["external", SERVER_MODE.EXTERNAL, 63],
         ])(
             "no text box in %s mode writes, saves, asks or notifies while the user types",
             async (_mode, serverMode, boxes) => {
@@ -4557,6 +4557,55 @@ describe("managed mode settings", () => {
 
             await textByName.get(MESSAGES[label])!("3600");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: 3600 });
+        });
+
+        it("sends crawl_respect_robots_txt from its toggle", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+            await toggleByName.get(MESSAGES.LABEL_CRAWL_RESPECT_ROBOTS_TXT)!(false);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_respect_robots_txt: false });
+        });
+
+        it("sends crawl_user_agent as typed and an empty string to clear it", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+
+            await textByName.get(MESSAGES.LABEL_CRAWL_USER_AGENT)!("  my-bot/1.0 ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ crawl_user_agent: "my-bot/1.0" });
+            await textByName.get(MESSAGES.LABEL_CRAWL_USER_AGENT)!("   ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ crawl_user_agent: "" });
+        });
+
+        it("bounds crawl_browser_extra_wait_ms to 0 through 600000", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+            const field = textByName.get(MESSAGES.LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS)!;
+
+            await field("-1");
+            await field("600001");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            await field("600000");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_browser_extra_wait_ms: 600000 });
+        });
+
+        it("hides the newer crawl rows until the server reports their keys", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const hideable = (tab as unknown as { serverConfigHideableEls: Map<string, MockElement> })
+                .serverConfigHideableEls;
+            for (const key of ["crawl_respect_robots_txt", "crawl_user_agent", "crawl_browser_extra_wait_ms"]) {
+                expect(hideable.get(key)?.getAttribute("data-lilbee-hidden-by-capability")).toBe("true");
+            }
         });
 
         it("accepts float for crawl_mean_delay", async () => {

@@ -268,6 +268,9 @@ export const MESSAGES = {
     LABEL_CRAWL_RETRY_BASE_DELAY_MAX: "Retry base delay max (seconds)",
     LABEL_CRAWL_RETRY_MAX_BACKOFF: "Retry max backoff (seconds)",
     LABEL_CRAWL_RETRY_MAX_ATTEMPTS: "Retry attempts",
+    LABEL_CRAWL_RESPECT_ROBOTS_TXT: "Respect robots.txt",
+    LABEL_CRAWL_USER_AGENT: "User agent",
+    LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS: "Browser extra wait (ms)",
     LABEL_CRAWL_RENDER_MODE: "Render mode",
     DESC_CRAWL_RENDER_MODE:
         "How pages are fetched. Lightweight is a fast HTTP fetch with no JavaScript. Browser runs Chromium so JavaScript-rendered pages work, at the cost of more memory and slower crawls.",
@@ -622,6 +625,10 @@ export const MESSAGES = {
     DESC_CRAWL_RETRY_BASE_DELAY_MAX: "Maximum base backoff delay on rate-limit responses, in seconds.",
     DESC_CRAWL_RETRY_MAX_BACKOFF: "Upper bound on any single backoff wait, in seconds.",
     DESC_CRAWL_RETRY_MAX_ATTEMPTS: "Retry count per URL before giving up.",
+    DESC_CRAWL_RESPECT_ROBOTS_TXT: "Skip pages that the site robots.txt file disallows.",
+    DESC_CRAWL_USER_AGENT: "Name the crawler sends to sites. Leave blank for the default.",
+    DESC_CRAWL_BROWSER_EXTRA_WAIT_MS:
+        "Browser mode: extra milliseconds to wait after a page loads, so late scripts can finish.",
     DESC_CHUNK_SIZE: "Document chunk size in tokens (changes invalidate the index)",
     DESC_CHUNK_OVERLAP: "Tokens of overlap between adjacent chunks (preserves context across boundaries)",
     DESC_MAX_CHUNKS_PER_FILE:

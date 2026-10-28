@@ -211,16 +211,28 @@ interface CrawlNumericField extends ConfigRowSpec {
     nullable: boolean;
     min?: number;
     max?: number;
+    hideable?: boolean;
 }
 
 interface CrawlBoolField extends ConfigRowSpec {
     kind: "bool";
+    hideable?: boolean;
 }
 
-type CrawlField = CrawlNumericField | CrawlBoolField;
+/** A crawl string typed into a text box; an empty box sends an empty string. */
+interface CrawlTextField extends ConfigRowSpec {
+    kind: "text";
+    placeholder: string;
+    hideable?: boolean;
+}
+
+type CrawlField = CrawlNumericField | CrawlBoolField | CrawlTextField;
 
 /** The most seconds the server accepts for a crawl timeout, delay or backoff. */
 const CRAWL_SECONDS_MAX = 3600;
+
+/** The most milliseconds the server accepts for the browser extra wait. */
+const CRAWL_BROWSER_WAIT_MS_MAX = 600000;
 
 const CRAWL_FIELDS: CrawlField[] = [
     {
@@ -322,6 +334,32 @@ const CRAWL_FIELDS: CrawlField[] = [
         nullable: false,
         min: 0,
         max: CRAWL_RETRY_MAX_ATTEMPTS_LIMIT,
+    },
+    {
+        key: "crawl_respect_robots_txt",
+        name: MESSAGES.LABEL_CRAWL_RESPECT_ROBOTS_TXT,
+        desc: MESSAGES.DESC_CRAWL_RESPECT_ROBOTS_TXT,
+        kind: "bool",
+        hideable: true,
+    },
+    {
+        key: "crawl_user_agent",
+        name: MESSAGES.LABEL_CRAWL_USER_AGENT,
+        desc: MESSAGES.DESC_CRAWL_USER_AGENT,
+        placeholder: MESSAGES.PLACEHOLDER_DEFAULT,
+        kind: "text",
+        hideable: true,
+    },
+    {
+        key: "crawl_browser_extra_wait_ms",
+        name: MESSAGES.LABEL_CRAWL_BROWSER_EXTRA_WAIT_MS,
+        desc: MESSAGES.DESC_CRAWL_BROWSER_EXTRA_WAIT_MS,
+        placeholder: "0",
+        kind: "int",
+        nullable: false,
+        min: 0,
+        max: CRAWL_BROWSER_WAIT_MS_MAX,
+        hideable: true,
     },
 ];
 
@@ -3231,9 +3269,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private crawlRow(field: CrawlField): RowSpec {
         const spec: ConfigRowSpec = { key: field.key, name: field.name, desc: field.desc };
-        if (field.kind === "bool")
-            return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlBool(setting, spec));
-        return this.localRow(spec.name, spec.desc, (setting) => this.applyCrawlNumber(setting, spec, field));
+        const apply = (setting: Setting): void => {
+            if (field.kind === "bool") this.applyCrawlBool(setting, spec);
+            else if (field.kind === "text") this.applyCrawlText(setting, spec, field);
+            else this.applyCrawlNumber(setting, spec, field);
+            if (field.hideable === true) this.hideUntilServerReports(setting.settingEl, spec.key);
+        };
+        return field.hideable === true ? { ...spec, apply } : this.localRow(spec.name, spec.desc, apply);
     }
 
     private applyCrawlBool(setting: Setting, spec: ConfigRowSpec): void {
@@ -3270,6 +3312,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         return this.refuse(spec.name, MESSAGES.REASON_AT_MOST(field.max));
                     return this.pushConfig(spec.key, num, spec.name);
                 });
+                this.serverConfigInputs.set(spec.key, text.inputEl);
+            });
+        this.appendResetAffordance(setting, spec.key, spec.name);
+    }
+
+    private applyCrawlText(setting: Setting, spec: ConfigRowSpec, field: CrawlTextField): void {
+        setting
+            .setName(spec.name)
+            .setDesc(spec.desc)
+            .addText((text) => {
+                text.setPlaceholder(field.placeholder).setValue("");
+                this.commitOnChange(text.inputEl, (value) => this.pushConfig(spec.key, value.trim(), spec.name));
                 this.serverConfigInputs.set(spec.key, text.inputEl);
             });
         this.appendResetAffordance(setting, spec.key, spec.name);
