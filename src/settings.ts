@@ -45,6 +45,7 @@ import type {
     AgentSelection,
     CatalogEntry,
     ConfigResponse,
+    ConfigFieldSchema,
     ConfigSchemaResponse,
     InstalledModel,
     LilbeeSettings,
@@ -58,6 +59,7 @@ import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./age
 import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { applyConfig, applyEmbeddingModel } from "./utils/reindex";
+import { genericFields, HTTP_REFUSED_KEYS, isSecretKey, type GenericField } from "./utils/config-fields";
 import { noticeModelWarnings } from "./utils/model-warnings";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
@@ -646,6 +648,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     // The values the server accepts per config key, from /api/config/schema. Stays null on a
     // server without that route, which leaves the closed-set rows as free text.
     private configChoices: Map<string, string[]> | null = null;
+    // Every field /api/config/schema lists; the generic section reads the ones without a curated row.
+    private configFields: ConfigFieldSchema[] | null = null;
+    // Dict-valued settings, shown as JSON text.
+    private serverConfigJsonAreas: Map<string, HTMLTextAreaElement> = new Map();
     // Newest write started for a server-config key; the next write to that key waits for it.
     private configWrites: Map<string, Promise<unknown>> = new Map();
     // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
@@ -860,6 +866,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigTextAreas.clear();
         this.committedText.clear();
         this.serverConfigDropdowns.clear();
+        this.serverConfigJsonAreas.clear();
         this.serverConfigHideableEls.clear();
 
         const filterInput = containerEl.createEl("input", {
@@ -890,6 +897,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.applyDiagnosticsRow(new Setting(containerEl));
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
+        this.renderMoreSettings(containerEl);
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             this.renderUninstallSection(containerEl);
         }
@@ -938,6 +946,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             ),
             this.groupOf(MESSAGES.LABEL_ADVANCED, this.rowsAdvanced(), { help: MESSAGES.LABEL_ADVANCED_HELP }),
             this.groupOf(MESSAGES.LABEL_FLEET, this.rowsFleet(), { help: MESSAGES.LABEL_FLEET_HELP }),
+            ...this.moreSettingsGroups().map(({ heading, rows }) => this.groupOf(heading, rows)),
         ];
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             items.push(...this.defsUninstall());
@@ -2106,10 +2115,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.committedText.set(textArea, textArea.value);
             }
         }
+        for (const [key, textArea] of this.serverConfigJsonAreas) {
+            const v = cfg[key];
+            if (v === undefined) continue;
+            textArea.value = v === null ? "" : JSON.stringify(v, null, 2);
+            this.committedText.set(textArea, textArea.value);
+        }
         for (const [key, dropdown] of this.serverConfigDropdowns) {
             const v = cfg[key];
-            if (typeof v === "string") {
-                dropdown.setValue(v);
+            if (typeof v === "string" || typeof v === "number") {
+                dropdown.setValue(String(v));
             }
         }
     }
@@ -2236,6 +2251,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             if (field.choices !== null) choices.set(field.key, field.choices);
         }
         this.configChoices = choices;
+        this.configFields = schema.fields;
         this.refresh();
     }
 
@@ -2454,6 +2470,176 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
      * hidden until the connected server reports the key, so older servers show none. */
+    /** The settings the server lists that no curated row covers, one group per server group. */
+    private moreSettingsGroups(): Array<{ heading: string; rows: RowSpec[] }> {
+        if (this.configFields === null) return [];
+        const groups = new Map<string, RowSpec[]>();
+        for (const field of genericFields(this.configFields)) {
+            const rows = groups.get(field.group) ?? [];
+            rows.push(this.genericRow(field));
+            groups.set(field.group, rows);
+        }
+        return [...groups].map(([group, rows]) => ({ heading: MESSAGES.LABEL_MORE_SETTINGS(group), rows }));
+    }
+
+    private renderMoreSettings(containerEl: HTMLElement): void {
+        for (const { heading, rows } of this.moreSettingsGroups()) {
+            new Setting(containerEl).setName(heading).setHeading();
+            this.renderRows(containerEl, rows);
+        }
+    }
+
+    /** A secret row has no key: the server never reports it, so it must not wait for it. */
+    private genericRow(field: GenericField): RowSpec {
+        const spec: ConfigRowSpec = { key: field.key, name: field.key, desc: this.genericDesc(field) };
+        const apply = (setting: Setting): void => this.applyGenericRow(setting, spec, field);
+        return field.secret ? { name: spec.name, desc: spec.desc, apply } : { ...spec, apply };
+    }
+
+    private genericDesc(field: GenericField): string {
+        const parts = [field.help, MESSAGES.DESC_MORE_SETTING_TYPE(field.type)];
+        if (field.choices.length > 0) parts.push(MESSAGES.DESC_MORE_SETTING_VALUES(field.choices.join(", ")));
+        if (field.reindexRequired) parts.push(MESSAGES.DESC_MORE_SETTING_REINDEX);
+        return parts.filter((part) => part !== "").join(" ");
+    }
+
+    private applyGenericRow(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.setName(spec.name).setDesc(spec.desc);
+        if (field.secret) {
+            this.addGenericSecret(setting, spec);
+            return;
+        }
+        switch (field.kind) {
+            case "toggle":
+                this.addGenericToggle(setting, spec, field);
+                break;
+            case "choice":
+                this.addGenericChoice(setting, spec, field);
+                break;
+            case "number":
+                this.addGenericNumber(setting, spec, field);
+                break;
+            case "list":
+                this.addGenericList(setting, spec, field);
+                break;
+            case "json":
+                this.addGenericJson(setting, spec, field);
+                break;
+            case "text":
+                this.addGenericText(setting, spec, field);
+                break;
+        }
+        this.appendResetAffordance(setting, spec.key, spec.name);
+        this.hideUntilServerReports(setting.settingEl, spec.key);
+    }
+
+    /** Ask before a change that rebuilds the index; true when there is nothing to ask or the user agrees. */
+    private async confirmGenericReindex(field: GenericField): Promise<boolean> {
+        if (!field.reindexRequired) return true;
+        const modal = new ConfirmModal(this.app, MESSAGES.DESC_REINDEX_WARNING.replace("{field}", field.key));
+        modal.open();
+        return modal.result;
+    }
+
+    private async commitGeneric(field: GenericField, value: unknown): Promise<CommitOutcome> {
+        if (!(await this.confirmGenericReindex(field))) return COMMIT_OUTCOME.DROPPED;
+        return this.pushConfig(field.key, value, field.key);
+    }
+
+    /** Written on leaving the box, never filled from the server, and skipped when empty. */
+    private addGenericSecret(setting: Setting, spec: ConfigRowSpec): void {
+        setting.addText((text) => {
+            text.setPlaceholder(MESSAGES.PLACEHOLDER_SECRET_NOT_SHOWN).setValue("");
+            text.inputEl.type = "password";
+            text.inputEl.addEventListener("blur", () => {
+                const trimmed = text.inputEl.value.trim();
+                if (trimmed !== "") void this.pushConfig(spec.key, trimmed, spec.name);
+            });
+        });
+    }
+
+    private addGenericToggle(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addToggle((toggle) => {
+            toggle.onChange(async (value) => {
+                if (this.suppressChangeEvents) return;
+                const outcome = await this.commitGeneric(field, value);
+                if (outcome === COMMIT_OUTCOME.DROPPED) this.setValueSilently(() => toggle.setValue(!value));
+            });
+            this.serverConfigToggles.set(spec.key, toggle);
+        });
+    }
+
+    private addGenericChoice(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addDropdown((dropdown) => {
+            for (const choice of field.choices) dropdown.addOption(choice, choice);
+            dropdown.onChange(async (value) => {
+                await this.commitGeneric(field, field.numeric ? Number(value) : value);
+            });
+            this.serverConfigDropdowns.set(spec.key, dropdown);
+        });
+    }
+
+    private addGenericNumber(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addText((text) => {
+            text.setPlaceholder(field.nullable ? MESSAGES.PLACEHOLDER_NOT_SET : "").setValue("");
+            this.commitOnChange(text.inputEl, async (value) => {
+                const trimmed = value.trim();
+                if (trimmed === "") return field.nullable ? this.commitGeneric(field, null) : COMMIT_OUTCOME.DROPPED;
+                const num = Number(trimmed);
+                if (!Number.isFinite(num)) return this.refuse(spec.name, MESSAGES.REASON_NOT_A_NUMBER);
+                if (field.integer && !Number.isInteger(num)) {
+                    return this.refuse(spec.name, MESSAGES.REASON_NOT_WHOLE_NUMBER);
+                }
+                return this.commitGeneric(field, num);
+            });
+            this.serverConfigInputs.set(spec.key, text.inputEl);
+        });
+    }
+
+    private addGenericText(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addText((text) => {
+            text.setPlaceholder(field.nullable ? MESSAGES.PLACEHOLDER_NOT_SET : "").setValue("");
+            this.commitOnChange(text.inputEl, (value) => {
+                const trimmed = value.trim();
+                return this.commitGeneric(field, trimmed === "" && field.nullable ? null : trimmed);
+            });
+            this.serverConfigInputs.set(spec.key, text.inputEl);
+        });
+    }
+
+    private addGenericList(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addTextArea((area) => {
+            this.commitOnChange(area.inputEl, (value) => {
+                const items = value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter((line) => line !== "");
+                return this.commitGeneric(field, items.length === 0 && field.nullable ? null : items);
+            });
+            this.serverConfigTextAreas.set(spec.key, area.inputEl);
+        });
+    }
+
+    private addGenericJson(setting: Setting, spec: ConfigRowSpec, field: GenericField): void {
+        setting.addTextArea((area) => {
+            this.commitOnChange(area.inputEl, (value) => {
+                const trimmed = value.trim();
+                if (trimmed === "") return this.commitGeneric(field, field.nullable ? null : {});
+                let parsed: unknown;
+                try {
+                    parsed = JSON.parse(trimmed);
+                } catch {
+                    return Promise.resolve(this.refuse(spec.name, MESSAGES.REASON_NOT_A_JSON_OBJECT));
+                }
+                if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+                    return Promise.resolve(this.refuse(spec.name, MESSAGES.REASON_NOT_A_JSON_OBJECT));
+                }
+                return this.commitGeneric(field, parsed);
+            });
+            this.serverConfigJsonAreas.set(spec.key, area.inputEl);
+        });
+    }
+
     private rowsFleet(): RowSpec[] {
         const kv: ConfigRowSpec = {
             key: "kv_cache_type",
@@ -3767,7 +3953,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         if (!confirmed) return;
                         const payload = { ...this.configDefaults };
                         // Never wipe credential fields: resetting an API key has no undo path.
-                        for (const k of CREDENTIAL_FIELDS) delete payload[k];
+                        for (const k of Object.keys(payload)) {
+                            if (CREDENTIAL_FIELDS.has(k) || isSecretKey(k) || HTTP_REFUSED_KEYS.has(k))
+                                delete payload[k];
+                        }
                         if (Object.keys(payload).length === 0) return;
                         try {
                             await applyConfig(this.plugin, payload);

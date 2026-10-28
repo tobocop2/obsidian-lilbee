@@ -24,6 +24,7 @@ import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
 import { ConfirmModal } from "../src/views/confirm-modal";
+import { CURATED_CONFIG_KEYS } from "../src/utils/config-fields";
 
 const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
@@ -9883,5 +9884,273 @@ describe("new server config fields", () => {
         Notice.clear();
         await dropdownByName.get(MESSAGES.LABEL_TABLE_MODEL)!(TABLE_MODEL.TATR);
         expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    describe("the generic section for settings with no curated row", () => {
+        const field = (
+            key: string,
+            type: string,
+            extra: Partial<{
+                writable: boolean;
+                nullable: boolean;
+                choices: string[] | null;
+                reindex_required: boolean;
+                group: string;
+                help: string;
+            }> = {},
+        ) => ({
+            key,
+            type,
+            nullable: type.endsWith("|null"),
+            writable: true,
+            reindex_required: false,
+            group: "Retrieval",
+            help: `Help for ${key}`,
+            choices: null,
+            ...extra,
+        });
+
+        const SCHEMA = {
+            fields: [
+                field("chunk_size", "int"),
+                field("llm_provider", "str", { choices: ["auto", "remote"] }),
+                field("chat_model", "str", { writable: false }),
+                field("ann_index_threshold", "int"),
+                field("main_gpu", "int|null", { group: "System" }),
+                field("sse_heartbeat_interval", "float", { group: "System" }),
+                field("include_uncensored", "bool"),
+                field("concept_graph", "bool", { reindex_required: true }),
+                field("reranker_type", "str", { choices: ["cross", "none"] }),
+                field("llama_server_path", "str"),
+                field("placement", "str|null"),
+                field("force_ocr_pages", "list"),
+                field("vault_tags", "list|null"),
+                field("linked_roots", "dict"),
+                field("extra_roots", "dict|null"),
+                field("zz_level", "int", { choices: ["1", "2"] }),
+                field("crawl_login_password", "str", { group: "Crawling" }),
+            ],
+        };
+
+        async function render(config: Record<string, unknown> = {}): Promise<{
+            plugin: ReturnType<typeof makePlugin>;
+            tab: LilbeeSettingTab;
+            captured: Captured;
+        }> {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(SCHEMA);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue(config);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const captured = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            return { plugin, tab, captured };
+        }
+
+        it("shows no generic row until the server schema arrives", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { descByName } = captureSettingCallbacks(() => tab.display());
+            expect(descByName.has("ann_index_threshold")).toBe(false);
+        });
+
+        it("skips curated, refused and read-only settings", async () => {
+            const { captured } = await render();
+            for (const key of ["chunk_size", "llm_provider", "chat_model"]) {
+                expect(captured.descByName.has(key)).toBe(false);
+            }
+            for (const key of ["ann_index_threshold", "main_gpu", "linked_roots", "crawl_login_password"]) {
+                expect(captured.descByName.has(key)).toBe(true);
+            }
+        });
+
+        it("describes each setting with its help, type, choices and re-index need", async () => {
+            const { captured } = await render();
+            expect(captured.descByName.get("ann_index_threshold")).toBe(
+                `Help for ann_index_threshold ${MESSAGES.DESC_MORE_SETTING_TYPE("int")}`,
+            );
+            expect(captured.descByName.get("reranker_type")).toBe(
+                `Help for reranker_type ${MESSAGES.DESC_MORE_SETTING_TYPE("str")} ${MESSAGES.DESC_MORE_SETTING_VALUES("cross, none")}`,
+            );
+            expect(captured.descByName.get("concept_graph")).toContain(MESSAGES.DESC_MORE_SETTING_REINDEX);
+        });
+
+        it("fills each control from the server config", async () => {
+            const { captured } = await render({
+                ann_index_threshold: 500,
+                placement: "gpu0",
+                reranker_type: "none",
+                force_ocr_pages: ["1", "2"],
+                linked_roots: { docs: "/tmp/docs" },
+                include_uncensored: true,
+                extra_roots: null,
+            });
+            expect(captured.fieldByName.get("extra_roots")!.inputEl.value).toBe("");
+            expect(captured.textInputByName.get("ann_index_threshold")!.value).toBe("500");
+            expect(captured.textInputByName.get("placement")!.value).toBe("gpu0");
+            expect(captured.dropdownSetValuesByName.get("reranker_type")).toContain("none");
+            expect(captured.fieldByName.get("force_ocr_pages")!.inputEl.value).toBe("1\n2");
+            expect(JSON.parse(captured.fieldByName.get("linked_roots")!.inputEl.value)).toEqual({ docs: "/tmp/docs" });
+        });
+
+        it("writes a toggle, a choice and a text value", async () => {
+            const { plugin, captured } = await render({ placement: "gpu0" });
+            await captured.toggleByName.get("include_uncensored")!(true);
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ include_uncensored: true });
+            await captured.dropdownByName.get("reranker_type")!("cross");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ reranker_type: "cross" });
+            await captured.dropdownByName.get("zz_level")!("2");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ zz_level: 2 });
+            await captured.textByName.get("llama_server_path")!("  /opt/llama-server ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ llama_server_path: "/opt/llama-server" });
+            await captured.textByName.get("llama_server_path")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ llama_server_path: "" });
+            await captured.textByName.get("placement")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ placement: null });
+        });
+
+        it("sends numbers, and refuses text, fractions for an int, and blanks that cannot clear", async () => {
+            const { plugin, captured } = await render({ main_gpu: 1 });
+            const threshold = captured.textByName.get("ann_index_threshold")!;
+            await threshold("abc");
+            await threshold("1.5");
+            await threshold("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON("ann_index_threshold", MESSAGES.REASON_NOT_WHOLE_NUMBER),
+                ),
+            ).toBe(true);
+            await threshold("250");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ ann_index_threshold: 250 });
+            await captured.textByName.get("sse_heartbeat_interval")!("2.5");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ sse_heartbeat_interval: 2.5 });
+            await captured.textByName.get("main_gpu")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ main_gpu: null });
+        });
+
+        it("sends a list one item per line, and an empty list when the setting cannot be null", async () => {
+            const { plugin, captured } = await render({ force_ocr_pages: ["1"], vault_tags: ["a"] });
+            await captured.textAreaByName.get("force_ocr_pages")!(" 1 \n\n 2 ");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ force_ocr_pages: ["1", "2"] });
+            await captured.textAreaByName.get("force_ocr_pages")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ force_ocr_pages: [] });
+            await captured.textAreaByName.get("vault_tags")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ vault_tags: null });
+        });
+
+        it("sends a JSON object and refuses anything else", async () => {
+            const { plugin, captured } = await render();
+            const roots = captured.textAreaByName.get("linked_roots")!;
+            await roots('{"docs": "/tmp/docs"}');
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ linked_roots: { docs: "/tmp/docs" } });
+            await roots("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ linked_roots: {} });
+            await captured.textAreaByName.get("extra_roots")!("{}");
+            await captured.textAreaByName.get("extra_roots")!("");
+            expect(plugin.api.updateConfig).toHaveBeenLastCalledWith({ extra_roots: null });
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await roots("{not json");
+            await roots("[1, 2]");
+            await roots("null");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.filter(
+                    (n) =>
+                        n.message ===
+                        MESSAGES.NOTICE_FAILED_UPDATE_REASON("linked_roots", MESSAGES.REASON_NOT_A_JSON_OBJECT),
+                ),
+            ).toHaveLength(3);
+        });
+
+        it("asks before a change that needs a re-index, and puts the toggle back on a no", async () => {
+            const { plugin, captured } = await render();
+            mockGenericConfirmResult = false;
+            await captured.toggleByName.get("concept_graph")!(true);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+            await captured.toggleByName.get("concept_graph")!(true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ concept_graph: true });
+        });
+
+        it("masks a secret, never fills it, and writes it on leaving the box", async () => {
+            const { plugin, captured } = await render({ crawl_login_password: "leaked" });
+            const input = captured.textInputByName.get("crawl_login_password")!;
+            expect(input.type).toBe("password");
+            expect(input.value).toBe("");
+            const blur = captured.blurByName.get("crawl_login_password")!;
+            blur.inputEl.value = "  ";
+            await blur.handler();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            blur.inputEl.value = " s3cret ";
+            await blur.handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_login_password: "s3cret" });
+        });
+
+        it("shows a row only after the server reports its key", async () => {
+            const { tab } = await render({});
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            expect(hideable.get("ann_index_threshold")).toBeDefined();
+            expect(hideable.has("crawl_login_password")).toBe(false);
+        });
+
+        it("groups the rows under the server's group names", async () => {
+            const { tab } = await render();
+            const headings = (tab as any).moreSettingsGroups().map((g: { heading: string }) => g.heading);
+            expect(headings).toEqual(["Crawling", "Retrieval", "System"].map((g) => MESSAGES.LABEL_MORE_SETTINGS(g)));
+        });
+
+        it("declares the groups for the 1.13 definitions", async () => {
+            const { tab } = await render();
+            const labels = (tab as any)
+                .getSettingDefinitions()
+                .filter((item: { heading?: string }) => item.heading?.startsWith(MESSAGES.LABEL_MORE_SETTINGS("")))
+                .map((item: { heading: string }) => item.heading);
+            expect(labels).toHaveLength(3);
+        });
+
+        it("leaves Reset all without credentials and without settings the server refuses", async () => {
+            mockGenericConfirmResult = true;
+            const { plugin, tab, captured } = await render();
+            (tab as any).configDefaults = {
+                chunk_size: 512,
+                llm_provider: "auto",
+                crawl_login_password: "",
+                main_gpu: 0,
+            };
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512, main_gpu: 0 });
+        });
+
+        it("covers every setting that a curated row registers", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const t = tab as any;
+            const registered = new Set<string>([
+                ...t.serverConfigInputs.keys(),
+                ...t.serverConfigToggles.keys(),
+                ...t.serverConfigDropdowns.keys(),
+                ...t.serverConfigSliders.keys(),
+                ...t.serverConfigTextAreas.keys(),
+                ...t.serverConfigHideableEls.keys(),
+            ]);
+            const writable = new Set(configSchema.fields.filter((f) => f.writable).map((f) => f.key));
+            const missing = [...registered].filter((key) => writable.has(key) && !CURATED_CONFIG_KEYS.has(key));
+            expect(missing).toEqual([]);
+            // Rows with a dedicated control that keeps its own state, not the shared maps.
+            const dedicated = ["chat_mode", "memory_auto_extract", "memory_enabled", "ocr", "wiki"];
+            const stale = [...CURATED_CONFIG_KEYS].filter(
+                (key) => writable.has(key) && !registered.has(key) && !dedicated.includes(key),
+            );
+            expect(stale).toEqual([]);
+        });
     });
 });
