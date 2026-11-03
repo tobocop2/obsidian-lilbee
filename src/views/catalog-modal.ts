@@ -27,6 +27,7 @@ import {
     extractSseErrorMessage,
     noticeForResultError,
     getRelevantSystemMemoryGB,
+    noticePullWarning,
 } from "../utils";
 import { applyEmbeddingModel } from "../utils/reindex";
 import { noticeModelWarnings } from "../utils/model-warnings";
@@ -1037,6 +1038,8 @@ export class CatalogModal extends Modal {
                             total: d.total,
                         });
                     }
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);

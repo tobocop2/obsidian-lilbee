@@ -9,7 +9,7 @@ import {
     SESSION_EXPORT_MIN_SERVER_VERSION,
 } from "./min-server-version";
 import { OCR_MODE, SERVER_MODE, UPGRADE_PHASE, WARM_PHASE } from "./types";
-import type { HealthWarning, LibraryUpgrade, ServerMode, WarmProgress } from "./types";
+import type { HealthWarning, LibraryUpgrade, PullDoneData, ServerMode, WarmProgress } from "./types";
 
 /**
  * Tag the modal's outer wrapper so the stylesheet keeps the close-X button
@@ -291,6 +291,12 @@ export function extractSseErrorMessage(data: unknown, unknownFallback: string): 
         if (typeof msg === "string") return msg;
     }
     return unknownFallback;
+}
+
+/** Show the warning a model pull's `done` event carries, if any. */
+export function noticePullWarning(data: unknown): void {
+    const warning = (data as PullDoneData | null)?.warning;
+    if (typeof warning === "string" && warning !== "") new Notice(warning);
 }
 
 /**

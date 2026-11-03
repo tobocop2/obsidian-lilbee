@@ -105,6 +105,7 @@ function findButtons(el: MockElement): MockElement[] {
     return buttons;
 }
 
+const PULL_WARNING = "vision projector missing; image input will not work";
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function deferred<T>() {
@@ -1383,7 +1384,7 @@ describe("CatalogModal", () => {
         it("ignores SSE events that are neither progress nor error", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
-            // A DONE-like event is neither PROGRESS nor ERROR → else-if false branch.
+            // A done event with no warning completes the pull without a warning notice.
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
                 yield { event: SSE_EVENT.DONE, data: {} };
             });
@@ -1751,6 +1752,24 @@ describe("CatalogModal", () => {
             await tick();
             const messages = Notice.instances.map((n) => n.message);
             expect(messages.some((m) => m.includes("Qwen/Qwen3-8B-GGUF"))).toBe(true);
+        });
+
+        it("shows the done warning once and still completes the pull", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+                yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+            });
+            plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
         it("fails the task and surfaces a Notice when pull aborts", async () => {

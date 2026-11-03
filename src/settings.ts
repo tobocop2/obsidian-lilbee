@@ -83,6 +83,7 @@ import {
     renderExternalLink,
     SERVER_PROBE_TIMEOUT_MS,
     setDeterminateProgress,
+    noticePullWarning,
 } from "./utils";
 
 /** GitHub's unauthenticated releases API allows 60 requests/hour per IP, so renders share one fetch. */
@@ -3185,6 +3186,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, "native", signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     this.handleRerankerPullProgress(taskId, entry, event.data);
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     this.handleRerankerPullSseError(taskId, entry, event.data);
                     return false;
@@ -3337,6 +3340,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, "native", signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     this.handleVisionPullProgress(taskId, entry, event.data);
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     this.handleVisionPullSseError(taskId, entry, event.data);
                     return false;
@@ -4129,6 +4134,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             total: d.total,
                         });
                     }
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const msg = extractSseErrorMessage(event.data, MESSAGES.ERROR_UNKNOWN);
                     new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${msg}`);
