@@ -109,6 +109,8 @@ import {
     type VaultAdapter,
     type SkippedSource,
     MANAGED_DOCS_PREFIX,
+    SETTING_SOURCE,
+    type ConfigSourcesResponse,
     UPLOAD_REFUSED_EXTENSIONS,
 } from "./types";
 import { AGENT_LABELS, MESSAGES } from "./locales/en";
@@ -160,6 +162,23 @@ import { StatusModal } from "./views/status-modal";
 import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
+import {
+    activeProfileName,
+    chooseProfile,
+    deleteProfile,
+    discardProfileChanges,
+    duplicateProfile,
+    exportProfile,
+    importProfile,
+    pickProfileFor,
+    PROFILE_ACTION,
+    renameProfile,
+    saveProfileAs,
+    updateProfile,
+} from "./profiles";
+import type { ProfileAction } from "./profiles";
+import { ProfileLibraryModal } from "./views/profile-library-modal";
+import { dismissAnalyzeTip, maybeShowAnalyzeTip, runAnalyze } from "./analyze";
 
 const BYTES_PER_MB = 1_000_000;
 
@@ -227,6 +246,19 @@ function noticeSyncProblems(done: AddDone): boolean {
 /** Forward-slash form of a path with no trailing separator. */
 function posixPath(p: string): string {
     return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/** Whether a legacy local prompt is safe to push into `key`: the server's value is still
+ *  provably the built-in default. A server old enough to omit `/api/config/sources` is
+ *  trusted only when it doesn't report the key at all; a reported value with no source
+ *  behind it may be a real user edit, so it is left alone. */
+function promptStillAtDefault(
+    key: string,
+    sources: ConfigSourcesResponse | null,
+    currentValue: string | undefined,
+): boolean {
+    if (sources !== null) return sources.sources[key] === SETTING_SOURCE.BUILT_IN;
+    return currentValue === undefined;
 }
 
 /** Task-center label for a sync, distinguishing the recovery variants. */
@@ -396,6 +428,12 @@ function downloadPercent(progress: DownloadProgress): number | undefined {
     return percentOfBytes(progress.done, progress.total);
 }
 
+/** ragSystemPrompt/generalSystemPrompt, dropped from LilbeeSettings; may still be in an older data.json. */
+interface LegacyPromptSettings {
+    ragSystemPrompt?: string;
+    generalSystemPrompt?: string;
+}
+
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
     private settingTab: LilbeeSettingTab | null = null;
@@ -476,6 +514,11 @@ export default class LilbeePlugin extends Plugin {
     // so a fresh install / first-run wizard doesn't flash a red error pill
     // while the binary downloads and the server boots.
     private serverEverReady = false;
+    /** A prompt data.json carried before the plugin stopped mirroring it; null once migrated. */
+    private pendingPromptMigration: { rag: string; general: string } | null = null;
+    /** The in-flight migration attempt, so a second `configureApi()` before it resolves joins it
+     *  instead of firing a duplicate write. */
+    private promptMigrationInFlight: Promise<void> | null = null;
 
     async onload(): Promise<void> {
         this.registerErrorCapture();
@@ -533,6 +576,8 @@ export default class LilbeePlugin extends Plugin {
         // but nothing fires when the ingest finishes (pill would never clear).
         this.taskQueue.onChange(() => this.schedulePendingSyncHint());
         this.registerCommands();
+        this.registerProfileCommands();
+        this.registerAnalyzeCommands();
 
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu: Menu, file: TAbstractFile) => {
@@ -863,10 +908,6 @@ export default class LilbeePlugin extends Plugin {
             dataDir: registry.resolveDataDir(this.vaultId),
             sharedRoot,
             modelsDir: sharedModelsDir(sharedRoot),
-            systemPrompts: () => ({
-                rag: this.settings.ragSystemPrompt,
-                general: this.settings.generalSystemPrompt,
-            }),
             installedVersion: this.getSharedLilbeeVersion(),
             onStateChange: (state) => this.handleServerStateChange(state),
             onRestartsExhausted: (output: string) => {
@@ -1641,6 +1682,16 @@ export default class LilbeePlugin extends Plugin {
         this.api.setTokenProvider(() => this.readCurrentToken());
         this.api.setToken(this.readCurrentToken());
         this.api.setOutcomeCallback((outcome) => this.handleRequestOutcome(outcome));
+        void this.migratePendingPromptsOnce();
+    }
+
+    /** Runs `migratePendingPrompts` at most once at a time; a call that arrives while one is
+     *  already in flight joins it instead of firing a duplicate write. */
+    private migratePendingPromptsOnce(): Promise<void> {
+        this.promptMigrationInFlight ??= this.migratePendingPrompts().finally(() => {
+            this.promptMigrationInFlight = null;
+        });
+        return this.promptMigrationInFlight;
     }
 
     /** Update the status bar to reflect the latest API outcome. */
@@ -2014,6 +2065,101 @@ export default class LilbeePlugin extends Plugin {
         });
     }
 
+    /** One palette entry per profile action, each offered only while the server is ready. */
+    private registerProfileCommands(): void {
+        for (const command of this.profileCommands()) {
+            this.addCommand({
+                id: command.id,
+                name: command.name,
+                checkCallback: (checking) => {
+                    if (!this.isLilbeeReady()) return false;
+                    if (!checking) command.run();
+                    return true;
+                },
+            });
+        }
+    }
+
+    /** The profile commands: an action on a picked profile, on the active one, or on no profile. */
+    private profileCommands(): Array<{ id: string; name: string; run: () => void }> {
+        const pick = (action: ProfileAction, run: (name: string) => unknown) => (): void =>
+            void pickProfileFor(this, action, (entry) => void run(entry.name));
+        const withActive = (run: (name: string) => unknown) => (): void =>
+            void activeProfileName(this).then((name) => {
+                if (name !== null) void run(name);
+            });
+        return [
+            {
+                id: "profile-choose",
+                name: MESSAGES.COMMAND_PROFILE_CHOOSE,
+                run: pick(PROFILE_ACTION.APPLY, (name) => chooseProfile(this, name)),
+            },
+            {
+                id: "profile-save-as",
+                name: MESSAGES.COMMAND_PROFILE_SAVE_AS,
+                run: withActive((name) => saveProfileAs(this, name)),
+            },
+            {
+                id: "profile-update",
+                name: MESSAGES.COMMAND_PROFILE_UPDATE,
+                run: withActive((name) => updateProfile(this, name)),
+            },
+            {
+                id: "profile-discard",
+                name: MESSAGES.COMMAND_PROFILE_DISCARD,
+                run: withActive((name) => discardProfileChanges(this, name)),
+            },
+            {
+                id: "profile-manage",
+                name: MESSAGES.COMMAND_PROFILE_MANAGE,
+                run: () => new ProfileLibraryModal(this).open(),
+            },
+            { id: "profile-import", name: MESSAGES.COMMAND_PROFILE_IMPORT, run: () => void importProfile(this) },
+            {
+                id: "profile-export",
+                name: MESSAGES.COMMAND_PROFILE_EXPORT,
+                run: pick(PROFILE_ACTION.EXPORT, (name) => exportProfile(this, name)),
+            },
+            {
+                id: "profile-duplicate",
+                name: MESSAGES.COMMAND_PROFILE_DUPLICATE,
+                run: pick(PROFILE_ACTION.DUPLICATE, (name) => duplicateProfile(this, name)),
+            },
+            {
+                id: "profile-rename",
+                name: MESSAGES.COMMAND_PROFILE_RENAME,
+                run: pick(PROFILE_ACTION.RENAME, (name) => renameProfile(this, name)),
+            },
+            {
+                id: "profile-delete",
+                name: MESSAGES.COMMAND_PROFILE_DELETE,
+                run: pick(PROFILE_ACTION.DELETE, (name) => deleteProfile(this, name)),
+            },
+        ];
+    }
+
+    /** The analyze command and its tip-dismiss command, each offered only while the server is ready. */
+    private registerAnalyzeCommands(): void {
+        this.addCommand({
+            id: "analyze-vault",
+            name: MESSAGES.COMMAND_ANALYZE,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) runAnalyze(this);
+                return true;
+            },
+        });
+        this.addCommand({
+            id: "analyze-dismiss-tip",
+            name: MESSAGES.COMMAND_ANALYZE_DISMISS_TIP,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void dismissAnalyzeTip(this);
+                return true;
+            },
+        });
+    }
+
     /**
      * Re-point this vault at a different lilbee data-dir. Used by Settings →
      * "Use existing lilbee data directory" so a user can adopt an existing
@@ -2074,14 +2220,67 @@ export default class LilbeePlugin extends Plugin {
         this.previousServerUrl = this.settings.serverUrl;
     }
 
+    /** Writes a legacy per-vault prompt once through the settings API, then drops it from settings.
+     *  Only ever writes into a key still at the server's built-in default; a value the server
+     *  already has from the user, a profile or an env var is left alone. */
+    private async migratePendingPrompts(): Promise<void> {
+        const pending = this.pendingPromptMigration;
+        if (pending === null) return;
+        let sources: ConfigSourcesResponse | null;
+        let cfg: Awaited<ReturnType<typeof this.api.config>>;
+        try {
+            [sources, cfg] = await Promise.all([this.api.configSources(), this.api.config()]);
+        } catch (err) {
+            // Kept for the next successful connection to retry.
+            this.journal.lifecycle(
+                `could not check the server before migrating a saved system prompt: ${errorMessage(err, String(err))}`,
+            );
+            return;
+        }
+        const updates: Record<string, string> = {};
+        if (pending.rag && promptStillAtDefault(CONFIG_KEY.RAG_SYSTEM_PROMPT, sources, cfg.rag_system_prompt)) {
+            updates[CONFIG_KEY.RAG_SYSTEM_PROMPT] = pending.rag;
+        }
+        if (
+            pending.general &&
+            promptStillAtDefault(CONFIG_KEY.GENERAL_SYSTEM_PROMPT, sources, cfg.general_system_prompt)
+        ) {
+            updates[CONFIG_KEY.GENERAL_SYSTEM_PROMPT] = pending.general;
+        }
+        if (Object.keys(updates).length > 0) {
+            try {
+                await applyConfig(this, updates);
+            } catch (err) {
+                // Kept for the next successful connection to retry.
+                this.journal.lifecycle(
+                    `could not migrate a saved system prompt to the server: ${errorMessage(err, String(err))}`,
+                );
+                return;
+            }
+            new Notice(MESSAGES.NOTICE_PROMPT_MIGRATED);
+        }
+        this.pendingPromptMigration = null;
+        await this.persistAll();
+    }
+
     async loadSettings(): Promise<void> {
-        const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
+        const raw = (await this.loadData()) as
+            (LilbeeSettings & LegacyPromptSettings & { taskHistory?: { history?: unknown[] } }) | null;
         this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
         // Object.assign only merges one level, so a stored agentIntegration would
         // shadow the defaults of any key added to it later.
         this.settings.agentIntegration = { ...DEFAULT_AGENT_INTEGRATION, ...(raw?.agentIntegration ?? {}) };
         // A vault saved before this flag existed recorded a finished wizard in setupCompleted.
         this.settings.wizardCompleted = raw?.wizardCompleted ?? this.settings.setupCompleted;
+        // ragSystemPrompt/generalSystemPrompt predate the server-backed prompt rows; a vault saved
+        // before that change still carries them in data.json. Queue them for a one-time server
+        // write and drop the local copy, which Object.assign above would otherwise carry forward.
+        this.pendingPromptMigration =
+            raw?.ragSystemPrompt || raw?.generalSystemPrompt
+                ? { rag: raw?.ragSystemPrompt ?? "", general: raw?.generalSystemPrompt ?? "" }
+                : null;
+        delete (this.settings as LilbeeSettings & LegacyPromptSettings).ragSystemPrompt;
+        delete (this.settings as LilbeeSettings & LegacyPromptSettings).generalSystemPrompt;
         this.recordServerBaseline();
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
@@ -3022,6 +3221,7 @@ export default class LilbeePlugin extends Plugin {
         makeStream?: (signal: AbortSignal) => AsyncGenerator<SSEEvent, void>,
         label = "Adding files",
     ): Promise<void> {
+        void maybeShowAnalyzeTip(this);
         const taskId = this.taskQueue.enqueue(label, TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
@@ -3675,6 +3875,7 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
+        if (trigger === SYNC_TRIGGER.USER) void maybeShowAnalyzeTip(this);
         // One sync at a time: a user trigger reports the running one, an automatic one defers.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
             if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);

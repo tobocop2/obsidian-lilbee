@@ -240,6 +240,7 @@ export const KV_CACHE_TYPE = {
 } as const satisfies Record<string, KvCacheType>;
 
 export const CONFIG_KEY = {
+    TOP_K: "top_k",
     RAG_SYSTEM_PROMPT: "rag_system_prompt",
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",
     CHAT_MODE: "chat_mode",
@@ -751,10 +752,7 @@ export interface StorageMoveTarget {
 
 export interface LilbeeSettings {
     serverUrl: string;
-    topK: number;
     serverMode: ServerMode;
-    ragSystemPrompt: string;
-    generalSystemPrompt: string;
     /** A server has answered, so the plugin may start itself on the next launch. */
     setupCompleted: boolean;
     /** The wizard reached an end, by finishing or by an explicit skip. While false, the next launch reopens it. */
@@ -794,12 +792,7 @@ export interface LilbeeSettings {
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverUrl: "http://127.0.0.1:7433",
-    // Match the server's default retrieval depth (core config top_k = 12) so the
-    // plugin and a bare `lilbee serve` behave identically out of the box.
-    topK: 12,
     serverMode: "managed",
-    ragSystemPrompt: "",
-    generalSystemPrompt: "",
     setupCompleted: false,
     wizardCompleted: false,
     wikiEnabled: false,
@@ -995,6 +988,7 @@ export const SSE_EVENT = {
     BATCH_PROGRESS: "batch_progress",
     MEMORY_EXTRACTED: "memory_extracted",
     GPU_STATS: "gpu_stats",
+    ANALYZE: "analyze",
 } as const;
 
 /** Stage of a wiki build or synthesis run. */
@@ -1170,10 +1164,263 @@ export interface ConfigFieldSchema {
     group: string;
     help: string;
     choices: string[] | null;
+    /** Absent on a server that predates the flag. */
+    advanced?: boolean;
 }
 
 export interface ConfigSchemaResponse {
     fields: ConfigFieldSchema[];
+}
+
+/** The layer that supplies a setting's value, from `GET /api/config/sources`. */
+export type SettingSource = "env" | "user" | "profile" | "built_in" | "auto";
+
+export const SETTING_SOURCE = {
+    ENV: "env",
+    USER: "user",
+    PROFILE: "profile",
+    BUILT_IN: "built_in",
+    AUTO: "auto",
+} as const satisfies Record<string, SettingSource>;
+
+export interface ConfigSourcesResponse {
+    sources: Record<string, SettingSource>;
+}
+
+/** Prefix of the environment variable that sets a server setting. */
+export const SERVER_ENV_PREFIX = "LILBEE_";
+
+/** Writable settings `POST /api/config/reset` refuses: no default folder, and a provider switch. */
+export const UNRESETTABLE_CONFIG_KEYS: ReadonlySet<string> = new Set(["documents_dir", "llm_provider"]);
+
+/** The profile folder a profile file lives in, highest precedence first. */
+export type ProfileFolder = "project" | "global" | "builtin";
+
+export const PROFILE_FOLDER = {
+    PROJECT: "project",
+    GLOBAL: "global",
+    BUILTIN: "builtin",
+} as const satisfies Record<string, ProfileFolder>;
+
+/** The folders a profile can be written to, the default first. */
+export const PROFILE_SAVE_TARGETS: readonly ProfileFolder[] = [PROFILE_FOLDER.GLOBAL, PROFILE_FOLDER.PROJECT];
+
+/** The folders whose profiles the user can rename and delete. */
+export const PROFILE_OWNED_FOLDERS: ReadonlySet<ProfileFolder> = new Set(PROFILE_SAVE_TARGETS);
+
+/** How the applied profile's file compares with the copy recorded on apply. */
+export type ProfileStatus = "current" | "changed" | "missing" | "broken";
+
+export const PROFILE_STATUS = {
+    CURRENT: "current",
+    CHANGED: "changed",
+    MISSING: "missing",
+    BROKEN: "broken",
+} as const satisfies Record<string, ProfileStatus>;
+
+/** When a changed profile value takes effect. */
+export type ProfileEffect = "reindex" | "new_files_only" | "now";
+
+export const PROFILE_EFFECT = {
+    REINDEX: "reindex",
+    NEW_FILES_ONLY: "new_files_only",
+    NOW: "now",
+} as const satisfies Record<string, ProfileEffect>;
+
+/** How the Apply modal closed. */
+export type ApplyChoice = "apply" | "apply_reindex" | "cancel";
+
+export const APPLY_CHOICE = {
+    APPLY: "apply",
+    APPLY_REINDEX: "apply_reindex",
+    CANCEL: "cancel",
+} as const satisfies Record<string, ApplyChoice>;
+
+/** The server's cap on a profile file, which the plugin checks before reading one. */
+export const PROFILE_MAX_BYTES = 256 * 1024;
+
+export interface ProfileAuthor {
+    name: string;
+    github: string | null;
+}
+
+/** One profile file from `GET /api/profiles`; `error` names why a broken file cannot be used. */
+export interface ProfileEntry {
+    name: string;
+    folder: ProfileFolder;
+    path: string;
+    valid: boolean;
+    error: string | null;
+    shadowed_by: ProfileFolder | null;
+    description: string | null;
+    authors: ProfileAuthor[];
+    credit: string | null;
+    tested_on: string | null;
+    evidence: string | null;
+    min_lilbee: string | null;
+    values: Record<string, unknown>;
+}
+
+export interface ProfileListResponse {
+    profiles: ProfileEntry[];
+}
+
+/** A profile setting you set, and the value and source it falls back to without you. */
+export interface ProfileChangeRow {
+    key: string;
+    yours: unknown;
+    profile_value: unknown;
+    profile_source: SettingSource;
+    effect: ProfileEffect;
+}
+
+export interface ActiveProfileResponse {
+    name: string;
+    status: ProfileStatus;
+    error: string | null;
+    values: Record<string, unknown>;
+    /** Absent on a server that predates it; the Profile group falls back to the diff's kept list. */
+    changes?: ProfileChangeRow[];
+    profile: ProfileEntry | null;
+}
+
+/** One setting a profile apply changes, and when the change takes effect. */
+export interface ProfileDiffRow {
+    key: string;
+    current: unknown;
+    current_source: SettingSource;
+    new: unknown;
+    effect: ProfileEffect;
+}
+
+/** What applying a profile changes; `kept` names the user's values it leaves in place. */
+export interface ProfileDiffResponse {
+    name: string;
+    changes: ProfileDiffRow[];
+    kept: string[];
+    untouched_count: number;
+}
+
+export interface ProfileApplyResponse {
+    name: string;
+    changes: ProfileDiffRow[];
+    reindex_required: boolean;
+    new_files_only: string[];
+}
+
+/** A profile file an operation wrote or removed. */
+export interface ProfileLocationResponse {
+    name: string;
+    folder: ProfileFolder;
+    path: string;
+}
+
+/** A saved profile and the user's settings it took over. */
+export interface ProfileSaveResponse extends ProfileLocationResponse {
+    absorbed: string[];
+}
+
+export interface ProfileDiscardResponse {
+    dropped: string[];
+    /** Absent on a server that predates it; treated as no reindex needed. */
+    reindex_required?: boolean;
+}
+
+export interface ProfileValidationResponse {
+    name: string;
+    valid: boolean;
+    problems: string[];
+}
+
+/** A profile as a clean file; `filename` is the download's name, null when the server gives none. */
+export interface ExportedProfile {
+    filename: string | null;
+    content: string;
+}
+
+/** Progress payload of an `analyze` SSE event: one extraction batch. */
+export interface AnalyzeProgress {
+    done: number;
+    total: number;
+    file: string;
+}
+
+/** What analyze takes on `POST /api/analyze`; a target needs `apply` or `save`. */
+export interface AnalyzeOptions {
+    apply?: boolean;
+    save?: string | null;
+    target?: ProfileFolder | null;
+}
+
+/** A sampled file analyze could not read. */
+export interface AnalyzeFailure {
+    file: string;
+    error: string;
+}
+
+/** PDF pages, scans and tables; `scanned_share` also counts image files at the sample rate. */
+export interface AnalyzePdf {
+    files: number;
+    pages: number;
+    scanned_pages: number;
+    scanned_share: number;
+    files_with_tables: number;
+    tables: number;
+    median_pages: number | null;
+}
+
+/** A detected language (ISO 639-3), its share of text files, its stemmer, and OCR support. */
+export interface AnalyzeLanguage {
+    code: string;
+    share: number;
+    fts_language: string | null;
+    ocr_supported: boolean;
+}
+
+/** Why the recommendation sets a setting; the key `profile` explains the built-in pick. */
+export interface AnalyzeReason {
+    key: string;
+    text: string;
+}
+
+/** The picked built-in, the derived profile, and what applying it changes. */
+export interface AnalyzeRecommendation {
+    builtin: string;
+    name: string | null;
+    values: Record<string, unknown>;
+    changes: ProfileDiffRow[];
+    kept: string[];
+    reasons: AnalyzeReason[];
+    notes: string[];
+}
+
+/** The profile analyze saved or switched to, its file, and whether the project now uses it. */
+export interface AnalyzeSaved extends ProfileLocationResponse {
+    applied: boolean;
+}
+
+/** One analyze run: what it read and what it recommends; the shape every surface returns. */
+export interface AnalyzeResponse {
+    files_total: number;
+    documents_total: number;
+    files_read: number;
+    files_counted: number;
+    cap: number;
+    failed: AnalyzeFailure[];
+    file_types: Record<string, number>;
+    code_share: number;
+    pdf: AnalyzePdf;
+    median_chars: number | null;
+    languages: AnalyzeLanguage[];
+    recommendation: AnalyzeRecommendation;
+    saved: AnalyzeSaved | null;
+}
+
+/** Whether the project was analyzed, hid the analyze tip, and would see the tip now. */
+export interface AnalyzeStateResponse {
+    analyzed: boolean;
+    tip_dismissed: boolean;
+    tip_shows: boolean;
 }
 
 export interface EmbeddingModelResponse {
@@ -1541,9 +1788,10 @@ export const WIZARD_STEP = {
     SERVER_MODE: 1,
     MODEL_PICKER: 2,
     EMBEDDING_PICKER: 3,
-    SYNC: 4,
-    WIKI: 5,
-    DONE: 6,
+    ANALYZE: 4,
+    SYNC: 5,
+    WIKI: 6,
+    DONE: 7,
 } as const satisfies Record<string, number>;
 
 export const DOWNLOAD_PANEL = {

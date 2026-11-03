@@ -9,12 +9,14 @@ import {
     MODEL_TASK,
     OCR_MODE,
     SERVER_MODE,
+    SERVER_STATUS_PREFIX,
     SERVER_VARIANT,
     SSE_EVENT,
     TABLE_MODEL,
     TASK_TYPE,
 } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import { PILL_CLS } from "../src/components/pill";
 import configSchema from "./fixtures/config-schema.json";
 import configRefusal from "./fixtures/config-refusal.json";
 import { ServerStartingError } from "../src/api";
@@ -156,7 +158,12 @@ function makePlugin(
         showModel: vi.fn().mockRejectedValue(new Error("no model")),
         config: vi.fn().mockRejectedValue(new Error("unreachable")),
         configDefaults: vi.fn().mockRejectedValue(new Error("unreachable")),
-        configSchema: vi.fn().mockRejectedValue(new Error("unreachable")),
+        // A server without the schema, sources and reset routes, as the oldest supported server is.
+        configSchema: vi.fn().mockRejectedValue(new Error(`${SERVER_STATUS_PREFIX} 404: Not Found`)),
+        configSources: vi.fn().mockResolvedValue(null),
+        // A server without profiles, as every server before them is.
+        listProfiles: vi.fn().mockResolvedValue(null),
+        resetConfig: vi.fn().mockResolvedValue(null),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: true }))),
         setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
@@ -711,6 +718,9 @@ function captureDropdownOptions(fn: () => void): Array<Record<string, string>> {
     return allOptions;
 }
 
+/** The temperature row's reset: after serverMode, results count, max_distance, adaptive_threshold and the two prompts. */
+const TEMPERATURE_RESET_BUTTON = 6;
+
 describe("LilbeeSettingTab", () => {
     beforeEach(() => {
         Notice.clear();
@@ -718,7 +728,7 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("display()", () => {
-        it("renders server URL, topK, and sync-mode settings without error", () => {
+        it("renders server URL, results count, and sync-mode settings without error", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -752,11 +762,11 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // sharedRoot + 9 generation + 4 retrieval-advanced + 5 ingest + 2 worker-pool
+            // sharedRoot + results count + 9 generation + 4 retrieval-advanced + 5 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices)
             // + keyword search language. The API-key rows and the HF token row keep their own blur saver.
-            expect(textOnChanges.length).toBe(49);
+            expect(textOnChanges.length).toBe(50);
         });
     });
 
@@ -795,16 +805,17 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("topK slider onChange", () => {
-        it("updates topK and calls saveSettings", async () => {
+    describe("results count (server-backed top_k)", () => {
+        it("PATCHes top_k on the server and keeps no plugin copy", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await sliderOnChanges[0](10);
-            expect(plugin.settings.topK).toBe(10);
-            expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+            await textByName.get(MESSAGES.LABEL_RESULTS_COUNT)!("10");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ top_k: 10 });
+            expect(plugin.saveSettings).not.toHaveBeenCalled();
+            expect("topK" in plugin.settings).toBe(false);
         });
     });
 
@@ -1031,22 +1042,10 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("system prompt settings", () => {
-        // Reset-button order: 0=serverMode 1=topK 2=max_distance 3=adaptive_threshold
+        // Reset-button order: 0=serverMode 1=top_k 2=max_distance 3=adaptive_threshold
         // 4=ragSystemPrompt 5=generalSystemPrompt.
         const RAG_PROMPT_RESET = 4;
         const GENERAL_PROMPT_RESET = 5;
-
-        it("saves ragSystemPrompt when the cited-answer textarea changes", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
-
-            // The cited-answer textarea is the first textarea in Generation settings.
-            await textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
-            expect(plugin.saveSettings).toHaveBeenCalled();
-        });
 
         it("sends the cited-answer prompt to the server", async () => {
             const plugin = makePlugin();
@@ -1078,7 +1077,7 @@ describe("LilbeeSettingTab", () => {
         });
 
         it("an emptied prompt box keeps the saved prompt until an explicit reset", async () => {
-            const plugin = makePlugin({ generalSystemPrompt: "You are a friendly tutor." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaByName, extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -1088,25 +1087,27 @@ describe("LilbeeSettingTab", () => {
                 expect.objectContaining({ general_system_prompt: expect.anything() }),
             );
 
-            (tab as any).configDefaults = { general_system_prompt: "You are lilbee." };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                general_system_prompt: "You are lilbee.",
+            });
             await extraButtonOnClicks[GENERAL_PROMPT_RESET]();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ general_system_prompt: "You are lilbee." });
         });
 
-        it("resetting a prompt clears the mirrored plugin setting", async () => {
+        it("resets a prompt through the fallback default when the server has no reset route", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = { rag_system_prompt: "Answer from the cited documents." };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "Answer from the cited documents.",
+            });
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 rag_system_prompt: "Answer from the cited documents.",
             });
-            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
-            expect(plugin.saveSettings).toHaveBeenCalled();
             expect(
                 Notice.instances.some((n) =>
                     n.message.includes(MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
@@ -1116,20 +1117,16 @@ describe("LilbeeSettingTab", () => {
 
         it("reports a failure when the server serves no defaults to reset to", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
-            // A server without /api/config/defaults: the fetch settles, with nothing in it.
+            // A server without /api/config/defaults either.
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await vi.waitFor(() => {
-                expect((tab as any).configDefaults).toEqual({});
-            });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
             expect(
                 Notice.instances.some((n) =>
                     n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
@@ -1137,26 +1134,22 @@ describe("LilbeeSettingTab", () => {
             ).toBe(true);
         });
 
-        it("reports nothing when the reset is clicked before the defaults arrive", async () => {
+        it("resets a prompt through the reset route on a server that has it, writing no default", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["rag_system_prompt"],
+                reindex_required: false,
+            });
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            // The defaults fetch is still in flight, so the click has nothing to reset to yet.
-            expect((tab as any).configDefaults).toBeNull();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
+            expect(plugin.api.resetConfig).toHaveBeenCalledWith(["rag_system_prompt"]);
+            expect(plugin.api.configDefaults).not.toHaveBeenCalled();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
-            expect(
-                Notice.instances.some(
-                    (n) =>
-                        n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)) ||
-                        n.message.includes(MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
-                ),
-            ).toBe(false);
         });
 
         it("a reset clicked after a keystroke lands last on the server", async () => {
@@ -1167,9 +1160,6 @@ describe("LilbeeSettingTab", () => {
             });
             const tab = makeTab(plugin);
             const { textAreaByName, extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await vi.waitFor(() => {
-                expect((tab as any).configDefaults).not.toBeNull();
-            });
 
             let releaseKeystroke: () => void = () => {};
             const updateConfig = plugin.api.updateConfig as ReturnType<typeof vi.fn>;
@@ -1197,20 +1187,20 @@ describe("LilbeeSettingTab", () => {
                 { rag_system_prompt: "You are a pirate." },
                 { rag_system_prompt: "Answer from the cited documents." },
             ]);
-            expect(plugin.settings.ragSystemPrompt).toBe(DEFAULT_SETTINGS.ragSystemPrompt);
         });
 
-        it("keeps the mirrored setting when the server refuses the reset", async () => {
+        it("shows a failure notice when the server refuses the prompt's default write", async () => {
             Notice.clear();
-            const plugin = makePlugin({ ragSystemPrompt: "You are a pirate." });
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("read-only config"));
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = { rag_system_prompt: "Answer from the cited documents." };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "Answer from the cited documents.",
+            });
 
             await extraButtonOnClicks[RAG_PROMPT_RESET]();
-            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
             expect(
                 Notice.instances.some((n) =>
                     n.message.includes(MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)),
@@ -1233,7 +1223,7 @@ describe("LilbeeSettingTab", () => {
             ).toBe(true);
         });
 
-        it("saves generalSystemPrompt when the no-document textarea changes", async () => {
+        it("sends the no-document prompt to the server", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -1241,8 +1231,9 @@ describe("LilbeeSettingTab", () => {
 
             // The no-document textarea is the second textarea in Generation settings.
             await textAreaByName.get(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)!("You are a friendly tutor.");
-            expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
-            expect(plugin.saveSettings).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                general_system_prompt: "You are a friendly tutor.",
+            });
         });
 
         it("keeps the Default placeholder when the server reports an empty prompt", async () => {
@@ -1408,13 +1399,13 @@ describe("LilbeeSettingTab", () => {
 
     describe("generation settings", () => {
         // num_ctx is intentionally not surfaced — it's a model-side property.
-        // Indexes start at 1 because the shared-root text input is at 0.
+        // Indexes start at 2: the shared-root text input is at 0, results count at 1.
         const GEN_FIELDS = [
-            { idx: 1, key: "temperature", value: "0.7", expected: 0.7 },
-            { idx: 2, key: "top_p", value: "0.9", expected: 0.9 },
-            { idx: 3, key: "top_k_sampling", value: "40", expected: 40 },
-            { idx: 4, key: "repeat_penalty", value: "1.1", expected: 1.1 },
-            { idx: 5, key: "seed", value: "42", expected: 42 },
+            { idx: 2, key: "temperature", value: "0.7", expected: 0.7 },
+            { idx: 3, key: "top_p", value: "0.9", expected: 0.9 },
+            { idx: 4, key: "top_k_sampling", value: "40", expected: 40 },
+            { idx: 5, key: "repeat_penalty", value: "1.1", expected: 1.1 },
+            { idx: 6, key: "seed", value: "42", expected: 42 },
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
@@ -1446,7 +1437,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[3]("not-a-number");
+            await textOnChanges[4]("not-a-number");
             expect(plugin.api.updateConfig).not.toHaveBeenCalledWith(
                 expect.objectContaining({ top_k_sampling: expect.anything() }),
             );
@@ -1458,7 +1449,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[1]("abc");
+            await textOnChanges[2]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalledWith(
                 expect.objectContaining({ temperature: expect.anything() }),
             );
@@ -1472,7 +1463,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[1]("0.7");
+            await textOnChanges[2]("0.7");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -1482,11 +1473,11 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            await textOnChanges[1]("0.7");
+            await textOnChanges[2]("0.7");
             Notice.clear();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
 
-            await textOnChanges[1]("");
+            await textOnChanges[2]("");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3757,6 +3748,44 @@ describe("managed mode settings", () => {
         });
     });
 
+    describe("a nullable boolean config key fills its toggle from what null means for that key", () => {
+        async function toggleAfterConfig(
+            plugin: ReturnType<typeof makePlugin>,
+            key: string,
+            cfg: Record<string, unknown>,
+        ): Promise<ReturnType<typeof vi.fn>> {
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const toggle = (tab as any).serverConfigToggles.get(key);
+            const setValueSpy = vi.spyOn(toggle, "setValue");
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue(cfg);
+            await (tab as any).loadServerDefaults();
+            await new Promise((r) => setTimeout(r, 0));
+            return setValueSpy;
+        }
+
+        it("shows Flash attention as On when an older server sends flash_attention: null", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const setValueSpy = await toggleAfterConfig(plugin, "flash_attention", { flash_attention: null });
+            expect(setValueSpy).toHaveBeenCalledWith(true);
+        });
+
+        it("flipping Flash attention after a null fill still writes a real boolean", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ flash_attention: null });
+            await (tab as any).loadServerDefaults();
+            await new Promise((r) => setTimeout(r, 0));
+
+            await toggleByName.get(MESSAGES.LABEL_FLASH_ATTENTION)!(false);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ flash_attention: false });
+        });
+    });
+
     describe("text settings commit on Enter or on leaving the box, never per keystroke", () => {
         const confirmsOpened = (): number => vi.mocked(ConfirmModal).mock.calls.length;
         const updatedNotices = (name: string): number =>
@@ -3830,8 +3859,8 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 768 });
         });
 
-        it("a system prompt the server refuses stays in the box, as the plugin saved it for the next start", async () => {
-            const plugin = makePlugin({ generalSystemPrompt: "You are a friendly tutor." });
+        it("a system prompt the server refuses stays in the box for correcting", async () => {
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
             const tab = makeTab(plugin);
@@ -3843,7 +3872,6 @@ describe("managed mode settings", () => {
             area.blur();
             await settle();
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
-            expect(plugin.settings.generalSystemPrompt).toBe("You are terse.");
             expect(area.inputEl.value).toBe("You are terse.");
         });
 
@@ -4058,8 +4086,8 @@ describe("managed mode settings", () => {
         });
 
         it.each([
-            ["managed", SERVER_MODE.MANAGED, 62],
-            ["external", SERVER_MODE.EXTERNAL, 63],
+            ["managed", SERVER_MODE.MANAGED, 63],
+            ["external", SERVER_MODE.EXTERNAL, 64],
         ])(
             "no text box in %s mode writes, saves, asks or notifies while the user types",
             async (_mode, serverMode, boxes) => {
@@ -4921,9 +4949,9 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             // Gen field values should be populated from server config.
-            // inputs[0] = shared-root, inputs[1] = temperature, inputs[2] = top_p.
-            expect(inputs[1].value).toBe("0.7");
-            expect(inputs[2].value).toBe("0.9");
+            // inputs[0] = shared-root, inputs[1] = results count, inputs[2] = temperature, inputs[3] = top_p.
+            expect(inputs[2].value).toBe("0.7");
+            expect(inputs[3].value).toBe("0.9");
 
             // Rag-system-prompt textarea is the first; general-system-prompt is the second.
             // Both placeholders are populated from server defaults.
@@ -4963,27 +4991,14 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("loadConfigDefaults", () => {
-        it("caches the server response for later reset lookups", async () => {
+    describe("config defaults", () => {
+        it("are not fetched when the tab opens, only by a reset on a server without the reset route", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             const tab = makeTab(plugin);
             tab.display();
-            await vi.waitFor(() => {
-                expect((tab as any).configDefaults).toEqual({ chunk_size: 512 });
-            });
-        });
-
-        it("falls back to an empty map when the endpoint is missing", async () => {
-            const plugin = makePlugin();
-            mockChatPicker(plugin);
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
-            const tab = makeTab(plugin);
-            tab.display();
-            await vi.waitFor(() => {
-                expect((tab as any).configDefaults).toEqual({});
-            });
+            await new Promise((r) => setTimeout(r, 0));
+            expect(plugin.api.configDefaults).not.toHaveBeenCalled();
         });
     });
 
@@ -5016,34 +5031,34 @@ describe("managed mode settings", () => {
 
     describe("per-row reset-to-default affordance", () => {
         // Reset button order:
-        // 0=serverMode(local) 1=topK 2=max_distance 3=adaptive_threshold
+        // 0=serverMode(local) 1=top_k 2=max_distance 3=adaptive_threshold
         // 4=ragSystemPrompt 5=generalSystemPrompt 6=temperature 7=top_p
         // 8=top_k_sampling 9=repeat_penalty 10=num_ctx 11=seed ...
         const TEMPERATURE_RESET = 6;
 
-        it("server-backed reset PATCHes the cached default", async () => {
+        it("server-backed reset on a server without the reset route PATCHes the default", async () => {
             Notice.clear();
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            // Seed the cache directly so we don't race the async configDefaults fetch.
-            (tab as any).configDefaults = { temperature: 0.7 };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ temperature: 0.7 });
             await extraButtonOnClicks[TEMPERATURE_RESET]();
+            expect(plugin.api.resetConfig).toHaveBeenCalledWith(["temperature"]);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ temperature: 0.7 });
         });
 
-        it("server-backed reset silently no-ops when defaults haven't loaded yet", async () => {
+        it("server-backed reset on a server without the route reports a key it has no default for", async () => {
             Notice.clear();
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = {};
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({});
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await extraButtonOnClicks[TEMPERATURE_RESET]();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(Notice.instances.length).toBe(0);
+            expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
         });
 
         it("server-backed reset surfaces a reset-failure notice when updateConfig rejects", async () => {
@@ -5053,7 +5068,7 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = { temperature: 0.7 };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ temperature: 0.7 });
             await extraButtonOnClicks[TEMPERATURE_RESET]();
             expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
         });
@@ -5090,7 +5105,7 @@ describe("managed mode settings", () => {
             throw new Error("wiki_prune_raw reset button not found");
         });
 
-        it("no-ops silently when the key is absent from configDefaults", async () => {
+        it("writes nothing when the key is absent from configDefaults", async () => {
             Notice.clear();
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
@@ -5138,7 +5153,7 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = { chunk_size: 512 };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
@@ -5152,7 +5167,7 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = {
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
                 chunk_size: 512,
                 crawl_max_depth: 2,
                 openai_api_key: "",
@@ -5161,7 +5176,7 @@ describe("managed mode settings", () => {
                 mistral_api_key: "",
                 openrouter_api_key: "",
                 hf_token: "",
-            };
+            });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512, crawl_max_depth: 2 });
@@ -5174,7 +5189,10 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = { openai_api_key: "", hf_token: "" };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                openai_api_key: "",
+                hf_token: "",
+            });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
@@ -5188,9 +5206,348 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const captured = captureSettingCallbacks(() => tab.display());
-            (tab as any).configDefaults = { chunk_size: 512 };
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
+        });
+    });
+
+    describe("setting source pills", () => {
+        const pillTexts = (tab: LilbeeSettingTab): string[] =>
+            (tab.containerEl as unknown as MockElement)
+                .findAll(PILL_CLS.SOURCE)
+                .map((el) => el.textContent)
+                .sort();
+
+        it("marks a user value and an environment value, and nothing for profile, built-in or auto", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSources as ReturnType<typeof vi.fn>).mockResolvedValue({
+                sources: {
+                    chunk_size: "user",
+                    temperature: "env",
+                    top_k: "profile",
+                    max_distance: "built_in",
+                    seed: "auto",
+                },
+            });
+            const tab = makeTab(plugin);
+            tab.display();
+            await vi.waitFor(() => {
+                expect(pillTexts(tab)).toEqual(["LILBEE_TEMPERATURE", MESSAGES.PILL_SOURCE_USER].sort());
+            });
+            const userPill = (tab.containerEl as unknown as MockElement).find(PILL_CLS.SOURCE_USER)!;
+            expect(userPill.textContent).toBe(MESSAGES.PILL_SOURCE_USER);
+        });
+
+        it("shows no pills on a server without the sources route", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(plugin.api.configSources).toHaveBeenCalled();
+            expect(pillTexts(tab)).toEqual([]);
+        });
+
+        it("shows no pills when the sources cannot be read", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSources as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(pillTexts(tab)).toEqual([]);
+        });
+
+        it("re-reads the sources after a write, so the edited row gains its pill", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const sources = plugin.api.configSources as ReturnType<typeof vi.fn>;
+            sources.mockResolvedValue({ sources: {} });
+            const tab = makeTab(plugin);
+            const { textByName } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            expect(pillTexts(tab)).toEqual([]);
+
+            sources.mockResolvedValue({ sources: { top_k: "user" } });
+            await textByName.get(MESSAGES.LABEL_RESULTS_COUNT)!("10");
+            await vi.waitFor(() => {
+                expect(pillTexts(tab)).toEqual([MESSAGES.PILL_SOURCE_USER]);
+            });
+        });
+
+        it("drops the pill once a reset removes the user value", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const sources = plugin.api.configSources as ReturnType<typeof vi.fn>;
+            sources.mockResolvedValue({ sources: { temperature: "user" } });
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["temperature"],
+                reindex_required: false,
+            });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await vi.waitFor(() => {
+                expect(pillTexts(tab)).toEqual([MESSAGES.PILL_SOURCE_USER]);
+            });
+
+            sources.mockResolvedValue({ sources: { temperature: "profile" } });
+            await extraButtonOnClicks[TEMPERATURE_RESET_BUTTON]();
+            await vi.waitFor(() => {
+                expect(pillTexts(tab)).toEqual([]);
+            });
+        });
+
+        it("clears stale pill hosts on a second render, like every other per-render map", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const hosts = (tab as unknown as { sourcePillHosts: Map<string, MockElement> }).sourcePillHosts;
+            hosts.set("a_row_this_render_never_registers", new MockElement());
+
+            tab.display();
+
+            expect(hosts.has("a_row_this_render_never_registers")).toBe(false);
+        });
+    });
+
+    describe("per-render row maps added alongside the source pills", () => {
+        it("clears stale server-config sliders on a second render", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const sliders = (tab as unknown as { serverConfigSliders: Map<string, unknown> }).serverConfigSliders;
+            sliders.set("a_key_this_render_never_registers", { setValue: () => undefined });
+
+            tab.display();
+
+            expect(sliders.has("a_key_this_render_never_registers")).toBe(false);
+        });
+
+        it("clears stale memory toggles on a second render", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            const toggles = (tab as unknown as { memoryToggles: Map<string, unknown> }).memoryToggles;
+            toggles.set("a_key_this_render_never_registers", { setValue: () => undefined });
+
+            tab.display();
+
+            expect(toggles.has("a_key_this_render_never_registers")).toBe(false);
+        });
+    });
+
+    describe("reset through the server's reset route", () => {
+        it("removes the user value with the reset route and writes no default", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["temperature"],
+                reindex_required: false,
+            });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await extraButtonOnClicks[TEMPERATURE_RESET_BUTTON]();
+            expect(plugin.api.resetConfig).toHaveBeenCalledWith(["temperature"]);
+            expect(plugin.api.configDefaults).not.toHaveBeenCalled();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FIELD_RESET(MESSAGES.LABEL_GEN_TEMPERATURE)),
+            ).toBe(true);
+        });
+
+        it("rebuilds the index when the value a reset falls back to invalidates it", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["temperature"],
+                reindex_required: true,
+            });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+            await extraButtonOnClicks[TEMPERATURE_RESET_BUTTON]();
+            expect(plugin.triggerSync).toHaveBeenCalledWith({ forceRebuild: true });
+        });
+
+        it("reports a refused reset and never falls back to writing the default", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error(`${SERVER_STATUS_PREFIX} 400: invalid fallback`),
+            );
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await extraButtonOnClicks[TEMPERATURE_RESET_BUTTON]();
+            expect(plugin.api.configDefaults).not.toHaveBeenCalled();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(
+                Notice.instances.some(
+                    (n) => n.message === MESSAGES.NOTICE_FAILED_RESET(MESSAGES.LABEL_GEN_TEMPERATURE),
+                ),
+            ).toBe(true);
+        });
+
+        it("Reset all sends every writable setting the route accepts, minus credentials", async () => {
+            Notice.clear();
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const schema = {
+                fields: [...configSchema.fields, { ...configSchema.fields[0], key: "openai_api_key", writable: true }],
+            };
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(schema);
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: [],
+                reindex_required: false,
+            });
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
+            const sent = (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mock.calls[0][0] as string[];
+            const expected = configSchema.fields
+                .filter((f) => f.writable && f.key !== "documents_dir" && f.key !== "llm_provider")
+                .map((f) => f.key);
+            expect(sent).toEqual(expected);
+            expect(sent).not.toContain("openai_api_key");
+            expect(sent).not.toContain("chat_model");
+            expect(plugin.api.configDefaults).not.toHaveBeenCalled();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SETTINGS_RESET)).toBe(true);
+        });
+
+        it("Reset all reports a refused reset and writes no defaults", async () => {
+            Notice.clear();
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            (plugin.api.resetConfig as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error(`${SERVER_STATUS_PREFIX} 400: refused`),
+            );
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RESET_ALL)).toBe(true);
+        });
+
+        it("Reset all writes the defaults on a server with the schema but no reset route", async () => {
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+                chunk_size: 512,
+                hf_token: "",
+            });
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
+            expect(plugin.api.resetConfig).toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
+        });
+
+        it("Reset all writes nothing when the schema cannot be read for a reason other than a missing route", async () => {
+            Notice.clear();
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            const tab = makeTab(plugin);
+            const captured = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
+            expect(plugin.api.resetConfig).not.toHaveBeenCalled();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RESET_ALL)).toBe(true);
+        });
+    });
+
+    describe("advanced settings fold", () => {
+        const parentClasses = (tab: LilbeeSettingTab, key: string): string[] => {
+            const el = (tab as any).serverConfigHideableEls.get(key) as MockElement;
+            return el.parentElement!.classList.list;
+        };
+
+        it("moves the rows the schema flags advanced into a closed More settings fold", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            const tab = makeTab(plugin);
+            tab.display();
+            await vi.waitFor(() => {
+                expect(
+                    (tab.containerEl as unknown as MockElement).findAll("lilbee-more-settings").length,
+                ).toBeGreaterThan(0);
+            });
+            expect(parentClasses(tab, "ingest_processes")).toContain("lilbee-more-settings");
+            expect(parentClasses(tab, "chunk_size")).not.toContain("lilbee-more-settings");
+            const fold = (tab as any).serverConfigHideableEls.get("ingest_processes").parentElement as MockElement;
+            expect(fold.tagName).toBe("DETAILS");
+            expect(fold.getAttribute("open")).toBeNull();
+            const summary = fold.children.find((c) => c.tagName === "SUMMARY")!;
+            const folded = fold.children.filter((c) => c.classList.contains("setting-item")).length;
+            expect(summary.textContent).toBe(MESSAGES.LABEL_MORE_SETTINGS_COUNT(folded));
+        });
+
+        it("folds the advanced rerank row at the end of the plugin's own Advanced section", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const advancedSection = (): MockElement =>
+                (tab.containerEl as unknown as MockElement)
+                    .findAll("lilbee-advanced-details")
+                    .find((el) =>
+                        el.children.some((c) => c.tagName === "SUMMARY" && c.textContent === MESSAGES.LABEL_ADVANCED),
+                    )!;
+            tab.display();
+            expect(advancedSection().findAll("lilbee-more-settings")).toEqual([]);
+
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+            (tab as any).loadConfigChoices();
+            await vi.waitFor(() => {
+                expect(advancedSection().findAll("lilbee-more-settings")).toHaveLength(1);
+            });
+            const section = advancedSection();
+            const fold = section.children[section.children.length - 1];
+            expect(fold.classList.contains("lilbee-more-settings")).toBe(true);
+            expect(fold.children.find((c) => c.tagName === "SUMMARY")!.textContent).toBe(
+                MESSAGES.LABEL_MORE_SETTINGS_COUNT(1),
+            );
+        });
+
+        it("folds nothing on a server whose schema carries no advanced flag", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const unflagged = {
+                fields: configSchema.fields.map(({ advanced: _advanced, ...field }) => field),
+            };
+            (plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(unflagged);
+            const tab = makeTab(plugin);
+            tab.display();
+            await vi.waitFor(() => {
+                expect((tab as any).configChoices).not.toBeNull();
+            });
+            expect((tab.containerEl as unknown as MockElement).findAll("lilbee-more-settings")).toEqual([]);
+            expect(parentClasses(tab, "ingest_processes")).not.toContain("lilbee-more-settings");
         });
     });
 
@@ -8892,10 +9249,10 @@ describe("managed mode settings", () => {
     });
 
     describe("generation new fields", () => {
-        const MAX_TOKENS_IDX = 6;
-        const MAX_REASONING_CHARS_IDX = 7;
-        const MODEL_KEEP_ALIVE_IDX = 8;
-        const GPU_FRACTION_IDX = 9;
+        const MAX_TOKENS_IDX = 7;
+        const MAX_REASONING_CHARS_IDX = 8;
+        const MODEL_KEEP_ALIVE_IDX = 9;
+        const GPU_FRACTION_IDX = 10;
 
         it("hides each new generation row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -10110,14 +10467,14 @@ describe("new server config fields", () => {
 
         it("leaves Reset all without API key fields and without settings the server refuses", async () => {
             mockGenericConfirmResult = true;
-            const { plugin, tab, captured } = await render();
-            (tab as any).configDefaults = {
+            const { plugin, captured } = await render();
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
                 chunk_size: 512,
                 llm_provider: "auto",
                 memory_token_budget_zz: 400,
                 deepseek_api_key: "",
                 main_gpu: 0,
-            };
+            });
             await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 chunk_size: 512,

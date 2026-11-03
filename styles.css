@@ -483,6 +483,103 @@
     display: none;
 }
 
+/* Narrow settings window. The tab's container carries .lilbee-settings-tab on both render paths.
+   A row wraps its control below the name once the name would get less than 10rem, and the
+   control, its selects and its buttons shrink to the row. */
+.lilbee-settings-tab .setting-item {
+    flex-wrap: wrap;
+    row-gap: var(--size-4-2, 8px);
+}
+
+.lilbee-settings-tab .setting-item-info {
+    min-width: min(10rem, 100%);
+    overflow-wrap: anywhere;
+}
+
+.lilbee-settings-tab .setting-item-control {
+    position: relative;
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.lilbee-settings-tab .setting-item-control select,
+.lilbee-settings-tab .setting-item-control input[type="text"] {
+    max-width: 100%;
+    min-width: 0;
+    text-overflow: ellipsis;
+}
+
+/* Obsidian sizes a select from a hidden copy at max-content width. Anchor that copy to the
+   control's right edge so it reaches left, where it adds no sideways scroll. */
+.lilbee-settings-tab .setting-item-control .dropdown.is-measuring {
+    right: 0;
+}
+
+.lilbee-settings-tab .setting-item-control button {
+    max-width: 100%;
+    height: auto;
+    min-height: var(--input-height);
+    white-space: normal;
+}
+
+/* On 1.13+ a row lays its parts out as a column that does not stretch them, so the extras box
+   took the width of its widest content. Stretch it to the row, and give the rows inside it the
+   row's width rather than a second inset. */
+.lilbee-settings-tab .lilbee-setting-extras {
+    align-self: stretch;
+    max-width: 100%;
+}
+
+.lilbee-settings-tab .lilbee-setting-extras .setting-item {
+    padding-inline: 0;
+}
+
+/* A narrow catalog table shows each model as a block: name, size, then its actions. */
+.lilbee-settings-tab .lilbee-model-catalog {
+    container-type: inline-size;
+}
+
+@container (max-width: 360px) {
+    .lilbee-model-catalog table,
+    .lilbee-model-catalog tbody,
+    .lilbee-model-catalog tr,
+    .lilbee-model-catalog td {
+        display: block;
+    }
+
+    .lilbee-model-catalog tr:first-child {
+        display: none;
+    }
+
+    .lilbee-model-catalog tr {
+        padding: var(--size-4-1, 4px) 0;
+        border-bottom: 1px solid var(--background-modifier-border);
+    }
+
+    .lilbee-model-catalog table td {
+        padding: 0;
+        border-bottom: none;
+        white-space: normal;
+        text-align: left;
+        overflow-wrap: anywhere;
+    }
+
+    .lilbee-model-catalog td:empty {
+        display: none;
+    }
+
+    .lilbee-model-actions {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .lilbee-installed {
+        text-align: left;
+        white-space: normal;
+    }
+}
+
 /* A row that only hosts extras: no empty name, description or control band above them. */
 .lilbee-extras-only-row > .setting-item-info,
 .lilbee-extras-only-row > .setting-item-control {
@@ -1201,6 +1298,80 @@
     background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
     color: var(--text-normal);
     font-variant-numeric: tabular-nums;
+}
+
+.lilbee-pill-source {
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.lilbee-pill-source-user {
+    background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    color: var(--text-normal);
+}
+
+.lilbee-pill-source-env {
+    background: color-mix(in srgb, var(--text-warning) 18%, transparent);
+    color: var(--text-normal);
+}
+
+.lilbee-pill-reindex {
+    background: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-profile-folder,
+.lilbee-pill-profile-active {
+    margin-left: 8px;
+    vertical-align: middle;
+    background: var(--background-modifier-hover);
+    color: var(--text-muted);
+}
+
+.lilbee-pill-profile-active {
+    background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    color: var(--text-normal);
+}
+
+/* Profiles */
+
+.lilbee-profile-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    margin: 4px 0 12px;
+    font-size: var(--font-ui-small);
+}
+
+.lilbee-profile-table th,
+.lilbee-profile-table td {
+    overflow-wrap: anywhere;
+    padding: 4px 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-profile-name {
+    width: 100%;
+}
+
+.lilbee-profile-name-error {
+    color: var(--text-error);
+    min-height: 1em;
+}
+
+.lilbee-profile-library-row {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-profile-library-name {
+    font-weight: 600;
+}
+
+.lilbee-profile-library-actions {
+    display: flex;
+    gap: 8px;
 }
 
 /* Section Headings */

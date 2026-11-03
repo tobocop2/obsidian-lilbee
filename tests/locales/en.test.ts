@@ -284,6 +284,13 @@ describe("MESSAGES", () => {
             expect(MESSAGES.NOTICE_CRAWL_DONE(10, 2)).toBe("lilbee: crawl done: 10 pages, 2 failed");
         });
 
+        it("LABEL_ANALYZE_READING names the counted files only when there are some", () => {
+            expect(MESSAGES.LABEL_ANALYZE_READING(3, 10, 0)).toBe("Read 3 of 10 documents.");
+            expect(MESSAGES.LABEL_ANALYZE_READING(3, 10, 4)).toBe(
+                "Read 3 of 10 documents; counted 4 code, image and archive files.",
+            );
+        });
+
         it("NOTICE_CRAWL_DONE produces correct output", () => {
             expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done: 10 pages");
         });

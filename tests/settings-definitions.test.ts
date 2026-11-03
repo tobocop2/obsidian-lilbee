@@ -5,7 +5,7 @@
  */
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, MockElement, Setting, setApiVersion } from "./__mocks__/obsidian";
-import { LilbeeSettingTab } from "../src/settings";
+import { CLS_SETTINGS_TAB, LilbeeSettingTab } from "../src/settings";
 import {
     DEFAULT_SETTINGS,
     CAPABILITY,
@@ -15,11 +15,14 @@ import {
     type LilbeeSettings,
 } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import { PILL_CLS } from "../src/components/pill";
+import configSchema from "./fixtures/config-schema.json";
 import { formatDiskSize } from "../src/utils";
 import { err, ok } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 import type LilbeePlugin from "../src/main";
+import { ACTIVE_APPLIED, DIFF_ACTIVE, LIST } from "./profile-fixtures";
 
 const DEFINITIONS_VERSION = "1.13.0";
 const LEGACY_VERSION = "1.12.0";
@@ -79,6 +82,10 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, overrides: Record<st
             config: vi.fn().mockResolvedValue({ memory_enabled: true, memory_auto_extract: false }),
             configDefaults: vi.fn().mockRejectedValue(new Error("offline")),
             configSchema: vi.fn().mockRejectedValue(new Error("offline")),
+            configSources: vi.fn().mockResolvedValue(null),
+            // A server without profiles, as every server before them is.
+            listProfiles: vi.fn().mockResolvedValue(null),
+            resetConfig: vi.fn().mockResolvedValue(null),
             updateConfig: vi.fn().mockResolvedValue({}),
             catalog: vi.fn().mockRejectedValue(new Error("offline")),
             installedModels: vi.fn().mockResolvedValue({ models: [] }),
@@ -169,6 +176,10 @@ function renderDefinitions(items: Definition[], container: MockElement, rendered
             names.push(...renderDefinitions(item.items ?? [], listEl, rendered));
             continue;
         }
+        if (item.type === "page") {
+            names.push(item.name ?? "", ...renderDefinitions(item.items ?? [], container));
+            continue;
+        }
         if (item.name !== undefined && item.name !== "") names.push(item.name);
         if (item.render) {
             const setting = new Setting(container);
@@ -247,6 +258,11 @@ async function namesFromDisplay(tab: LilbeeSettingTab): Promise<string[]> {
     return [...rows, ...summaries(tab.containerEl as unknown as MockElement)];
 }
 
+/** The Ingest group as the tab declares it now. */
+function ingestGroup(tab: LilbeeSettingTab): Definition {
+    return (tab.getSettingDefinitions() as Definition[]).find((item) => item.heading === MESSAGES.LABEL_INGEST)!;
+}
+
 function makeTab(settings: Partial<LilbeeSettings> = {}, overrides: Record<string, unknown> = {}) {
     return new LilbeeSettingTab(new App() as never, makePlugin(settings, overrides));
 }
@@ -305,10 +321,30 @@ describe("declarative setting definitions", () => {
         expect(missing).toEqual([]);
 
         // And nothing is declared that no row backs, so search never lands on a setting that is not there.
-        // The coding-agent entry is the exception: it stands for a body that rebuilds itself.
-        const shown = new Set([...displayed, MESSAGES.LABEL_AGENT_CHOICE]);
+        // The coding-agent entry and the Profile group are the exceptions: each stands for a body that rebuilds
+        // itself, and the Profile group draws nothing against this server, which has no profiles.
+        const shown = new Set([...displayed, MESSAGES.LABEL_AGENT_CHOICE, MESSAGES.LABEL_PROFILE_SECTION]);
         const phantom = [...declared].filter((name) => name !== "" && !shown.has(name));
         expect(phantom).toEqual([]);
+    });
+
+    it("marks the container for the narrow-window rules on both paths, without display() on 1.13", () => {
+        // 1.13 draws the definitions into containerEl and never calls display(), so the class
+        // has to be there before either path runs. vitest has no layout; the widths come from the drive.
+        const tab = makeTab();
+        const display = vi.spyOn(tab, "display");
+        tab.getSettingDefinitions();
+        expect(display).not.toHaveBeenCalled();
+        expect((tab as unknown as { containerEl: MockElement }).containerEl.classList.contains(CLS_SETTINGS_TAB)).toBe(
+            true,
+        );
+
+        setApiVersion(LEGACY_VERSION);
+        const legacy = makeTab();
+        legacy.display();
+        expect(
+            (legacy as unknown as { containerEl: MockElement }).containerEl.classList.contains(CLS_SETTINGS_TAB),
+        ).toBe(true);
     });
 
     it("names the same rows in external mode", async () => {
@@ -390,6 +426,10 @@ describe("declarative setting definitions", () => {
             return original.call(this, name);
         };
         try {
+            renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            // The server config arrives and the tab updates; Obsidian re-runs every render callback then.
+            names.length = 0;
             renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
             await new Promise((resolve) => setTimeout(resolve, 0));
         } finally {
@@ -502,15 +542,146 @@ describe("declarative setting definitions", () => {
         const tab = makeTab();
         tab.getSettingDefinitions();
         expect(tab.plugin.api.config).not.toHaveBeenCalled();
-        expect(tab.plugin.api.configDefaults).not.toHaveBeenCalled();
+        expect(tab.plugin.api.configSources).not.toHaveBeenCalled();
         expect(tab.plugin.api.getCapability).not.toHaveBeenCalled();
+    });
+
+    it("puts the rows the schema flags advanced behind a More settings page in their own group", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ ingest_processes: 0, chunk_size: 512 });
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        await vi.waitFor(() => {
+            expect(tab.plugin.api.configSchema).toHaveBeenCalled();
+            expect(ingestGroup(tab).items!.some((item) => item.type === "page")).toBe(true);
+        });
+
+        const group = ingestGroup(tab);
+        const page = group.items!.find((item) => item.type === "page")!;
+        const pageRows = collectNames(page.items ?? []);
+        expect(pageRows).toContain(MESSAGES.LABEL_INGEST_PROCESSES);
+        expect(pageRows).not.toContain(MESSAGES.LABEL_CHUNK_SIZE);
+        expect(collectNames(group.items!.filter((item) => item.type !== "page"))).toContain(MESSAGES.LABEL_CHUNK_SIZE);
+        expect(page.name).toBe(MESSAGES.LABEL_MORE_SETTINGS_COUNT(pageRows.length));
+        expect(page.visible!()).toBe(true);
+    });
+
+    it("gives every More settings page its own name, also when two groups hold the same number of rows", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ ingest_processes: 0, chunk_size: 512 });
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        const pageNames = (items: Definition[]): string[] =>
+            items.flatMap((item) => [...(item.type === "page" ? [item.name!] : []), ...pageNames(item.items ?? [])]);
+        await vi.waitFor(() => {
+            expect(ingestGroup(tab).items!.some((item) => item.type === "page")).toBe(true);
+        });
+        const names = pageNames(tab.getSettingDefinitions() as Definition[]);
+        expect(names.length).toBeGreaterThan(1);
+        expect(new Set(names).size).toBe(names.length);
+        expect(names.some((name) => name.includes("): "))).toBe(true);
+    });
+
+    it("hides the More settings page while the server reports none of its rows", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.configSchema as ReturnType<typeof vi.fn>).mockResolvedValue(configSchema);
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        const fleetPage = (): Definition | undefined =>
+            (tab.getSettingDefinitions() as Definition[])
+                .find((item) => item.heading === MESSAGES.LABEL_FLEET)!
+                .items!.find((item) => item.type === "page");
+        await vi.waitFor(() => {
+            expect(fleetPage()).toBeDefined();
+        });
+        // Every Fleet row waits for the server to report its key.
+        expect(fleetPage()!.visible!()).toBe(false);
+    });
+
+    it("marks a user-set row with its source pill on the definitions path", async () => {
+        const tab = makeTab();
+        (tab.plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512, max_distance: 0.75 });
+        (tab.plugin.api.configSources as ReturnType<typeof vi.fn>).mockResolvedValue({
+            sources: { chunk_size: "user", max_distance: "built_in" },
+        });
+        // The first pass loads the server state; the rebuild it asks for draws the rows the server reports.
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
+        await vi.waitFor(() => {
+            expect(tab.plugin.api.configSources).toHaveBeenCalled();
+            expect(tab.plugin.api.config).toHaveBeenCalled();
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const container = new MockElement("div");
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        await vi.waitFor(() => {
+            expect(container.findAll(PILL_CLS.SOURCE).map((el) => el.textContent)).toEqual([MESSAGES.PILL_SOURCE_USER]);
+        });
+    });
+
+    it("clears stale pill hosts on a second definitions rebuild, like the render() path", () => {
+        const tab = makeTab();
+        tab.getSettingDefinitions();
+        const hosts = (tab as unknown as { sourcePillHosts: Map<string, MockElement> }).sourcePillHosts;
+        hosts.set("a_row_this_rebuild_never_registers", new MockElement());
+
+        tab.getSettingDefinitions();
+
+        expect(hosts.has("a_row_this_rebuild_never_registers")).toBe(false);
+    });
+
+    describe("clears stale single-element references on a second definitions rebuild", () => {
+        function assertCleared<K extends string>(field: K, stale: unknown): void {
+            const tab = makeTab();
+            tab.getSettingDefinitions();
+            (tab as unknown as Record<K, unknown>)[field] = stale;
+
+            tab.getSettingDefinitions();
+
+            expect((tab as unknown as Record<K, unknown>)[field]).toBeNull();
+        }
+
+        it("clears the stale chat-mode setting element", () => {
+            assertCleared("chatModeSettingEl", new MockElement());
+        });
+
+        it("clears the stale chat-mode dropdown", () => {
+            assertCleared("chatModeDropdown", { setValue: () => undefined });
+        });
+
+        it("clears the stale chat-mode select element", () => {
+            assertCleared("chatModeSelectEl", new MockElement() as unknown as HTMLSelectElement);
+        });
+
+        it("clears the stale API keys container", () => {
+            assertCleared("apiKeysContainerEl", new MockElement());
+        });
+
+        it("clears the stale crawler browser setup row", () => {
+            assertCleared("crawlerBrowserSetupEl", new MockElement());
+        });
+
+        it("clears the stale wiki sub-settings container", () => {
+            assertCleared("wikiSubSettingsEl", new MockElement());
+        });
+
+        it("clears the stale models container", () => {
+            assertCleared("modelsContainerEl", new MockElement());
+        });
+
+        it("clears the stale agent body element", () => {
+            assertCleared("agentBodyEl", new MockElement());
+        });
+
+        it("clears the stale version setting row", () => {
+            assertCleared("versionSettingEl", new MockElement());
+        });
     });
 
     it("loads the server state once the tab actually renders", () => {
         const tab = makeTab();
         renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement("div"));
         expect(tab.plugin.api.config).toHaveBeenCalled();
-        expect(tab.plugin.api.configDefaults).toHaveBeenCalled();
+        expect(tab.plugin.api.configSources).toHaveBeenCalled();
         expect(tab.plugin.api.getCapability).toHaveBeenCalled();
     });
 
@@ -772,5 +943,94 @@ describe("refreshing the tab", () => {
         setApiVersion(LEGACY_VERSION);
         const tab = makeTab();
         expect(() => (tab as any).setRowVisible(null, true)).not.toThrow();
+    });
+});
+
+describe("the Profile group", () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    /** A tab on a server that serves profiles. */
+    function profileTab() {
+        const tab = makeTab();
+        Object.assign(tab.plugin.api, {
+            listProfiles: vi.fn().mockResolvedValue(LIST),
+            activeProfile: vi.fn().mockResolvedValue(ACTIVE_APPLIED),
+            profileDiff: vi.fn().mockResolvedValue(DIFF_ACTIVE),
+        });
+        return tab;
+    }
+
+    const profileGroupOf = (tab: LilbeeSettingTab) =>
+        (tab.getSettingDefinitions() as Definition[]).find((item) => item.heading === MESSAGES.LABEL_PROFILE_SECTION)!;
+
+    afterEach(() => setApiVersion(DEFINITIONS_VERSION));
+
+    it("comes first after the feedback row, hidden until the server answers with profiles", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = profileTab();
+        const items = tab.getSettingDefinitions() as Definition[];
+        expect(items[1].heading).toBe(MESSAGES.LABEL_PROFILE_SECTION);
+        expect(items[1].visible!()).toBe(false);
+        renderDefinitions(items, new MockElement());
+        await settle();
+        expect(tab.plugin.api.listProfiles).toHaveBeenCalled();
+        expect(items[1].visible!()).toBe(true);
+    });
+
+    it("stays hidden on a server without profiles", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = makeTab();
+        const container = new MockElement();
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], container);
+        await settle();
+        expect(profileGroupOf(tab).visible!()).toBe(false);
+        expect(renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement())).not.toContain(
+            MESSAGES.LABEL_PROFILE_SECTION,
+        );
+    });
+
+    it("draws the group's body into the group once it shows", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = profileTab();
+        renderDefinitions(tab.getSettingDefinitions() as Definition[], new MockElement());
+        await settle();
+        const container = new MockElement();
+        renderDefinitions([profileGroupOf(tab)], container);
+        expect(container.find("lilbee-profile-body")?.find("lilbee-profile-description")?.textContent).toBe(
+            ACTIVE_APPLIED.profile!.description,
+        );
+        expect(container.find("setting-item-heading")).toBeNull();
+    });
+
+    it("draws its heading and body at the top of display() before 1.13", async () => {
+        setApiVersion(LEGACY_VERSION);
+        const tab = profileTab();
+        tab.display();
+        await settle();
+        const root = tab.containerEl as unknown as MockElement;
+        const section = root.find("lilbee-profile-section")!;
+        expect(section.find("setting-item-heading")?.textContent).toBe(MESSAGES.LABEL_PROFILE_SECTION);
+        expect(section.find("lilbee-profile-changes-help")?.textContent).toBe(
+            MESSAGES.PROFILE_CHANGES_HELP("Notes and markdown"),
+        );
+        const firstHeading = root.findAll("setting-item-heading")[0];
+        expect(firstHeading.textContent).toBe(MESSAGES.LABEL_PROFILE_SECTION);
+    });
+
+    it("draws nothing before 1.13 on a server without profiles", async () => {
+        setApiVersion(LEGACY_VERSION);
+        const tab = makeTab();
+        tab.display();
+        await settle();
+        const section = (tab.containerEl as unknown as MockElement).find("lilbee-profile-section")!;
+        expect(section.find("lilbee-profile-body")!.children).toHaveLength(0);
+    });
+
+    it("rebuilds the tab after a profile change", async () => {
+        setApiVersion(DEFINITIONS_VERSION);
+        const tab = profileTab();
+        const refresh = vi.spyOn(tab, "refresh");
+        (tab as unknown as { profileGroup: { onChanged: () => void } }).profileGroup.onChanged();
+        expect(refresh).toHaveBeenCalled();
     });
 });

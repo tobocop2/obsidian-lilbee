@@ -31,6 +31,31 @@
         "streams": false
       }
     },
+    "/api/analyze": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/analyze/dismiss": {
+      "POST": {
+        "fields": {
+          "analyzed": "boolean",
+          "tip_dismissed": "boolean",
+          "tip_shows": "boolean"
+        },
+        "streams": false
+      }
+    },
+    "/api/analyze/state": {
+      "GET": {
+        "fields": {
+          "analyzed": "boolean",
+          "tip_dismissed": "boolean",
+          "tip_shows": "boolean"
+        },
+        "streams": false
+      }
+    },
     "/api/ask": {
       "POST": {
         "fields": {
@@ -84,10 +109,27 @@
         "streams": false
       }
     },
+    "/api/config/reset": {
+      "POST": {
+        "fields": {
+          "reindex_required": "boolean",
+          "updated": "array"
+        },
+        "streams": false
+      }
+    },
     "/api/config/schema": {
       "GET": {
         "fields": {
           "fields": "array"
+        },
+        "streams": false
+      }
+    },
+    "/api/config/sources": {
+      "GET": {
+        "fields": {
+          "sources": "object"
         },
         "streams": false
       }
@@ -149,6 +191,7 @@
           "chat_status": "unknown",
           "embed_token_cap": "number",
           "status": "string",
+          "upgrade": "object",
           "version": "string",
           "warnings": "array"
         },
@@ -357,6 +400,161 @@
         "streams": false
       }
     },
+    "/api/profiles": {
+      "GET": {
+        "fields": {
+          "profiles": "array"
+        },
+        "streams": false
+      },
+      "POST": {
+        "fields": {
+          "absorbed": "array",
+          "folder": "unknown",
+          "name": "string",
+          "path": "string",
+          "warnings": "array"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/active": {
+      "GET": {
+        "fields": {
+          "changes": "array",
+          "error": "string",
+          "name": "string",
+          "profile": "object",
+          "status": "unknown",
+          "values": "object"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/discard": {
+      "POST": {
+        "fields": {
+          "dropped": "array",
+          "reindex_required": "boolean",
+          "warnings": "array"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/import": {
+      "POST": {
+        "fields": {
+          "folder": "unknown",
+          "name": "string",
+          "path": "string"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/new": {
+      "POST": {
+        "fields": {
+          "folder": "unknown",
+          "name": "string",
+          "path": "string"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/validate": {
+      "POST": {
+        "fields": {
+          "name": "string",
+          "problems": "array",
+          "valid": "boolean"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/{name:str}": {
+      "DELETE": {
+        "fields": {
+          "folder": "unknown",
+          "name": "string",
+          "path": "string"
+        },
+        "streams": false
+      },
+      "GET": {
+        "fields": {
+          "authors": "array",
+          "credit": "string",
+          "description": "string",
+          "error": "string",
+          "evidence": "string",
+          "folder": "unknown",
+          "min_lilbee": "string",
+          "name": "string",
+          "path": "string",
+          "shadowed_by": "unknown",
+          "tested_on": "string",
+          "valid": "boolean",
+          "values": "object"
+        },
+        "streams": false
+      },
+      "PATCH": {
+        "fields": {
+          "folder": "unknown",
+          "name": "string",
+          "path": "string"
+        },
+        "streams": false
+      },
+      "PUT": {
+        "fields": {
+          "absorbed": "array",
+          "folder": "unknown",
+          "name": "string",
+          "path": "string",
+          "warnings": "array"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/{name:str}/apply": {
+      "POST": {
+        "fields": {
+          "changes": "array",
+          "name": "string",
+          "new_files_only": "array",
+          "reindex_required": "boolean",
+          "warnings": "array"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/{name:str}/diff": {
+      "GET": {
+        "fields": {
+          "changes": "array",
+          "kept": "array",
+          "name": "string",
+          "untouched_count": "number"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/{name:str}/duplicate": {
+      "POST": {
+        "fields": {
+          "folder": "unknown",
+          "name": "string",
+          "path": "string"
+        },
+        "streams": false
+      }
+    },
+    "/api/profiles/{name:str}/export": {
+      "GET": {
+        "streams": false
+      }
+    },
     "/api/search": {
       "GET": {
         "streams": false
@@ -471,6 +669,7 @@
           "ocr_note": "string",
           "skipped": "array",
           "skipped_total": "number",
+          "source_kinds": "object",
           "sources": "array",
           "total_chunks": "number"
         },
@@ -642,5 +841,5 @@
       }
     }
   },
-  "version": "0.6.90b448"
+  "version": "0.6.90b691"
 }

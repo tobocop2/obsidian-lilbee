@@ -20,6 +20,12 @@ vi.mock("../../src/views/catalog-modal", () => ({
     }),
 }));
 
+const analyzeFlows = vi.hoisted(() => ({ runAnalyze: vi.fn() }));
+vi.mock("../../src/analyze", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../../src/analyze")>()),
+    ...analyzeFlows,
+}));
+
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
         hf_repo: "Qwen/Qwen3-0.6B-GGUF",
@@ -158,6 +164,7 @@ async function startManagedFromServerStep(plugin: Record<string, unknown>): Prom
 describe("SetupWizard", () => {
     beforeEach(() => {
         Notice.clear();
+        analyzeFlows.runAnalyze.mockReset();
     });
 
     afterEach(() => {
@@ -165,10 +172,10 @@ describe("SetupWizard", () => {
     });
 
     describe("Step indicator", () => {
-        // Indicator shows 6 slots (Server..Done = steps 1..6) with 5 connecting
+        // Indicator shows 7 slots (Server..Done = steps 1..7) with 6 connecting
         // lines between them. Welcome (step 0) is the intro splash and has no
         // active slot — all slots are muted until the user advances.
-        it("renders 6 circles and 5 lines on welcome step", () => {
+        it("renders 7 circles and 6 lines on welcome step", () => {
             const plugin = makePlugin();
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -178,8 +185,8 @@ describe("SetupWizard", () => {
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-circle");
             const lines = indicator!.findAll("lilbee-wizard-step-line");
-            expect(dots.length).toBe(6);
-            expect(lines.length).toBe(5);
+            expect(dots.length).toBe(7);
+            expect(lines.length).toBe(6);
         });
 
         it("marks no slot as active on welcome (step 0)", () => {
@@ -213,30 +220,30 @@ describe("SetupWizard", () => {
             expect(dots[1].classList.contains("is-active")).toBe(true);
             expect(dots[2].classList.contains("is-active")).toBe(false);
             expect(dots[2].classList.contains("is-done")).toBe(false);
-            // slot[5] = Done (step=6) — untouched while we're on Model.
-            expect(dots[5].classList.contains("is-active")).toBe(false);
-            expect(dots[5].classList.contains("is-done")).toBe(false);
+            // slot[6] = Done (step=7) — untouched while we're on Model.
+            expect(dots[6].classList.contains("is-active")).toBe(false);
+            expect(dots[6].classList.contains("is-done")).toBe(false);
             // line[0] is between slot[0] (step=1) and slot[1] (step=2) — done.
             expect(lines[0].classList.contains("is-done")).toBe(true);
             expect(lines[1].classList.contains("is-done")).toBe(false);
             expect(lines[4].classList.contains("is-done")).toBe(false);
         });
 
-        it("marks prior slots done and last slot active on done step (step 6)", () => {
+        it("marks prior slots done and last slot active on done step (step 7)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
             const dots = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-circle");
             const lines = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-line");
-            // slots[0..4] correspond to steps 1..5 — all done. slot[5] = step 6 = active.
-            for (let i = 0; i < 5; i++) {
+            // slots[0..5] correspond to steps 1..6 — all done. slot[6] = step 7 = active.
+            for (let i = 0; i < 6; i++) {
                 expect(dots[i].classList.contains("is-done")).toBe(true);
             }
-            expect(dots[5].classList.contains("is-active")).toBe(true);
+            expect(dots[6].classList.contains("is-active")).toBe(true);
             for (const line of lines) {
                 expect(line.classList.contains("is-done")).toBe(true);
             }
@@ -1697,7 +1704,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1800,7 +1807,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1819,7 +1826,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1836,7 +1843,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1855,7 +1862,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1873,7 +1880,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1891,7 +1898,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1909,7 +1916,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1930,7 +1937,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
 
@@ -1954,7 +1961,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
 
@@ -1970,7 +1977,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1989,7 +1996,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const joined = collectTexts(wizard.contentEl as unknown as MockElement).join(" ");
@@ -2001,7 +2008,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2021,7 +2028,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2036,7 +2043,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2051,7 +2058,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: false } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2065,7 +2072,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2079,7 +2086,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2093,7 +2100,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2107,7 +2114,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2130,7 +2137,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2151,7 +2158,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2167,7 +2174,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2180,21 +2187,21 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
             const indicator = el.find("lilbee-wizard-step-indicator");
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-circle");
-            expect(dots.length).toBe(6);
+            expect(dots.length).toBe(7);
         });
 
         it("renders pros list items", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2206,7 +2213,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2229,7 +2236,7 @@ describe("SetupWizard", () => {
                 unchanged: 8,
                 failed: [],
             };
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2244,7 +2251,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2257,7 +2264,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2279,7 +2286,7 @@ describe("SetupWizard", () => {
             const app = plugin.app as unknown as App;
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2299,7 +2306,7 @@ describe("SetupWizard", () => {
             (plugin.app as unknown as App).setting = undefined;
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2316,7 +2323,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2329,7 +2336,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2345,7 +2352,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "test-model";
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2357,7 +2364,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2400,7 +2407,19 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Welcome to lilbee"))).toBe(true);
         });
 
-        it("back() at step 4 (sync) goes to step 3 (embedding picker)", () => {
+        it("back() at step 5 (sync) goes to step 4 (analyze)", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 5;
+            wizard.back();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes(MESSAGES.TITLE_WIZARD_ANALYZE))).toBe(true);
+        });
+
+        it("back() at step 4 (analyze) goes to step 3 (embedding picker)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
@@ -2412,15 +2431,25 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Pick an embedding model"))).toBe(true);
         });
 
-        it("back() at step 6 (done) goes to step 5 (wiki)", () => {
+        it("back() at step 7 (done) goes to step 6 (wiki)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
+        });
+
+        it("back() from sync skips the Analyze step the server does not have", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).analyzeSkipped = true;
+            (wizard as any).step = WIZARD_STEP.SYNC;
+            wizard.back();
+            expect((wizard as any).step).toBe(WIZARD_STEP.EMBEDDING_PICKER);
         });
     });
 
@@ -2465,7 +2494,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
 
@@ -2973,7 +3002,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -3101,6 +3130,57 @@ describe("SetupWizard", () => {
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("download & continue with no selection advances to the analyze step on a server that supports it", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.analyzeState = vi
+                .fn()
+                .mockResolvedValue({ analyzed: false, tip_dismissed: false, tip_shows: true });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes(MESSAGES.TITLE_WIZARD_ANALYZE))).toBe(true);
+        });
+
+        it("leaves Analyze out of the step bar on a server without analyze", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.analyzeState = vi.fn().mockResolvedValue(null);
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            findButtons(wizard.contentEl as unknown as MockElement)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            const indicator = (wizard.contentEl as unknown as MockElement).find("lilbee-wizard-step-indicator")!;
+            const labels = indicator.findAll("lilbee-wizard-step-label").map((l) => l.textContent);
+            expect(labels).toEqual(["Server", "Model", "Embed", "Sync", "Wiki", "Done"]);
+            const circles = indicator.findAll("lilbee-wizard-step-circle").map((c) => c.textContent);
+            expect(circles).toEqual(["✓", "✓", "✓", "4", "5", "6"]);
+            const badge = (wizard.contentEl as unknown as MockElement).find("lilbee-wizard-step-badge")!;
+            expect(badge.textContent).toContain("04");
         });
 
         it("download & continue with installed model sets embedding and advances to sync step", async () => {
@@ -3722,6 +3802,80 @@ describe("SetupWizard", () => {
         });
     });
 
+    describe("Step 4: Analyze", () => {
+        it("renders the analyze step with Back, Skip and Run analysis", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.ANALYZE;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes(MESSAGES.TITLE_WIZARD_ANALYZE))).toBe(true);
+            const labels = findButtons(el).map((b) => b.textContent);
+            expect(labels).toEqual([MESSAGES.BUTTON_BACK, MESSAGES.BUTTON_SKIP_ANALYZE, MESSAGES.BUTTON_RUN_ANALYZE]);
+        });
+
+        it("Back returns to the embedding picker", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.ANALYZE;
+            (wizard as any).renderStep();
+
+            findButtons(wizard.contentEl as unknown as MockElement)
+                .find((b) => b.textContent === MESSAGES.BUTTON_BACK)!
+                .trigger("click");
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick an embedding model"))).toBe(true);
+        });
+
+        it("Skip for now advances to Sync without running analyze", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.ANALYZE;
+            (wizard as any).renderStep();
+
+            findButtons(wizard.contentEl as unknown as MockElement)
+                .find((b) => b.textContent === MESSAGES.BUTTON_SKIP_ANALYZE)!
+                .trigger("click");
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+            expect(analyzeFlows.runAnalyze).not.toHaveBeenCalled();
+        });
+
+        it("Run analysis opens the analyze modal and still advances to Sync", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.ANALYZE;
+            (wizard as any).renderStep();
+
+            findButtons(wizard.contentEl as unknown as MockElement)
+                .find((b) => b.textContent === MESSAGES.BUTTON_RUN_ANALYZE)!
+                .trigger("click");
+
+            expect(analyzeFlows.runAnalyze).toHaveBeenCalledWith(plugin, null);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+    });
+
     describe("Embed step primary action", () => {
         /** Renders the embedding step over the given rows and returns its primary button. */
         async function embedStepPrimary(entries: CatalogEntry[]): Promise<MockElement> {
@@ -3875,7 +4029,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -3899,7 +4053,7 @@ describe("SetupWizard", () => {
                 unchanged: 6,
                 failed: [],
             };
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -3919,7 +4073,7 @@ describe("SetupWizard", () => {
                 unchanged: 10,
                 failed: [],
             };
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -3948,9 +4102,10 @@ describe("SetupWizard", () => {
                 [1, "server"],
                 [2, "model"],
                 [3, "embedding"],
-                [4, "sync"],
-                [5, "wiki"],
-                [6, "done"],
+                [4, "analyze"],
+                [5, "sync"],
+                [6, "wiki"],
+                [7, "done"],
             ];
             for (const [step, key] of cases) {
                 (wizard as any).step = step;
@@ -4090,7 +4245,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -4126,7 +4281,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -4141,7 +4296,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -4234,7 +4389,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -4252,7 +4407,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();

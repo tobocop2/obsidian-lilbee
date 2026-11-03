@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import { SEARCH_CHUNK_TYPE, type DocumentResult, type SearchChunkType } from "../types";
+import { CONFIG_KEY, SEARCH_CHUNK_TYPE, type DocumentResult, type SearchChunkType } from "../types";
 import { renderDocumentResult } from "./results";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
@@ -102,6 +102,12 @@ export class SearchModal extends Modal {
         this.resultsContainer.createDiv({ cls: "lilbee-loading" });
     }
 
+    /** The server's own top_k; the search route answers with a fixed depth when the request names none. */
+    private async serverTopK(): Promise<number | undefined> {
+        const topK = (await this.plugin.api.config())[CONFIG_KEY.TOP_K];
+        return typeof topK === "number" ? topK : undefined;
+    }
+
     private async runSearch(query: string): Promise<void> {
         if (!query) {
             this.renderEmptyState(MESSAGES.LABEL_ENTER_QUERY);
@@ -111,7 +117,7 @@ export class SearchModal extends Modal {
         try {
             const results: DocumentResult[] = await this.plugin.api.search(
                 query,
-                this.plugin.settings.topK,
+                await this.serverTopK(),
                 this.plugin.settings.searchChunkType,
             );
             if (!this.resultsContainer) return;
