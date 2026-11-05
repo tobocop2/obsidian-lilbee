@@ -454,6 +454,11 @@ export interface SSEEvent {
     data: unknown;
 }
 
+/** `data` of the final `done` event of a model pull; `warning` is set when the model installed but is incomplete. */
+export interface PullDoneData {
+    warning?: string;
+}
+
 export interface Message {
     role: "user" | "assistant" | "system";
     content: string;

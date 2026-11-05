@@ -125,6 +125,7 @@ function findButtons(el: MockElement): MockElement[] {
     return buttons;
 }
 
+const PULL_WARNING = "vision projector missing; image input will not work";
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /** A managed start that reports the given phases and then never settles. */
@@ -1337,6 +1338,55 @@ describe("SetupWizard", () => {
                         t.includes("Wiki (optional)"),
                 ),
             ).toBe(true);
+        });
+
+        it("shows the done warning once from the chat model download", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+                    yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
+        });
+
+        it("shows the done warning once from the embedding model download", async () => {
+            const entries = [makeEntry({ hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF" })];
+            const plugin = makePlugin({ settings: { serverMode: "external", setupCompleted: true } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+                    yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = WIZARD_STEP.EMBEDDING_PICKER;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const btn = findButtons(el).find((b) => b.textContent === "Download & continue");
+            btn!.trigger("click");
+            await tick();
+            await tick();
+
+            expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
         });
 
         it("handles pull failure", async () => {

@@ -33,6 +33,7 @@ import type LilbeePlugin from "../../src/main";
 import { SSE_EVENT, TASK_TYPE } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
 
+const PULL_WARNING = "vision projector missing; image input will not work";
 const mockChatViewConfirmResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
     ConfirmPullModal: vi.fn().mockImplementation(function () {
@@ -2367,6 +2368,36 @@ describe("ChatView.onOpen — model selector", () => {
 
         expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
         expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+    });
+
+    it("auto-pull shows the done warning once", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
+        });
+
+        async function* warnPull() {
+            yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+            yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(warnPull());
+        plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        (view as any).handleChatSelection("phi3");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
     });
 
     it("auto-pull SSE_EVENT.ERROR with string data fails the task", async () => {
@@ -5531,8 +5562,7 @@ describe("ChatView — pull stream non-error events", () => {
     it("autoPullAndSet ignores SSE events that are neither progress nor error", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        // Stream yields a DONE-like event that is neither PROGRESS nor ERROR,
-        // exercising the else-if false branch (711).
+        // A done event with no warning completes the pull without a warning notice.
         const { mockFn } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
         plugin.api.pullModel = mockFn;
         plugin.api.setChatModel = vi.fn((m: string) => Promise.resolve(ok({ model: m, reindex_required: false })));

@@ -9,6 +9,7 @@ import {
     extractServerErrorDetail,
     extractSseErrorCode,
     extractSseErrorMessage,
+    noticePullWarning,
     formatBytes,
     formatDiskSize,
     formatElapsed,
@@ -418,6 +419,23 @@ describe("extractSseErrorMessage", () => {
     it("falls back for a payload with no message field", () => {
         expect(extractSseErrorMessage({ other: "x" }, "fallback")).toBe("fallback");
     });
+});
+
+describe("noticePullWarning", () => {
+    beforeEach(() => Notice.clear());
+
+    it("shows the warning text as a notice", () => {
+        noticePullWarning({ warning: "projector missing" });
+        expect(Notice.instances.map((n) => n.message)).toEqual(["projector missing"]);
+    });
+
+    it.each([[{}], [null], [{ warning: "" }], [{ warning: 3 }], [undefined]])(
+        "shows nothing for done data %j",
+        (data) => {
+            noticePullWarning(data);
+            expect(Notice.instances).toHaveLength(0);
+        },
+    );
 });
 
 describe("isStreamInterruptedError", () => {

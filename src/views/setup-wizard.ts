@@ -41,6 +41,7 @@ import {
     SERVER_PROBE_TIMEOUT_MS,
     setDeterminateProgress,
     sessionTokenInvalidMessage,
+    noticePullWarning,
 } from "../utils";
 
 type FeaturedModel = CatalogEntry;
@@ -994,6 +995,8 @@ export class SetupWizard extends Modal {
                             ),
                         );
                     }
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     // A model that failed to download must not be set as active:
                     // the set is a ref write, so the server accepts it and the
@@ -1192,6 +1195,8 @@ export class SetupWizard extends Modal {
                             ),
                         );
                     }
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     // A model that failed to download must not be set as active:
                     // the set is a ref write, so the server accepts it and the

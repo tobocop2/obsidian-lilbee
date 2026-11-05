@@ -126,6 +126,8 @@ vi.mock("../src/diagnostics-export", () => ({
     exportDiagnostics: vi.fn().mockResolvedValue(undefined),
 }));
 
+const PULL_WARNING = "vision projector missing; image input will not work";
+
 let mockGenericConfirmResult = true;
 vi.mock("../src/views/confirm-modal", () => ({
     ConfirmModal: vi.fn().mockImplementation(function () {
@@ -2246,6 +2248,23 @@ describe("LilbeeSettingTab", () => {
             const { captured } = renderPickerWithPhi(plugin);
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
+        });
+
+        it("a done warning from the chat picker pull shows once", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            async function* warnPull() {
+                yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+                yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(warnPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ model: "m", reindex_required: false }),
+            );
+
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
+            expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
         });
 
         it("SSE error event (object with message) fails the task", async () => {
@@ -8306,6 +8325,40 @@ describe("managed mode settings", () => {
             const ok = await (tab as any).streamVisionPull(taskId, rerankEntry(), new AbortController().signal);
 
             expect(ok).toBe(true);
+        });
+
+        it("reranker pull shows the done warning once", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            async function* warnPull() {
+                yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+                yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(warnPull());
+            const tab = makeTab(plugin);
+            const taskId = plugin.taskQueue.enqueue("Pull", "pull" as any)!;
+
+            const ok = await (tab as any).streamRerankerPull(taskId, rerankEntry(), new AbortController().signal);
+
+            expect(ok).toBe(true);
+            expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
+        });
+
+        it("vision pull shows the done warning once", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            async function* warnPull() {
+                yield { event: SSE_EVENT.MESSAGE, data: { warning: PULL_WARNING } };
+                yield { event: SSE_EVENT.DONE, data: { warning: PULL_WARNING } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(warnPull());
+            const tab = makeTab(plugin);
+            const taskId = plugin.taskQueue.enqueue("Pull", "pull" as any)!;
+
+            const ok = await (tab as any).streamVisionPull(taskId, rerankEntry(), new AbortController().signal);
+
+            expect(ok).toBe(true);
+            expect(Notice.instances.filter((n) => n.message === PULL_WARNING)).toHaveLength(1);
         });
     });
 

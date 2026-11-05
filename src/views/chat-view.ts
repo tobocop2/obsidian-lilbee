@@ -66,6 +66,7 @@ import {
     isStreamInterruptedError,
     streamInterruptedMessage,
     extractServerErrorDetail,
+    noticePullWarning,
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
 import {
@@ -965,6 +966,8 @@ export class ChatView extends ItemView {
                             total: d.total,
                         });
                     }
+                } else if (event.event === SSE_EVENT.DONE) {
+                    noticePullWarning(event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
