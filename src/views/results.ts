@@ -172,6 +172,17 @@ export function renderSourceChip(
     }
 }
 
+/** A chip's name as DOM text: the `[n]` the answer cites, then the server's label, or the path when the server sent no label. */
+export function renderSourceName(
+    chip: HTMLElement,
+    ref: { source: string; label?: string | null; citation_number?: number | null },
+): void {
+    if (ref.citation_number != null) {
+        chip.createSpan({ text: `[${ref.citation_number}]`, cls: "lilbee-source-chip-number" });
+    }
+    chip.createSpan({ text: ref.label ?? ref.source, cls: "lilbee-source-chip-file" });
+}
+
 /**
  * Render a chip that groups multiple chunks from the same source under one
  * filename, with each chunk's location surfaced as a small clickable badge.
@@ -193,7 +204,7 @@ export function renderAggregatedSourceChips(
             continue;
         }
         const chip = container.createSpan({ cls: "lilbee-source-chip lilbee-source-chip-grouped" });
-        chip.createSpan({ text: first.source, cls: "lilbee-source-chip-file" });
+        renderSourceName(chip, first);
         for (const source of group) {
             const loc = formatLocation(source);
             const label = loc ?? "open";

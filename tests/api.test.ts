@@ -213,7 +213,9 @@ describe("session methods", () => {
         };
         fetchMock.mockResolvedValue(jsonResponse(updated));
 
-        const result = await client.appendSessionMessage("s1", "assistant", "an answer", ["notes.md"]);
+        const result = await client.appendSessionMessage("s1", "assistant", "an answer", [
+            { source: "notes.md", label: "notes", citation_number: 2 },
+        ] as never);
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/sessions/s1/messages`,
@@ -222,17 +224,17 @@ describe("session methods", () => {
         expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
             role: "assistant",
             content: "an answer",
-            sources: ["notes.md"],
+            source_refs: [{ source: "notes.md", citation_number: 2 }],
         });
         expect(result).toEqual(updated);
     });
 
-    it("appendSessionMessage() defaults sources to an empty list", async () => {
+    it("appendSessionMessage() defaults source_refs to an empty list", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ meta, messages: [], summary: "" }));
 
         await client.appendSessionMessage("s1", "user", "a question");
 
-        expect(JSON.parse(fetchMock.mock.calls[0][1].body).sources).toEqual([]);
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).source_refs).toEqual([]);
     });
 
     it("renameSession() PATCHes the new title", async () => {

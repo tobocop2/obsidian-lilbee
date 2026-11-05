@@ -36,12 +36,13 @@ import type {
     SessionDetail,
     SessionExport,
     SessionMessageItem,
+    SessionSourceRef,
     Source,
     SSEEvent,
 } from "../types";
 import { RateLimitedError, hasStatusLine, isHttpStatus } from "../api";
 
-import { memorySourceFromPath, renderAggregatedSourceChips, renderSourceChip } from "./results";
+import { memorySourceFromPath, renderAggregatedSourceChips, renderSourceChip, renderSourceName } from "./results";
 import { displayLabelForRef, extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
@@ -84,6 +85,7 @@ import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
 import { catalogThroughHosted, hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 import { electronDialog } from "../utils/file-dialog";
+import { sourceRefs, sourcesListMarkdown } from "../utils/source-labels";
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
 
@@ -137,6 +139,8 @@ interface Conversation {
     sessionId: string | null;
     /** A session write for this chat failed, so the server's copy is missing a turn. */
     persistFailed: boolean;
+    /** Each answer's Sources list, kept off `history` because `history` is sent to /api/chat. */
+    turnSources: WeakMap<Message, readonly SessionSourceRef[]>;
 }
 
 /** The model and search scope a session is opened with, as they stood when its first question was sent. */
@@ -147,15 +151,17 @@ interface SessionOrigin {
 
 /** A chat with nothing said yet and no saved session. */
 function emptyConversation(): Conversation {
-    return { history: [], summary: "", sessionId: null, persistFailed: false };
+    return { history: [], summary: "", sessionId: null, persistFailed: false, turnSources: new WeakMap() };
 }
 
 /** The chat as shown, in the plain format used when the server's export cannot stand in for it. */
-function transcriptMarkdown(history: readonly Message[]): string {
+function transcriptMarkdown(conversation: Conversation): string {
     const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW}: ${new Date().toLocaleDateString()}`, ""];
-    for (const msg of history) {
+    for (const msg of conversation.history) {
         const label = msg.role === SESSION_ROLE.USER ? "User" : "Assistant";
         lines.push(`**${label}**: ${msg.content}`, "");
+        const refs = conversation.turnSources.get(msg);
+        if (refs && refs.length > 0) lines.push(sourcesListMarkdown(MESSAGES.LABEL_SOURCES, refs), "");
     }
     return lines.join("\n");
 }
@@ -1079,10 +1085,10 @@ export class ChatView extends ItemView {
         sessionId: string | null,
         bubble: HTMLElement,
         content: string,
-        sources: string[],
+        refs: readonly SessionSourceRef[],
     ): Promise<void> {
         if (!sessionId) return;
-        const saved = await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.ASSISTANT, content, sources);
+        const saved = await this.plugin.api.appendSessionMessage(sessionId, SESSION_ROLE.ASSISTANT, content, refs);
         this.addAnswerActions(bubble, sessionId, saved.meta.message_count - 1, content);
     }
 
@@ -1219,7 +1225,9 @@ export class ChatView extends ItemView {
         if (detail.summary) this.renderSummaryBoundary(detail.summary);
         detail.messages.forEach((message, index) => {
             this.renderRestoredMessage(message, detail.meta.id, index);
-            this.conversation.history.push({ role: message.role, content: message.content });
+            const turn: Message = { role: message.role, content: message.content };
+            this.conversation.history.push(turn);
+            if (message.source_refs) this.conversation.turnSources.set(turn, message.source_refs);
         });
         this.restoreScope(detail.meta.scope);
         this.restoreModel(detail.meta.model_ref);
@@ -1301,22 +1309,23 @@ export class ChatView extends ItemView {
         const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const textEl = bubble.createDiv({ cls: "lilbee-chat-content" });
         void this.renderMarkdown(textEl, message.content);
-        if (message.sources.length > 0) this.renderRestoredSources(bubble, message.sources);
+        const refs = message.source_refs ?? [];
+        if (refs.length > 0) this.renderRestoredSources(bubble, refs);
         this.addAnswerActions(bubble, sessionId, index, message.content);
     }
 
-    /** Persisted sources are bare paths, so restored chips link out without the live chunk detail. */
-    private renderRestoredSources(container: HTMLElement, sources: string[]): void {
+    /** Persisted refs carry no chunk, so restored chips link out by path without the live chunk detail. */
+    private renderRestoredSources(container: HTMLElement, refs: readonly SessionSourceRef[]): void {
         const chipsEl = this.createSourcesBlock(container);
-        for (const path of sources) {
-            const memory = memorySourceFromPath(path);
+        for (const ref of refs) {
+            const memory = memorySourceFromPath(ref.source);
             if (memory) {
                 renderSourceChip(chipsEl, memory, this.app, this.plugin.api);
                 continue;
             }
             const chip = chipsEl.createSpan({ cls: "lilbee-source-chip" });
-            chip.createSpan({ text: path, cls: "lilbee-source-chip-file" });
-            chip.addEventListener("click", () => void this.app.workspace.openLinkText(path, ""));
+            renderSourceName(chip, ref);
+            if (ref.source) chip.addEventListener("click", () => void this.app.workspace.openLinkText(ref.source, ""));
         }
     }
 
@@ -1568,12 +1577,14 @@ export class ChatView extends ItemView {
                     await this.renderMarkdown(textEl, rendered);
                     if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
                 });
-                state.conversation.history.push({ role: "assistant", content: rendered });
+                const turn: Message = { role: "assistant", content: rendered };
+                const refs = sourceRefs(state.sources);
+                state.conversation.history.push(turn);
+                state.conversation.turnSources.set(turn, refs);
                 // Only a completed answer is persisted; a cancelled one leaves the question alone.
                 if (rendered) {
-                    const paths = [...new Set(state.sources.map((s) => s.source))];
                     this.queuePersist(state.conversation, () =>
-                        this.persistAnswer(state.sessionId, assistantBubble, rendered, paths),
+                        this.persistAnswer(state.sessionId, assistantBubble, rendered, refs),
                     );
                 }
                 break;
@@ -1826,7 +1837,7 @@ export class ChatView extends ItemView {
 
     /** `conversation` as Save to vault writes it, or null after a notice saying why there is none. */
     private async conversationExport(conversation: Conversation): Promise<SessionExport | null> {
-        const transcript: SessionExport = { markdown: transcriptMarkdown(conversation.history), fileName: null };
+        const transcript: SessionExport = { markdown: transcriptMarkdown(conversation), fileName: null };
         try {
             return await this.chatExport(conversation, transcript);
         } catch (err) {

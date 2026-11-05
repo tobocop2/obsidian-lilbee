@@ -7,9 +7,11 @@ import {
     SESSION_EXPORT_MIN_SERVER_VERSION,
     SESSION_FORK_MIN_SERVER_VERSION,
     SESSIONS_MIN_SERVER_VERSION,
+    SOURCE_REFS_MIN_SERVER_VERSION,
     higherVersion,
     isVersionOlder,
 } from "../src/min-server-version";
+import { meetsVersionFloor } from "../src/utils";
 
 const DECLARED_FLOOR_PATH = fileURLToPath(new URL("../min-server-version.json", import.meta.url));
 
@@ -28,16 +30,21 @@ describe("higherVersion", () => {
 });
 
 describe("MIN_SERVER_VERSION", () => {
-    it("pins the later of the two per-feature floors", () => {
-        expect(MIN_SERVER_VERSION).toBe(higherVersion(SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION));
+    it("pins the source-refs floor, the latest per-feature floor", () => {
+        expect(MIN_SERVER_VERSION).toBe(SOURCE_REFS_MIN_SERVER_VERSION);
+        for (const floor of [
+            SESSIONS_MIN_SERVER_VERSION,
+            PLACEMENT_MIN_SERVER_VERSION,
+            SESSION_FORK_MIN_SERVER_VERSION,
+            SESSION_EXPORT_MIN_SERVER_VERSION,
+        ]) {
+            expect(isVersionOlder(MIN_SERVER_VERSION, floor)).toBe(false);
+        }
     });
 
-    it("stays below the fork floor, so an older server keeps every other feature", () => {
-        expect(isVersionOlder(MIN_SERVER_VERSION, SESSION_FORK_MIN_SERVER_VERSION)).toBe(true);
-    });
-
-    it("stays below the export floor, so an older server keeps every other feature", () => {
-        expect(isVersionOlder(MIN_SERVER_VERSION, SESSION_EXPORT_MIN_SERVER_VERSION)).toBe(true);
+    it("refuses a server that sends no source labels", () => {
+        expect(meetsVersionFloor("0.6.90b691", MIN_SERVER_VERSION)).toBe(false);
+        expect(meetsVersionFloor("0.6.90b692", MIN_SERVER_VERSION)).toBe(true);
     });
 
     // The release notes quote min-server-version.json. Nothing else keeps that file in

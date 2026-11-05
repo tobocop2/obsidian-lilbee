@@ -137,6 +137,10 @@ export interface Source {
     vault_path?: string | null;
     /** Set only on a recalled memory (`source` is `memory:<id>`); absent on older servers. */
     memory_id?: string | null;
+    /** The plain one-line name of the source (`host · title` for a crawled page); shown as text, never as markdown. */
+    label?: string | null;
+    /** The `[n]` the answer cites this source by; absent on a chunk the answer's context did not hold. */
+    citation_number?: number | null;
 }
 
 /**
@@ -485,12 +489,26 @@ export interface SessionMeta {
     origin: string;
 }
 
-/** One persisted turn. `sources` are bare source paths, not the richer `Source` chat streams carry. */
+/** One entry of a turn's Sources list as the plugin saves it. */
+export interface SessionSourceRefInput {
+    source: string;
+    /** The `[n]` the answer cites the source by; null when unknown. */
+    citation_number: number | null;
+}
+
+/** One entry of a saved turn's Sources list, with the label the server computes when it reads the turn. */
+export interface SessionSourceRef extends SessionSourceRefInput {
+    /** The plain one-line name of the source; shown as text, never as markdown. */
+    label: string;
+}
+
+/** One persisted turn. `content` holds no Sources list: `source_refs` carries it. */
 export interface SessionMessageItem {
     role: SessionRole;
     content: string;
     sources: string[];
     ts: string;
+    source_refs?: SessionSourceRef[];
 }
 
 /** Body of `GET /api/sessions/{id}`, and of create/append. `summary` is `""` until compaction has folded turns away. */
