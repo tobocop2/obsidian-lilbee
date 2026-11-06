@@ -31,6 +31,7 @@ import { isForeignVendorQuant, isUsableHostedRow } from "./catalog-helpers";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 import { applyEmbeddingModelDeferred } from "../utils/reindex";
+import { analyzeSupported, runAnalyze } from "../analyze";
 import {
     bindEscapeToClose,
     closeSettings,
@@ -57,14 +58,15 @@ interface SyncProgress {
 }
 
 /**
- * Ordered, visible-in-indicator steps. The indicator labels these 1..6 so the
- * user has a clear sense of "Step N of 6" while moving through setup. Welcome
+ * Ordered, visible-in-indicator steps. The indicator labels these 1..7 so the
+ * user has a clear sense of "Step N of 7" while moving through setup. Welcome
  * is not in the numbered sequence (it's the intro splash).
  */
 const INDICATOR_STEPS: { step: number; key: string; label: string }[] = [
     { step: WIZARD_STEP.SERVER_MODE, key: "server", label: "Server" },
     { step: WIZARD_STEP.MODEL_PICKER, key: "model", label: "Model" },
     { step: WIZARD_STEP.EMBEDDING_PICKER, key: "embedding", label: "Embed" },
+    { step: WIZARD_STEP.ANALYZE, key: "analyze", label: "Analyze" },
     { step: WIZARD_STEP.SYNC, key: "sync", label: "Sync" },
     { step: WIZARD_STEP.WIKI, key: "wiki", label: "Wiki" },
     { step: WIZARD_STEP.DONE, key: "done", label: "Done" },
@@ -80,6 +82,7 @@ const STEP_KEY: Record<number, string> = {
     [WIZARD_STEP.SERVER_MODE]: "server",
     [WIZARD_STEP.MODEL_PICKER]: "model",
     [WIZARD_STEP.EMBEDDING_PICKER]: "embedding",
+    [WIZARD_STEP.ANALYZE]: "analyze",
     [WIZARD_STEP.SYNC]: "sync",
     [WIZARD_STEP.WIKI]: "wiki",
     [WIZARD_STEP.DONE]: "done",
@@ -267,6 +270,8 @@ function substituteUnrunnable(
 export class SetupWizard extends Modal {
     private plugin: LilbeePlugin;
     private step = 0;
+    /** True once the server turned out to have no analyze; the step bar then leaves that step out. */
+    private analyzeSkipped = false;
     private selectedModel: FeaturedModel | null = null;
     /** The step's primary action; disabled while nothing is selectable. */
     private primaryBtn: HTMLButtonElement | null = null;
@@ -337,6 +342,9 @@ export class SetupWizard extends Modal {
             case WIZARD_STEP.EMBEDDING_PICKER:
                 this.renderEmbeddingPicker();
                 break;
+            case WIZARD_STEP.ANALYZE:
+                this.renderAnalyze();
+                break;
             case WIZARD_STEP.SYNC:
                 this.renderSync(syncOptions);
                 break;
@@ -366,10 +374,16 @@ export class SetupWizard extends Modal {
         return step;
     }
 
+    /** The steps the user will pass through: a skipped Analyze is not listed, so it is never ticked. */
+    private indicatorSteps(): typeof INDICATOR_STEPS {
+        return this.analyzeSkipped ? INDICATOR_STEPS.filter((m) => m.step !== WIZARD_STEP.ANALYZE) : INDICATOR_STEPS;
+    }
+
     private renderStepIndicator(container: HTMLElement): void {
         const indicator = container.createDiv({ cls: "lilbee-wizard-step-indicator" });
-        for (let i = 0; i < INDICATOR_STEPS.length; i++) {
-            const meta = INDICATOR_STEPS[i];
+        const steps = this.indicatorSteps();
+        for (let i = 0; i < steps.length; i++) {
+            const meta = steps[i];
             if (i > 0) {
                 const line = indicator.createDiv({ cls: "lilbee-wizard-step-line" });
                 if (meta.step <= this.step) line.addClass("is-done");
@@ -397,15 +411,16 @@ export class SetupWizard extends Modal {
      * followed by the h2 title. The badge carries the step's semantic color.
      */
     private renderStepHeader(container: HTMLElement, title: string): void {
-        const meta = INDICATOR_STEPS.find((m) => m.step === this.step);
+        const steps = this.indicatorSteps();
+        const meta = steps.find((m) => m.step === this.step);
         const header = container.createDiv({ cls: "lilbee-wizard-step-header" });
         if (meta) {
             const badge = header.createSpan({ cls: "lilbee-wizard-step-badge" });
             badge.setText(
-                MESSAGES.WIZARD_STEP_BADGE.replace(
-                    "{num}",
-                    String(INDICATOR_STEPS.indexOf(meta) + 1).padStart(2, "0"),
-                ).replace("{label}", meta.label.toUpperCase()),
+                MESSAGES.WIZARD_STEP_BADGE.replace("{num}", String(steps.indexOf(meta) + 1).padStart(2, "0")).replace(
+                    "{label}",
+                    meta.label.toUpperCase(),
+                ),
             );
         }
         header.createEl("h2", { text: title });
@@ -1066,8 +1081,7 @@ export class SetupWizard extends Modal {
         this.primaryBtn = downloadBtn;
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedEmbedding) {
-                this.step = WIZARD_STEP.SYNC;
-                this.renderStep();
+                void this.goToAnalyzeOrSync();
                 return;
             }
             if (this.selectedEmbedding.installed) {
@@ -1079,8 +1093,7 @@ export class SetupWizard extends Modal {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", label));
                         return;
                     }
-                    this.step = WIZARD_STEP.SYNC;
-                    this.renderStep(syncOptions);
+                    await this.goToAnalyzeOrSync(syncOptions);
                 })();
                 return;
             }
@@ -1166,6 +1179,35 @@ export class SetupWizard extends Modal {
         }
     }
 
+    /** Embed finished; go to the Analyze step, or straight to Sync on a server that predates analyze. */
+    private async goToAnalyzeOrSync(syncOptions?: SyncOptions): Promise<void> {
+        const supported = await analyzeSupported(this.plugin);
+        this.analyzeSkipped = !supported;
+        this.step = supported ? WIZARD_STEP.ANALYZE : WIZARD_STEP.SYNC;
+        this.renderStep(syncOptions);
+    }
+
+    private renderAnalyze(): void {
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_WIZARD_ANALYZE);
+        step.createEl("p", { text: MESSAGES.WIZARD_ANALYZE_HELP });
+
+        const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
+        backBtn.addEventListener("click", () => this.back());
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_ANALYZE });
+        skipBtn.addEventListener("click", () => {
+            this.step = WIZARD_STEP.SYNC;
+            this.renderStep();
+        });
+        const runBtn = actions.createEl("button", { text: MESSAGES.BUTTON_RUN_ANALYZE, cls: "mod-cta" });
+        runBtn.addEventListener("click", () => {
+            runAnalyze(this.plugin, null);
+            this.step = WIZARD_STEP.SYNC;
+            this.renderStep();
+        });
+    }
+
     private async pullEmbeddingModel(
         downloadBtn: HTMLElement,
         progressEl: HTMLElement,
@@ -1219,8 +1261,7 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            this.step = WIZARD_STEP.SYNC;
-            this.renderStep(syncOptions);
+            await this.goToAnalyzeOrSync(syncOptions);
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
@@ -1498,6 +1539,8 @@ export class SetupWizard extends Modal {
             this.step = WIZARD_STEP.SERVER_MODE;
         } else if (this.step === WIZARD_STEP.EMBEDDING_PICKER) {
             this.step = WIZARD_STEP.MODEL_PICKER;
+        } else if (this.step === WIZARD_STEP.SYNC && this.analyzeSkipped) {
+            this.step = WIZARD_STEP.EMBEDDING_PICKER;
         } else {
             this.step = Math.max(0, this.step - 1);
         }

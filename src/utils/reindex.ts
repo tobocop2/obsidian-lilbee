@@ -1,5 +1,5 @@
 import { Notice } from "obsidian";
-import type { ConfigUpdateResponse, SetModelResponse, SyncOptions } from "../types";
+import type { ConfigUpdateResponse, ProfileApplyResponse, SetModelResponse, SyncOptions } from "../types";
 import type { Result } from "../result";
 import { MESSAGES } from "../locales/en";
 
@@ -14,6 +14,18 @@ export interface ServerWritePlugin extends RebuildPlugin {
         setEmbeddingModel: (model: string) => Promise<Result<SetModelResponse, Error>>;
         updateConfig: (updates: Record<string, unknown>) => Promise<ConfigUpdateResponse>;
     };
+}
+
+/** The slice of the plugin a settings reset needs. */
+export interface ServerResetPlugin extends ServerWritePlugin {
+    api: ServerWritePlugin["api"] & {
+        resetConfig: (keys: string[]) => Promise<ConfigUpdateResponse | null>;
+    };
+}
+
+/** The slice of the plugin a profile apply needs. */
+export interface ProfileApplyPlugin extends RebuildPlugin {
+    api: { applyProfile: (name: string) => Promise<ProfileApplyResponse> };
 }
 
 /** An embedding swap and the sync it needs, for a caller that runs the sync later. */
@@ -42,6 +54,25 @@ export async function applyConfig(
 ): Promise<ConfigUpdateResponse> {
     const response = await plugin.api.updateConfig(updates);
     startReindexSync(plugin, response.reindex_required);
+    return response;
+}
+
+/** Remove the user's value for each key, and rebuild the index when the fallback values invalidate it.
+ *  Null when the server predates the reset route. */
+export async function resetConfig(plugin: ServerResetPlugin, keys: string[]): Promise<ConfigUpdateResponse | null> {
+    const response = await plugin.api.resetConfig(keys);
+    if (response !== null) startReindexSync(plugin, response.reindex_required);
+    return response;
+}
+
+/** Apply a profile, and rebuild the index when the user asked to and the server says the change needs it. */
+export async function applyProfile(
+    plugin: ProfileApplyPlugin,
+    name: string,
+    reindex: boolean,
+): Promise<ProfileApplyResponse> {
+    const response = await plugin.api.applyProfile(name);
+    startReindexSync(plugin, reindex && response.reindex_required);
     return response;
 }
 

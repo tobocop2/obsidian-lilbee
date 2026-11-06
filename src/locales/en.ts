@@ -13,6 +13,12 @@ import {
     type ServerVariant,
     type WorkerRole,
     LOG_FILE,
+    PROFILE_EFFECT,
+    type ProfileEffect,
+    PROFILE_FOLDER,
+    type ProfileFolder,
+    PROFILE_STATUS,
+    type ProfileStatus,
 } from "../types";
 
 /** The toggle a user flips to move lilbee content in or out of the vault. */
@@ -92,6 +98,7 @@ export const MESSAGES = {
     BUTTON_NEXT: "Next",
     BUTTON_CONTINUE: "Continue",
     BUTTON_CANCEL: "Cancel",
+    BUTTON_CLOSE: "Close",
     BUTTON_PULL: "Pull",
     BUTTON_PULL_MODEL: "Pull Model",
     BUTTON_PULL_ANYWAY: "Pull anyway",
@@ -237,7 +244,7 @@ export const MESSAGES = {
     TOOLTIP_MODE_CHAT: "Chat with the model directly: no vault retrieval.",
     TOOLTIP_ROLE_CHAT: "Chat model: writes the answers.",
     TOOLTIP_ROLE_EMBED: "Embedding model: indexes your notes so search can find them.",
-    TOOLTIP_ROLE_VISION: "Vision model: reads scanned or image-only PDFs. Optional.",
+    TOOLTIP_ROLE_VISION: "Vision model: the OCR engine for scanned pages. Optional; Tesseract runs OCR without it.",
     TOOLTIP_ROLE_RERANK: "Reranker: reorders search hits for sharper relevance. Optional.",
     LABEL_GEN_TEMPERATURE: "Creativity",
     LABEL_GEN_TOP_P: "Top P",
@@ -296,11 +303,14 @@ export const MESSAGES = {
     DESC_CRAWL_EXCLUDE_PATTERNS:
         "Regex patterns that skip URLs at link-discovery during recursive crawls. One per line. Blank = no filtering.",
     LABEL_RESET_TO_DEFAULT: "Reset to default",
+    PILL_SOURCE_USER: "set by you",
+    LABEL_MORE_SETTINGS_COUNT: (count: number) => `More settings (${count})`,
+    LABEL_MORE_SETTINGS_COUNT_IN: (count: number, group: string) => `More settings (${count}): ${group}`,
     LABEL_RESET_ALL_SETTINGS: "Reset server-backed settings to defaults",
     DESC_RESET_ALL_SETTINGS:
-        "Restore every server-backed setting below to its default. API keys and local plugin preferences are preserved.",
+        "Remove your value for every server-backed setting below, so each one falls back to its default. API keys and local plugin preferences are preserved.",
     CONFIRM_RESET_ALL_SETTINGS:
-        "Reset every server-backed setting to its default? API keys and local plugin preferences are preserved.",
+        "Remove your value for every server-backed setting? Each one falls back to its default. API keys and local plugin preferences are preserved.",
     BUTTON_RESET_ALL: "Reset all",
     LABEL_ADVANCED: "Advanced",
     LABEL_STORE_CONTENT_IN_VAULT: STORE_CONTENT_IN_VAULT_LABEL,
@@ -620,7 +630,7 @@ export const MESSAGES = {
     DESC_WORKER_POOL_EAGER_START:
         "Spawn every worker process when the lilbee server starts instead of on first use. Trades 1–3 seconds of cold-start per role for first-call latency.",
     DESC_VISION_LOAD_BUDGET:
-        "Outer wall-clock budget for the vision-OCR pool drain in seconds. Includes load grace plus per-page time",
+        "Outer wall-clock budget for the vision-OCR pool drain in seconds, for the pages that need OCR. Includes load grace plus per-page time",
     DESC_CANDIDATE_MULTIPLIER: "Candidate-pool multiplier over top_k before reranking",
     DESC_MIN_RELEVANCE_SCORE: "Minimum RRF relevance score for hybrid search results (0.0 = no filter)",
     DESC_MAX_CONTEXT_SOURCES: "Maximum unique sources contributing chunks to a single answer",
@@ -1396,7 +1406,7 @@ export const MESSAGES = {
     LABEL_EMBED_REPLICAS: "Embedding replicas",
     DESC_EMBED_REPLICAS: "How many embedding workers to run while indexing. 0 lets lilbee pick (one per GPU).",
     LABEL_VISION_REPLICAS: "Vision replicas",
-    DESC_VISION_REPLICAS: "How many OCR workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    DESC_VISION_REPLICAS: "How many workers OCR pages while indexing. 0 lets lilbee pick (one per GPU).",
     LABEL_GPU_DEVICES: "Visible GPUs",
     DESC_GPU_DEVICES:
         "Restrict lilbee to specific GPUs by index, comma separated (for example 0,1). Leave empty to use all.",
@@ -1510,6 +1520,137 @@ export const MESSAGES = {
     BUTTON_AGENT_NOT_NOW: "Not now",
     BUTTON_AGENT_CONNECT: (agent: string): string => `Connect ${agent}`,
     BUTTON_AGENT_CONNECT_NONE: "Connect",
+    LABEL_PROFILE_SECTION: "Profile",
+    DESC_PROFILE_SECTION:
+        "Settings for ingest, OCR, chunking and search. Models, hardware and API keys stay as they are.",
+    DESC_PROFILE_PICK: "Choosing a profile shows what it changes before anything changes.",
+    PROFILE_TESTED_ON: (text: string): string => `Tested on: ${text}`,
+    PROFILE_CHANGES_TITLE: "Your changes",
+    PROFILE_CHANGES_HELP: (name: string): string => `These values of yours override ${name}.`,
+    PROFILE_CHANGES_NONE: (name: string): string => `No values of yours override ${name}.`,
+    PROFILE_COL_SETTING: "Setting",
+    PROFILE_COL_YOURS: "Your value",
+    PROFILE_COL_PROFILE: "Profile value",
+    PROFILE_COL_NOW: "Now",
+    PROFILE_COL_AFTER: "After",
+    PROFILE_COL_COST: "Cost",
+    PROFILE_VALUE_ON: "on",
+    PROFILE_VALUE_OFF: "off",
+    PROFILE_VALUE_NONE: "none",
+    BUTTON_PROFILE_UPDATE: (name: string): string => `Update ${name}`,
+    BUTTON_PROFILE_SAVE_AS: "Save as new profile",
+    BUTTON_PROFILE_DISCARD: "Discard my changes",
+    BUTTON_PROFILE_REAPPLY: (name: string): string => `Re-apply ${name}`,
+    BUTTON_PROFILE_MANAGE: "Manage profiles",
+    BUTTON_PROFILE_APPLY: "Apply",
+    BUTTON_PROFILE_APPLY_REINDEX: "Apply and reindex",
+    BUTTON_PROFILE_SAVE: "Save",
+    BUTTON_PROFILE_DUPLICATE: "Duplicate",
+    BUTTON_PROFILE_RENAME: "Rename",
+    BUTTON_PROFILE_DELETE: "Delete",
+    BUTTON_PROFILE_EXPORT: "Export",
+    BUTTON_PROFILE_IMPORT: "Import profile",
+    PROFILE_APPLY_TITLE: (name: string): string => `Switch to ${name}?`,
+    PROFILE_APPLY_CHANGES: "Changes",
+    PROFILE_APPLY_KEEPS: "Keeps your values",
+    PROFILE_APPLY_UNTOUCHED: (count: number): string =>
+        `${count} other settings, such as models, hardware and API keys, stay as they are.`,
+    PROFILE_APPLY_NOTHING: "Nothing changes; lilbee records the profile's name.",
+    PROFILE_APPLY_REINDEX: (count: number): string =>
+        count === 1 ? "One change rebuilds the index." : `${count} changes rebuild the index.`,
+    PROFILE_SAVE_TITLE: "Save as a new profile",
+    PROFILE_SAVE_EXPLAIN: (name: string): string =>
+        `The new profile holds ${name}'s values and your changes. This vault switches to it, and your changes stop showing as yours.`,
+    PROFILE_DUPLICATE_TITLE: (name: string): string => `Duplicate ${name}`,
+    PROFILE_RENAME_TITLE: (name: string): string => `Rename ${name}`,
+    PROFILE_IMPORT_TITLE: (file: string): string => `Import ${file}`,
+    PLACEHOLDER_PROFILE_NAME: "Profile name",
+    LABEL_PROFILE_SAVE_TO: "Save to",
+    PROFILE_LIBRARY_TITLE: "Profiles",
+    PROFILE_ACTIVE_MARK: "in use",
+    PROFILE_SHADOWED: (folder: string): string => `Hidden by the profile of the same name in ${folder}`,
+    PROFILE_BROKEN: (reason: string): string => `Broken: ${reason}`,
+    LABEL_PROFILE_FILTER: "lilbee profile",
+    CONFIRM_DELETE_PROFILE: (name: string): string =>
+        `Delete ${name}? Projects that use it keep the copy recorded when they applied it.`,
+    CONFIRM_PROFILE_DISCARD_REINDEX: (name: string): string =>
+        `The index was built with values you discarded. Rebuild it so search uses ${name}'s values?`,
+    PLACEHOLDER_PICK_PROFILE: "Pick a profile",
+    NOTICE_PROFILES_UNSUPPORTED: "This lilbee server has no profiles. Update lilbee to use them.",
+    NOTICE_PROFILE_APPLIED: (name: string): string => `Switched to ${name}.`,
+    NOTICE_PROFILE_SAVED: (name: string, path: string): string => `Saved ${name} to ${path}.`,
+    NOTICE_PROFILE_UPDATED: (name: string): string => `Updated ${name}.`,
+    NOTICE_PROFILE_DISCARDED: (name: string): string => `Your values are gone; ${name}'s values show through.`,
+    NOTICE_PROFILE_NOTHING_TO_DISCARD: "You have no values of profile settings to discard.",
+    NOTICE_PROFILE_NOTHING_TO_UPDATE: (name: string): string => `You have no changes to save into ${name}.`,
+    ERROR_PROFILE_NAME_REQUIRED: "Enter a name for the profile.",
+    NOTICE_PROMPT_MIGRATED: "Moved your saved system prompt to the lilbee server.",
+    NOTICE_PROFILE_DUPLICATED: (name: string): string => `Made ${name}.`,
+    NOTICE_PROFILE_RENAMED: (name: string): string => `Renamed to ${name}.`,
+    NOTICE_PROFILE_DELETED: (name: string): string => `Deleted ${name}.`,
+    NOTICE_PROFILE_EXPORTED: (path: string): string => `Exported the profile to ${path}.`,
+    NOTICE_PROFILE_IMPORTED: (name: string): string => `Imported ${name}.`,
+    ERROR_PROFILE_LOAD: (reason: string): string => `Could not read the profiles: ${reason}`,
+    ERROR_PROFILE_ACTION: (reason: string): string => `The profile change failed: ${reason}`,
+    ERROR_PROFILE_READ: (reason: string): string => `Could not read the profile file: ${reason}`,
+    ERROR_PROFILE_WRITE: (reason: string): string => `Could not write the profile file: ${reason}`,
+    ERROR_PROFILE_TOO_LARGE: (kilobytes: number): string =>
+        `The file is over ${kilobytes} KB, too large for a profile file.`,
+    ERROR_PROFILE_INVALID: (problems: string): string => `This is not a profile lilbee can use: ${problems}`,
+    COMMAND_PROFILE_CHOOSE: "Choose profile",
+    COMMAND_PROFILE_SAVE_AS: "Save settings as a new profile",
+    COMMAND_PROFILE_UPDATE: "Update the active profile with my changes",
+    COMMAND_PROFILE_DISCARD: "Discard my profile changes",
+    COMMAND_PROFILE_MANAGE: "Manage profiles",
+    COMMAND_PROFILE_IMPORT: "Import profile",
+    COMMAND_PROFILE_EXPORT: "Export profile",
+    COMMAND_PROFILE_DUPLICATE: "Duplicate profile",
+    COMMAND_PROFILE_RENAME: "Rename profile",
+    COMMAND_PROFILE_DELETE: "Delete profile",
+    COMMAND_ANALYZE: "Analyze your vault",
+    COMMAND_ANALYZE_DISMISS_TIP: "Stop suggesting vault analysis",
+    TITLE_ANALYZE_RUNNING: "Analyzing your vault",
+    TITLE_ANALYZE_REPORT: "Vault analysis",
+    TITLE_ANALYZE_APPLYING: "Applying the recommendation",
+    TITLE_ANALYZE_SAVING: "Saving the recommendation",
+    STATUS_ANALYZE_STARTING: "Starting...",
+    STATUS_ANALYZE_PROGRESS: (current: number, total: number, file: string): string =>
+        `Reading file ${current} of ${total}: ${file}`,
+    LABEL_ANALYZE_READING: (read: number, total: number, counted: number): string =>
+        counted > 0
+            ? `Read ${read} of ${total} documents; counted ${counted} code, image and archive files.`
+            : `Read ${read} of ${total} documents.`,
+    LABEL_ANALYZE_SAMPLED: (cap: number): string => `The documents are sampled evenly; the cap is ${cap}.`,
+    LABEL_ANALYZE_FAILURES_TITLE: "Files analyze could not read",
+    LABEL_ANALYZE_STATS_TITLE: "What analyze found",
+    LABEL_ANALYZE_CODE_SHARE: (percent: number): string => `Code files: ${percent}%`,
+    LABEL_ANALYZE_PDF_SUMMARY: (files: number, scannedPercent: number, tables: number): string =>
+        `PDFs: ${files}, ${scannedPercent}% scanned, ${tables} tables`,
+    LABEL_ANALYZE_LANGUAGES_TITLE: "Languages",
+    LABEL_ANALYZE_LANG_COL_LANGUAGE: "Language",
+    LABEL_ANALYZE_LANG_COL_SHARE: "Share",
+    LABEL_ANALYZE_LANG_COL_STEMMER: "Search stemmer",
+    LABEL_ANALYZE_LANG_COL_OCR: "OCR",
+    LABEL_ANALYZE_STEMMER_NONE: "none",
+    LABEL_ANALYZE_OCR_YES: "supported",
+    LABEL_ANALYZE_OCR_NO: "not supported",
+    LABEL_ANALYZE_RECOMMENDATION_TITLE: (builtin: string): string => `Recommended: ${builtin}`,
+    LABEL_ANALYZE_KEPT: "Keeps your values",
+    LABEL_ANALYZE_REASONS_TITLE: "Why",
+    LABEL_ANALYZE_NOTES_TITLE: "Notes",
+    LABEL_ANALYZE_NOTHING_TO_CHANGE: "This vault's settings already match the recommendation.",
+    BUTTON_ANALYZE_SAVE_ONLY: "Save only",
+    NOTICE_ANALYZE_APPLIED: (name: string): string => `Switched to ${name}.`,
+    NOTICE_ANALYZE_SAVED: (name: string, path: string): string => `Saved ${name} to ${path}.`,
+    NOTICE_ANALYZE_TIP: 'Not analyzed yet. Run "Analyze your vault" to tune lilbee for your notes.',
+    NOTICE_ANALYZE_TIP_DISMISSED: "You won't see the vault analysis tip again.",
+    NOTICE_ANALYZE_UNSUPPORTED: "This lilbee server doesn't support analyze yet. Update lilbee to use it.",
+    ERROR_ANALYZE_ACTION: (reason: string): string => `The vault analysis failed: ${reason}`,
+    TITLE_WIZARD_ANALYZE: "Analyze your vault",
+    WIZARD_ANALYZE_HELP:
+        "Analyze reads your documents and recommends settings for them: OCR language, search language, and how ingest handles scans, tables and code. Nothing changes until you apply or save the result.",
+    BUTTON_RUN_ANALYZE: "Run analysis",
+    BUTTON_SKIP_ANALYZE: "Skip for now",
 } as const;
 
 /** Product names for the agent clients; the wire values are lowercase ids. */
@@ -1578,3 +1719,32 @@ export const CATALOG_FILTERS = {
         [FILTERS.SORT.SIZE_DESC, MESSAGES.LABEL_SIZE_DESC],
     ] as const,
 } as const;
+
+/** Where each profile folder is, in the words of the library and the save dialogs. */
+export const PROFILE_FOLDER_LABELS: Readonly<Record<ProfileFolder, string>> = {
+    [PROFILE_FOLDER.PROJECT]: "This vault",
+    [PROFILE_FOLDER.GLOBAL]: "All projects",
+    [PROFILE_FOLDER.BUILTIN]: "Built-in",
+};
+
+/** The Profile group's line about the active profile's folder. */
+export const PROFILE_FOLDER_NOTES: Readonly<Record<ProfileFolder, string>> = {
+    [PROFILE_FOLDER.PROJECT]: "Saved in this vault.",
+    [PROFILE_FOLDER.GLOBAL]: "Saved for all projects.",
+    [PROFILE_FOLDER.BUILTIN]: "A built-in profile that ships with lilbee.",
+};
+
+/** What the active profile's file state means for this vault; empty when it is current. */
+export const PROFILE_STATUS_NOTES: Readonly<Record<ProfileStatus, string>> = {
+    [PROFILE_STATUS.CURRENT]: "",
+    [PROFILE_STATUS.CHANGED]: "Its file changed since it was applied; apply it again to use the file.",
+    [PROFILE_STATUS.MISSING]: "Its file is gone; the copy recorded on apply stays in use.",
+    [PROFILE_STATUS.BROKEN]: "Its file is broken; the copy recorded on apply stays in use.",
+};
+
+/** The Cost cell of a profile change; a change that applies at once needs no label. */
+export const PROFILE_EFFECT_LABELS: Readonly<Record<ProfileEffect, string>> = {
+    [PROFILE_EFFECT.REINDEX]: "reindex",
+    [PROFILE_EFFECT.NEW_FILES_ONLY]: "new files only",
+    [PROFILE_EFFECT.NOW]: "",
+};

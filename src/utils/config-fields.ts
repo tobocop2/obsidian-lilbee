@@ -70,6 +70,7 @@ export const CURATED_CONFIG_KEYS: ReadonlySet<string> = new Set([
     "title_search",
     "title_search_weight",
     "token_sizing",
+    "top_k",
     "top_k_sampling",
     "top_p",
     "usable_vram_fraction",

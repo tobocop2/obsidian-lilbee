@@ -23,6 +23,20 @@ import type {
     CatalogResponse,
     ConfigResponse,
     ConfigSchemaResponse,
+    ConfigSourcesResponse,
+    ActiveProfileResponse,
+    AnalyzeOptions,
+    AnalyzeStateResponse,
+    ExportedProfile,
+    ProfileApplyResponse,
+    ProfileDiffResponse,
+    ProfileDiscardResponse,
+    ProfileEntry,
+    ProfileFolder,
+    ProfileListResponse,
+    ProfileLocationResponse,
+    ProfileSaveResponse,
+    ProfileValidationResponse,
     CrawlerStatusField,
     CrawlerStatusResponse,
     ConfigUpdateResponse,
@@ -734,6 +748,41 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
+    /** Streams an analyze run: `analyze` progress frames, then `done` with the report or `error`. */
+    async *analyzeStream(
+        directory?: string | null,
+        options?: AnalyzeOptions,
+        signal?: AbortSignal,
+    ): AsyncGenerator<SSEEvent, void> {
+        const body: Record<string, unknown> = {};
+        if (directory !== undefined) body.directory = directory;
+        if (options?.apply) body.apply = true;
+        if (options?.save !== undefined && options.save !== null) body.save = options.save;
+        if (options?.target) body.target = options.target;
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/analyze`,
+            {
+                method: "POST",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify(body),
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
+    /** The project's analyze tip state, or null on a server that predates analyze. */
+    async analyzeState(): Promise<AnalyzeStateResponse | null> {
+        return this.jsonOrNullWhenMissing<AnalyzeStateResponse>(`${this.baseUrl}/api/analyze/state`);
+    }
+
+    /** Hide the analyze tip for this project; null on a server that predates analyze. */
+    async dismissAnalyzeTip(): Promise<AnalyzeStateResponse | null> {
+        return this.jsonOrNullWhenMissing<AnalyzeStateResponse>(`${this.baseUrl}/api/analyze/dismiss`, {
+            method: "POST",
+        });
+    }
+
     async listModels(): Promise<ModelsResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models`);
         return (await res.json()) as ModelsResponse;
@@ -910,6 +959,117 @@ export class LilbeeClient {
         return (await res.json()) as ConfigSchemaResponse;
     }
 
+    /** The layer that supplies each setting; null on a server without the route. */
+    async configSources(): Promise<ConfigSourcesResponse | null> {
+        return this.jsonOrNullWhenMissing<ConfigSourcesResponse>(`${this.baseUrl}/api/config/sources`);
+    }
+
+    /** Remove the user's value for each key so it falls back to the next source; null on a server without the route. */
+    async resetConfig(keys: string[]): Promise<ConfigUpdateResponse | null> {
+        return this.jsonOrNullWhenMissing<ConfigUpdateResponse>(`${this.baseUrl}/api/config/reset`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ keys }),
+        });
+    }
+
+    /** Every profile, highest precedence first; null on a server without profiles. */
+    async listProfiles(): Promise<ProfileListResponse | null> {
+        return this.jsonOrNullWhenMissing<ProfileListResponse>(`${this.baseUrl}/api/profiles`);
+    }
+
+    /** The project's applied profile and the state of its file. */
+    async activeProfile(): Promise<ActiveProfileResponse> {
+        return this.profileJson<ActiveProfileResponse>("/api/profiles/active");
+    }
+
+    async getProfile(name: string): Promise<ProfileEntry> {
+        return this.profileJson<ProfileEntry>(this.profilePath(name));
+    }
+
+    /** What applying the profile changes and which of the user's values it keeps. */
+    async profileDiff(name: string): Promise<ProfileDiffResponse> {
+        return this.profileJson<ProfileDiffResponse>(this.profilePath(name, "/diff"));
+    }
+
+    async applyProfile(name: string): Promise<ProfileApplyResponse> {
+        return this.profileJson<ProfileApplyResponse>(this.profilePath(name, "/apply"), "POST");
+    }
+
+    /** Save the project's settings as a new profile and switch the project to it. */
+    async saveProfile(name: string, target: ProfileFolder): Promise<ProfileSaveResponse> {
+        return this.profileJson<ProfileSaveResponse>("/api/profiles", "POST", { name, target });
+    }
+
+    /** Write the project's settings into its profile, which *name* must pick. */
+    async updateProfile(name: string): Promise<ProfileSaveResponse> {
+        return this.profileJson<ProfileSaveResponse>(this.profilePath(name), "PUT");
+    }
+
+    /** Remove the user's values of profile settings so the profile's values show through. */
+    async discardProfileChanges(): Promise<ProfileDiscardResponse> {
+        return this.profileJson<ProfileDiscardResponse>("/api/profiles/discard", "POST");
+    }
+
+    async duplicateProfile(name: string, newName: string, target: ProfileFolder): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>(this.profilePath(name, "/duplicate"), "POST", {
+            new_name: newName,
+            target,
+        });
+    }
+
+    async renameProfile(name: string, newName: string): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>(this.profilePath(name), "PATCH", { new_name: newName });
+    }
+
+    async deleteProfile(name: string): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>(this.profilePath(name), "DELETE");
+    }
+
+    async exportProfile(name: string): Promise<ExportedProfile> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}${this.profilePath(name, "/export")}`);
+        return { content: await res.text(), filename: attachmentFileName(res.headers.get(CONTENT_DISPOSITION)) };
+    }
+
+    async importProfile(content: string, filename: string, target: ProfileFolder): Promise<ProfileLocationResponse> {
+        return this.profileJson<ProfileLocationResponse>("/api/profiles/import", "POST", { content, filename, target });
+    }
+
+    /** Every problem with a profile file's text, as a profile in *folder*. */
+    async validateProfile(
+        content: string,
+        filename: string,
+        folder: ProfileFolder,
+    ): Promise<ProfileValidationResponse> {
+        return this.profileJson<ProfileValidationResponse>("/api/profiles/validate", "POST", {
+            content,
+            filename,
+            folder,
+        });
+    }
+
+    private profilePath(name: string, suffix = ""): string {
+        return `/api/profiles/${encodeURIComponent(name)}${suffix}`;
+    }
+
+    private async profileJson<T>(path: string, method = "GET", body?: Record<string, unknown>): Promise<T> {
+        const init: RequestInit =
+            body === undefined ? { method } : { method, headers: JSON_HEADERS, body: JSON.stringify(body) };
+        const res = await this.fetchWithRetry(`${this.baseUrl}${path}`, init);
+        return (await res.json()) as T;
+    }
+
+    /** The JSON body, or null when the server answers 404 because it predates the route. */
+    private async jsonOrNullWhenMissing<T>(url: string, init?: RequestInit): Promise<T | null> {
+        try {
+            const res = await this.fetchWithRetry(url, init);
+            return (await res.json()) as T;
+        } catch (e) {
+            if (e instanceof Error && isHttpStatus(e, HTTP_STATUS.NOT_FOUND)) return null;
+            throw e;
+        }
+    }
+
     async configDefaults(): Promise<Record<string, unknown>> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config/defaults`);
         return (await res.json()) as Record<string, unknown>;
@@ -1039,15 +1199,11 @@ export class LilbeeClient {
      * browse list should render its written pages as before instead of failing.
      */
     async wikiStubs(): Promise<WikiStub[]> {
-        try {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/stubs`, {
+        return (
+            (await this.jsonOrNullWhenMissing<WikiStub[]>(`${this.baseUrl}/api/wiki/stubs`, {
                 headers: this.authHeaders(),
-            });
-            return (await res.json()) as WikiStub[];
-        } catch (e) {
-            if (e instanceof Error && isHttpStatus(e, HTTP_STATUS.NOT_FOUND)) return [];
-            throw e;
-        }
+            })) ?? []
+        );
     }
 
     /**
