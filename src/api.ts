@@ -51,6 +51,7 @@ import type {
     SessionMeta,
     SessionRenameResponse,
     SessionRole,
+    SessionSourceRefInput,
     RememberResponse,
     ModelsResponse,
     ModelTask,
@@ -570,14 +571,15 @@ export class LilbeeClient {
         sessionId: string,
         role: SessionRole,
         content: string,
-        sources: string[] = [],
+        sourceRefs: readonly SessionSourceRefInput[] = [],
     ): Promise<SessionDetail> {
+        const source_refs = sourceRefs.map(({ source, citation_number }) => ({ source, citation_number }));
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
             {
                 method: "POST",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify({ role, content, sources }),
+                body: JSON.stringify({ role, content, source_refs }),
             },
         );
         return (await res.json()) as SessionDetail;

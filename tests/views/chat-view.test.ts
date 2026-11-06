@@ -20,7 +20,16 @@ if (typeof (globalThis as any).activeDocument === "undefined") {
     (globalThis as any).activeDocument = (globalThis as any).document;
 }
 
-import { App, Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
+import {
+    App,
+    MarkdownRenderer,
+    Menu,
+    MockMenuItem,
+    MockMenuSeparator,
+    Notice,
+    Platform,
+    WorkspaceLeaf,
+} from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, compactionMarkerText } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
@@ -92,8 +101,17 @@ vi.mock("../../src/views/setup-wizard", () => ({
     }),
 }));
 import type { SSEEvent, Source } from "../../src/types";
+
+/** Page titles from #370 that render as markup when a label passes through the markdown renderer. */
+const ATTACK_LABELS: [string, string][] = [
+    ["a closing bracket", "forum.example · a ] b"],
+    ["a link", "forum.example · [click](https://evil.example/x)"],
+    ["an image", "forum.example · ![px](https://evil.example/p.png)"],
+    ["an HTML tag", "forum.example · <img src=x onerror=alert(1)>"],
+];
 import { TaskQueue } from "../../src/task-queue";
 import { displayLabelForRef } from "../../src/utils/model-ref";
+import { markdownText } from "../../src/utils/source-labels";
 
 function makeLeaf(): WorkspaceLeaf {
     return new WorkspaceLeaf();
@@ -5903,7 +5921,7 @@ describe("ChatView — chat sessions", () => {
         expect(calls[0]).toEqual(["s1", "user", "q", []]);
     });
 
-    it("persists the user turn and then the assistant turn with its source paths", async () => {
+    it("persists the user turn and then the assistant turn with one ref per source", async () => {
         const plugin = makePlugin();
         const { mockFn, done } = streamOf("an answer", [
             { source: "notes.md", chunk: "x" },
@@ -5917,7 +5935,15 @@ describe("ChatView — chat sessions", () => {
 
         const calls = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls;
         expect(calls[0]).toEqual(["s1", "user", "q", []]);
-        expect(calls[1]).toEqual(["s1", "assistant", "an answer", ["notes.md", "other.md"]]);
+        expect(calls[1]).toEqual([
+            "s1",
+            "assistant",
+            "an answer",
+            [
+                { source: "notes.md", label: "notes.md", citation_number: null },
+                { source: "other.md", label: "other.md", citation_number: null },
+            ],
+        ]);
     });
 
     it("reuses the open session on later turns", async () => {
@@ -6859,7 +6885,13 @@ describe("ChatView — resuming a session", () => {
             },
             messages: [
                 { role: "user", content: "old question", sources: [], ts: "t1" },
-                { role: "assistant", content: "old answer", sources: ["notes.md"], ts: "t2" },
+                {
+                    role: "assistant",
+                    content: "old answer",
+                    sources: ["notes.md"],
+                    ts: "t2",
+                    source_refs: [{ source: "notes.md", label: "notes", citation_number: 1 }],
+                },
             ],
             summary: "",
             ...overrides,
@@ -6888,14 +6920,107 @@ describe("ChatView — resuming a session", () => {
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_RESUMED("Earlier chat"))).toBe(true);
     });
 
-    it("restores saved source paths as chips", async () => {
+    it.each(ATTACK_LABELS)(
+        "shows a restored chip's label holding %s as text, never as markdown",
+        async (_name, label) => {
+            const plugin = makePlugin();
+            plugin.api.getSession = vi.fn().mockResolvedValue(
+                detail({
+                    messages: [
+                        { role: "user", content: "old question", sources: [], ts: "t1" },
+                        {
+                            role: "assistant",
+                            content: "old answer [2]",
+                            sources: ["_web/a.md"],
+                            ts: "t2",
+                            source_refs: [{ source: "_web/a.md", label, citation_number: 2 }],
+                        },
+                    ],
+                }),
+            );
+            const render = vi.spyOn(MarkdownRenderer, "render");
+
+            const { messagesEl } = await resume(plugin);
+
+            const bubble = messagesEl.children[1];
+            expect(bubble.find("lilbee-chat-content")!.textContent).toBe("old answer [2]");
+            expect(bubble.find("lilbee-source-chip-number")!.textContent).toBe("[2]");
+            expect(bubble.find("lilbee-source-chip-file")!.textContent).toBe(label);
+            expect(render.mock.calls.some((call) => call[1].includes(label))).toBe(false);
+            render.mockRestore();
+        },
+    );
+
+    it("shows a restored cited subset's true numbers", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(
+            detail({
+                messages: [
+                    {
+                        role: "assistant",
+                        content: "old answer [1] [3]",
+                        sources: ["a.md", "c.md"],
+                        ts: "t2",
+                        source_refs: [
+                            { source: "a.md", label: "a", citation_number: 1 },
+                            { source: "c.md", label: "c", citation_number: 3 },
+                        ],
+                    },
+                ],
+            }),
+        );
+
+        const { messagesEl } = await resume(plugin);
+
+        const numbers = messagesEl.children[0].findAll("lilbee-source-chip-number").map((el) => el.textContent);
+        expect(numbers).toEqual(["[1]", "[3]"]);
+    });
+
+    it("shows a restored ref whose source the server could not name, with no link", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(
+            detail({
+                messages: [
+                    {
+                        role: "assistant",
+                        content: "old answer",
+                        sources: [],
+                        ts: "t2",
+                        source_refs: [{ source: "", label: "gone · page", citation_number: 1 }],
+                    },
+                ],
+            }),
+        );
+
+        const { view, messagesEl } = await resume(plugin);
+
+        const chip = messagesEl.children[0].find("lilbee-source-chip")!;
+        expect(chip.textContent).toBe("[1]gone · page");
+        chip.trigger("click");
+        expect(view.app.workspace.openLinkText).not.toHaveBeenCalled();
+    });
+
+    it("restores a saved turn's Sources list as chips named by their labels", async () => {
         const plugin = makePlugin();
         plugin.api.getSession = vi.fn().mockResolvedValue(detail());
 
         const { messagesEl } = await resume(plugin);
 
         const chip = messagesEl.children[1].find("lilbee-source-chip-file");
-        expect(chip!.textContent).toBe("notes.md");
+        expect(chip!.textContent).toBe("notes");
+    });
+
+    it("restores no chips for a turn the server sends without source_refs", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi
+            .fn()
+            .mockResolvedValue(
+                detail({ messages: [{ role: "assistant", content: "old answer", sources: ["notes.md"], ts: "t2" }] }),
+            );
+
+        const { messagesEl } = await resume(plugin);
+
+        expect(messagesEl.children[0].find("lilbee-source-chip")).toBeNull();
     });
 
     it("continues a resumed conversation in the same session", async () => {
@@ -7179,7 +7304,15 @@ describe("ChatView — restored session guards", () => {
                 scope: "both",
                 message_count: 1,
             },
-            messages: [{ role: "assistant", content: "answer", sources: ["notes.md"], ts: "t" }],
+            messages: [
+                {
+                    role: "assistant",
+                    content: "answer",
+                    sources: ["notes.md"],
+                    ts: "t",
+                    source_refs: [{ source: "notes.md", label: "notes", citation_number: 1 }],
+                },
+            ],
             summary: "",
         });
         const view = new ChatView(makeLeaf(), plugin);
@@ -7206,7 +7339,18 @@ describe("ChatView — restored session guards", () => {
                 scope: "both",
                 message_count: 1,
             },
-            messages: [{ role: "assistant", content: "answer", sources: ["memory:abc", "notes.md"], ts: "t" }],
+            messages: [
+                {
+                    role: "assistant",
+                    content: "answer",
+                    sources: ["memory:abc", "notes.md"],
+                    ts: "t",
+                    source_refs: [
+                        { source: "memory:abc", label: "memory:abc", citation_number: 1 },
+                        { source: "notes.md", label: "notes", citation_number: 2 },
+                    ],
+                },
+            ],
             summary: "",
         });
         const view = new ChatView(makeLeaf(), plugin);
@@ -8221,5 +8365,157 @@ describe("ChatView — clearing the chat mid-answer", () => {
         await tick();
 
         expect(await firstTurnContext(plugin, container)).toEqual({ history: [], summary: "" });
+    });
+});
+
+describe("ChatView Sources labels from a page title", () => {
+    function cited(source: string, label: string | undefined, citation_number: number | undefined): Source {
+        return {
+            source,
+            content_type: "text/markdown",
+            distance: 0.1,
+            chunk: "chunk",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+            ...(label === undefined ? {} : { label }),
+            ...(citation_number === undefined ? {} : { citation_number }),
+        };
+    }
+
+    function answerWith(sources: Source[]) {
+        return makeStream([
+            { event: SSE_EVENT.TOKEN, data: { token: "Answer [2]" } },
+            { event: SSE_EVENT.SOURCES, data: sources },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+    }
+
+    async function ask(plugin: LilbeePlugin, leaf = makeLeaf()) {
+        const view = new ChatView(leaf, plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "question";
+        container.find("lilbee-chat-send")!.trigger("click");
+        return container;
+    }
+
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    it.each(ATTACK_LABELS)("shows a live chip's label holding %s as text, never as markdown", async (_name, label) => {
+        const plugin = makePlugin();
+        const { mockFn, done } = answerWith([cited("_web/a.md", label, 2)]);
+        plugin.api.chatStream = mockFn;
+        const render = vi.spyOn(MarkdownRenderer, "render");
+
+        const container = await ask(plugin);
+        await done;
+        await tick();
+
+        const bubble = container.find("lilbee-chat-messages")!.children[1];
+        expect(bubble.find("lilbee-chat-content")!.textContent).toBe("Answer [2]");
+        expect(bubble.find("lilbee-source-chip-number")!.textContent).toBe("[2]");
+        expect(bubble.find("lilbee-source-chip-file")!.textContent).toBe(label);
+        expect(render.mock.calls.some((call) => call[1].includes(label))).toBe(false);
+        render.mockRestore();
+    });
+
+    it("shows a chip's path when the server sent no label or number", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = answerWith([cited("notes/a.md", undefined, undefined)]);
+        plugin.api.chatStream = mockFn;
+
+        const container = await ask(plugin);
+        await done;
+        await tick();
+
+        const bubble = container.find("lilbee-chat-messages")!.children[1];
+        expect(bubble.find("lilbee-source-chip-file")!.textContent).toBe("notes/a.md");
+        expect(bubble.find("lilbee-source-chip-number")).toBeNull();
+    });
+
+    it("saves the answer's Sources list as source_refs with the cited numbers", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = answerWith([cited("a.md", "a", 1), cited("a.md", "a", 1), cited("c.md", "c", 3)]);
+        plugin.api.chatStream = mockFn;
+
+        await ask(plugin);
+        await done;
+        await tick();
+        await tick();
+
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "assistant", "Answer [2]", [
+            { source: "a.md", label: "a", citation_number: 1 },
+            { source: "c.md", label: "c", citation_number: 3 },
+        ]);
+    });
+
+    it.each(ATTACK_LABELS)(
+        "writes a label holding %s escaped in the note Save to vault makes from the transcript",
+        async (_name, label) => {
+            const plugin = makePlugin();
+            const leaf = makeLeaf();
+            (leaf.app as any).vault.getAbstractFileByPath = vi.fn().mockReturnValue({ path: "lilbee" });
+            (leaf.app as any).vault.create = vi.fn().mockResolvedValue(undefined);
+            const { mockFn, done } = answerWith([cited("_web/a.md", label, 2)]);
+            plugin.api.chatStream = mockFn;
+
+            const container = await ask(plugin, leaf);
+            await done;
+            await tick();
+            container.find("lilbee-chat-save")!.trigger("click");
+            await tick();
+
+            const note = (leaf.app as any).vault.create.mock.calls[0][1] as string;
+            expect(note).toContain(`**Assistant**: Answer [2]\n\nSources:\n\n2\\. ${markdownText(label)}\n`);
+            expect(note).not.toContain(label);
+        },
+    );
+
+    it("writes a restored turn's labels escaped in the note Save to vault makes", async () => {
+        const plugin = makePlugin();
+        const leaf = makeLeaf();
+        (leaf.app as any).vault.getAbstractFileByPath = vi.fn().mockReturnValue({ path: "lilbee" });
+        (leaf.app as any).vault.create = vi.fn().mockResolvedValue(undefined);
+        const label = ATTACK_LABELS[1][1];
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 2,
+                origin: "http",
+            },
+            messages: [
+                { role: "user", content: "q", sources: [], ts: "t1" },
+                {
+                    role: "assistant",
+                    content: "old [3]",
+                    sources: ["_web/a.md"],
+                    ts: "t2",
+                    source_refs: [{ source: "_web/a.md", label, citation_number: 3 }],
+                },
+            ],
+            summary: "",
+        });
+        const view = new ChatView(leaf, plugin);
+        await view.onOpen();
+        await tick();
+        await (view as any).resumeSession("s5");
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        container.find("lilbee-chat-save")!.trigger("click");
+        await tick();
+
+        const note = (leaf.app as any).vault.create.mock.calls[0][1] as string;
+        expect(note).toContain(`**User**: q\n\n**Assistant**: old [3]\n\nSources:\n\n3\\. ${markdownText(label)}\n`);
+        expect(note).not.toContain(label);
     });
 });

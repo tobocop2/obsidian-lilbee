@@ -31,16 +31,25 @@ export const PLACEMENT_MIN_SERVER_VERSION = "0.6.90b420";
 
 /**
  * Oldest server with the /api/sessions/{id}/fork route: release 0.6.90b446, which ships
- * lilbee #890. Kept out of MIN_SERVER_VERSION so older servers keep every other feature.
+ * lilbee #890. The plugin checks it against the running server, which can be older than MIN_SERVER_VERSION.
  */
 export const SESSION_FORK_MIN_SERVER_VERSION = "0.6.90b446";
 
 /**
  * Oldest server whose /api/sessions/{id}/markdown route names the file in a Content-Disposition
- * header: release 0.6.90b447, which ships lilbee #902. Kept out of MIN_SERVER_VERSION so older
- * servers keep every other feature.
+ * header: release 0.6.90b447, which ships lilbee #902. The plugin checks it against the running
+ * server, which can be older than MIN_SERVER_VERSION.
  */
 export const SESSION_EXPORT_MIN_SERVER_VERSION = "0.6.90b447";
 
-/** The plugin's real floor: the later of the sessions and placement minimums; the fork and export floors stay out. */
-export const MIN_SERVER_VERSION = higherVersion(SESSIONS_MIN_SERVER_VERSION, PLACEMENT_MIN_SERVER_VERSION);
+/**
+ * Oldest server that sends each source's `label` and `citation_number` and a saved turn's
+ * `source_refs`. Below it a restored answer's content still holds the markdown Sources list.
+ */
+export const SOURCE_REFS_MIN_SERVER_VERSION = "0.6.90b692";
+
+/** The plugin's real floor: the latest of the sessions, placement and source-refs minimums. */
+export const MIN_SERVER_VERSION = [PLACEMENT_MIN_SERVER_VERSION, SOURCE_REFS_MIN_SERVER_VERSION].reduce(
+    higherVersion,
+    SESSIONS_MIN_SERVER_VERSION,
+);
