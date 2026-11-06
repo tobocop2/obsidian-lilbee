@@ -8,7 +8,7 @@ import { node } from "../../src/node";
 import type LilbeePlugin from "../../src/main";
 import type { ProfileFolder } from "../../src/types";
 import { ACTIVE_SAVED, LIST, button, buttonLabels } from "../profile-fixtures";
-import recorded from "../fixtures/profile-responses.json";
+import examples from "../fixtures/profile-examples.json";
 
 function makePlugin() {
     return {
@@ -16,9 +16,9 @@ function makePlugin() {
         api: {
             listProfiles: vi.fn().mockResolvedValue(LIST),
             activeProfile: vi.fn().mockResolvedValue({ ...ACTIVE_SAVED, name: "Court filings" }),
-            duplicateProfile: vi.fn().mockResolvedValue(recorded.duplicate.body),
-            renameProfile: vi.fn().mockResolvedValue(recorded.rename.body),
-            deleteProfile: vi.fn().mockResolvedValue(recorded.delete.body),
+            duplicateProfile: vi.fn().mockResolvedValue(examples.duplicate.body),
+            renameProfile: vi.fn().mockResolvedValue(examples.rename.body),
+            deleteProfile: vi.fn().mockResolvedValue(examples.delete.body),
             exportProfile: vi.fn().mockResolvedValue({ filename: "x.toml", content: "" }),
         },
     };
@@ -131,8 +131,8 @@ describe("ProfileLibraryModal", () => {
     it("imports from its Import button and reloads once the file is in", async () => {
         const plugin = makePlugin();
         Object.assign(plugin.api, {
-            validateProfile: vi.fn().mockResolvedValue(recorded.validate_ok.body),
-            importProfile: vi.fn().mockResolvedValue(recorded.import.body),
+            validateProfile: vi.fn().mockResolvedValue(examples.validate_ok.body),
+            importProfile: vi.fn().mockResolvedValue(examples.import.body),
         });
         const onChanged = vi.fn();
         const { el } = await openLibrary(plugin, onChanged);
