@@ -1,6 +1,6 @@
 /**
  * The profile client methods, replayed against bodies the real server answered with.
- * `tests/fixtures/profile-responses.json` comes from `scripts/dump-profile-responses.py`.
+ * `tests/fixtures/profile-examples.json` holds the example answers; `profile-examples.test.ts` checks them against the schema.
  */
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { LilbeeClient, isHttpStatus } from "../src/api";

@@ -1,4 +1,4 @@
-.PHONY: build test lint format format-check release release-store demo demo-prep demo-publish
+.PHONY: build test lint format format-check fixtures release release-store demo demo-prep demo-publish
 
 build:  ## esbuild → main.js
 	npm run build
@@ -14,6 +14,14 @@ format:  ## prettier --write
 
 format-check:  ## prettier --check
 	npm run format:check
+
+# The route schema the contract tests read, as a lilbee release attaches it.
+# Pin one with LILBEE_RELEASE=v0.6.90b700.
+LILBEE_RELEASE ?= latest
+LILBEE_ASSETS = https://github.com/tobocop2/lilbee/releases/$(if $(filter latest,$(LILBEE_RELEASE)),latest/download,download/$(LILBEE_RELEASE))
+
+fixtures:  ## Download openapi.json from a lilbee release
+	curl -fsSL --retry 3 -o tests/fixtures/openapi.json $(LILBEE_ASSETS)/openapi.json
 
 release:  ## Bump the beta version, tag, push, and create the GH release
 	bash scripts/release.sh

@@ -26,7 +26,7 @@ import { node } from "../src/node";
 import { electronDialog } from "../src/utils/file-dialog";
 import type LilbeePlugin from "../src/main";
 import { ACTIVE_DEFAULT, APPLY, DIFF, LIST, button, refusal } from "./profile-fixtures";
-import recorded from "./fixtures/profile-responses.json";
+import examples from "./fixtures/profile-examples.json";
 
 const NOTES = LIST.profiles.find((p) => p.name === "Notes and markdown")!;
 
@@ -41,15 +41,15 @@ function makePlugin() {
             profileDiff: vi.fn().mockResolvedValue(DIFF),
             config: vi.fn().mockResolvedValue({ chunk_size: 500 }),
             applyProfile: vi.fn().mockResolvedValue(APPLY),
-            saveProfile: vi.fn().mockResolvedValue(recorded.save_as.body),
-            updateProfile: vi.fn().mockResolvedValue(recorded.update.body),
-            discardProfileChanges: vi.fn().mockResolvedValue(recorded.discard.body),
-            duplicateProfile: vi.fn().mockResolvedValue(recorded.duplicate.body),
-            renameProfile: vi.fn().mockResolvedValue(recorded.rename.body),
-            deleteProfile: vi.fn().mockResolvedValue(recorded.delete.body),
-            exportProfile: vi.fn().mockResolvedValue({ filename: "old-scans.toml", content: recorded.export.body }),
-            validateProfile: vi.fn().mockResolvedValue(recorded.validate_ok.body),
-            importProfile: vi.fn().mockResolvedValue(recorded.import.body),
+            saveProfile: vi.fn().mockResolvedValue(examples.save_as.body),
+            updateProfile: vi.fn().mockResolvedValue(examples.update.body),
+            discardProfileChanges: vi.fn().mockResolvedValue(examples.discard.body),
+            duplicateProfile: vi.fn().mockResolvedValue(examples.duplicate.body),
+            renameProfile: vi.fn().mockResolvedValue(examples.rename.body),
+            deleteProfile: vi.fn().mockResolvedValue(examples.delete.body),
+            exportProfile: vi.fn().mockResolvedValue({ filename: "old-scans.toml", content: examples.export.body }),
+            validateProfile: vi.fn().mockResolvedValue(examples.validate_ok.body),
+            importProfile: vi.fn().mockResolvedValue(examples.import.body),
         },
     };
 }
@@ -358,7 +358,7 @@ describe("exportProfile", () => {
         const write = vi.spyOn(node, "writeFileSync").mockImplementation(() => undefined);
         await exportProfile(asPlugin(plugin), "Old scans");
         expect(save.mock.calls[0][0]).toMatchObject({ defaultPath: "old-scans.toml" });
-        expect(write).toHaveBeenCalledWith("/x/o.toml", recorded.export.body, "utf8");
+        expect(write).toHaveBeenCalledWith("/x/o.toml", examples.export.body, "utf8");
         expect(notices()).toEqual([MESSAGES.NOTICE_PROFILE_EXPORTED("/x/o.toml")]);
     });
 
@@ -413,7 +413,7 @@ describe("importProfile", () => {
 
     it("lists every problem and copies nothing for a file lilbee cannot use", async () => {
         const plugin = makePlugin();
-        plugin.api.validateProfile.mockResolvedValue(recorded.validate_bad.body);
+        plugin.api.validateProfile.mockResolvedValue(examples.validate_bad.body);
         pickFile();
         const flow = importProfile(asPlugin(plugin));
         await click(PROFILE_FOLDER_LABELS.global);
