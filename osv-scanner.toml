@@ -9,5 +9,11 @@
 #   id = "GHSA-xxxx-xxxx-xxxx"
 #   reason = "..."
 
-# No active suppressions. The transitive vite/esbuild dev-server CVEs that
-# vitest 2.x pinned are resolved by the vitest 4 upgrade (vite 8, esbuild 0.28).
+# The transitive vite/esbuild dev-server CVEs that vitest 2.x pinned are
+# resolved by the vitest 4 upgrade (vite 8, esbuild 0.28).
+
+[[IgnoredVulns]]
+id = "CVE-2026-112366"
+aliases = ["GHSA-fc5q-39xc-vjpf"]
+ignoreUntil = 2026-12-18T00:00:00Z
+reason = "picomatch ReDoS: dev-only via vite/vitest/tinyglobby/fdir, globs come from the repo's own config, not in main.js, no fixed release yet. Remove when picomatch ships a fix."
