@@ -8,10 +8,8 @@
  *
  * This test does not mock the contract. It drives the real client against a
  * recording fetch, then checks each recorded call against
- * `tests/fixtures/server-contract.json`, which is generated from the server's
- * own route table by `scripts/dump-server-contract.py`. Refresh it with:
- *
- *     python3 scripts/dump-server-contract.py --lilbee ~/projects/lilbee
+ * `tests/fixtures/openapi.json`, the schema a lilbee release attaches. Refresh it
+ * with `make fixtures`.
  *
  * It checks three things the drifts actually turned on: the path/method exists,
  * the client streams exactly those routes the server streams, and the client's
@@ -26,14 +24,10 @@ import { vi, describe, it, expect, beforeEach, beforeAll } from "vitest";
 import ts from "typescript";
 import { fileURLToPath } from "node:url";
 import { LilbeeClient } from "../src/api";
-import contract from "./fixtures/server-contract.json";
+import { OPERATIONS } from "./server-contract";
 
 const BASE_URL = "http://localhost:7433";
 
-/** The JSON shape a response field lands in: only `array` is asserted across languages. */
-type FieldKind = string;
-type Operation = { streams: boolean; fields?: Record<string, FieldKind> };
-const OPERATIONS = contract.operations as Record<string, Record<string, Operation>>;
 const API_PATH = fileURLToPath(new URL("../src/api.ts", import.meta.url));
 const TSCONFIG_PATH = fileURLToPath(new URL("../tsconfig.json", import.meta.url));
 
@@ -107,8 +101,8 @@ interface Recorded {
 /**
  * Turn a server route template into a matcher.
  *
- * Litestar paths carry typed params: `{slug:path}` swallows the remaining
- * segments, everything else matches exactly one.
+ * A `{slug:path}` param swallows the remaining segments; every other param
+ * matches exactly one.
  */
 function templateToRegExp(template: string): RegExp {
     const pattern = template
@@ -234,16 +228,10 @@ const INVOCATIONS: Record<string, unknown[]> = {
     wikiDraftDiff: ["page"],
     wikiDraftAccept: ["page"],
     wikiDraftReject: ["page"],
+    analyzeStream: [],
+    analyzeState: [],
+    dismissAnalyzeTip: [],
 };
-
-/**
- * Client methods for routes from an unmerged server branch (lilbee
- * feat/analyze-surfaces, PR #960): the checked-in contract fixture predates
- * them, so `matchRoute` cannot find `/api/analyze` yet. Move these into
- * INVOCATIONS and refresh `tests/fixtures/server-contract.json` once that
- * branch ships.
- */
-const PENDING_SERVER_CONTRACT = new Set(["analyzeStream", "analyzeState", "dismissAnalyzeTip"]);
 
 /**
  * Methods that deliberately never reach the network, so the coverage check
@@ -378,6 +366,13 @@ describe("api.ts route contract", () => {
         }
     });
 
+    // The schema writes `{slug:path}` as `{slug}` and marks it `format: path`; without the
+    // mark a slug with a slash, as every entity page has, would match no route at all.
+    it("matches a slug that spans segments to the multi-segment wiki route", () => {
+        expect(matchRoute("/api/wiki/entities/titan")).toBe("/api/wiki/{slug:path}");
+        expect(matchRoute("/api/wiki/drafts/accept/entities/titan")).toBe("/api/wiki/drafts/accept/{slug:path}");
+    });
+
     it("probes capabilities against routes the server serves", async () => {
         for (const capability of ["api_keys", "crawling", "crawling_browser", "wiki"]) {
             client.invalidateCapability();
@@ -390,7 +385,7 @@ describe("api.ts route contract", () => {
     });
 
     it("exercises every client method that reaches the network", () => {
-        const declared = new Set([...Object.keys(INVOCATIONS), ...NON_NETWORK, ...PENDING_SERVER_CONTRACT]);
+        const declared = new Set([...Object.keys(INVOCATIONS), ...NON_NETWORK]);
         const missing = Object.getOwnPropertyNames(LilbeeClient.prototype)
             .filter((name) => !name.startsWith("probe") && !declared.has(name))
             .filter(

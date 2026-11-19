@@ -17,7 +17,7 @@ import {
     refusal,
     withoutChanges,
 } from "../profile-fixtures";
-import recorded from "../fixtures/profile-responses.json";
+import examples from "../fixtures/profile-examples.json";
 
 type Button = { text: string; triggerClick: () => void };
 type Dropdown = {
@@ -67,9 +67,9 @@ function makePlugin(active = ACTIVE_APPLIED, diff = DIFF_ACTIVE) {
             profileDiff: vi.fn().mockResolvedValue(diff),
             getProfile: vi.fn().mockResolvedValue(LIST.profiles.find((p) => p.name === "Court filings")),
             config: vi.fn().mockResolvedValue({ chunk_size: 500, chunk_overlap: 80 }),
-            applyProfile: vi.fn().mockResolvedValue(recorded.apply.body),
-            updateProfile: vi.fn().mockResolvedValue(recorded.update.body),
-            discardProfileChanges: vi.fn().mockResolvedValue(recorded.discard.body),
+            applyProfile: vi.fn().mockResolvedValue(examples.apply.body),
+            updateProfile: vi.fn().mockResolvedValue(examples.update.body),
+            discardProfileChanges: vi.fn().mockResolvedValue(examples.discard.body),
         },
     };
 }
