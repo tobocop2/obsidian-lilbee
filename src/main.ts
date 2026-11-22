@@ -3240,6 +3240,7 @@ export default class LilbeePlugin extends Plugin {
         try {
             const progress = new FileProgressTracker();
             let syncResult: AddDone | null = null;
+            let ran = false;
             const busy = new Set<string>();
             const controller = this.syncController;
             const rawStream = makeStream
@@ -3287,6 +3288,7 @@ export default class LilbeePlugin extends Plugin {
                         MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status),
                     );
                 } else if (event.event === SSE_EVENT.DONE) {
+                    ran = true;
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
                 } else if (event.event === SSE_EVENT.ALREADY_INGESTING) {
@@ -3303,11 +3305,15 @@ export default class LilbeePlugin extends Plugin {
             }
 
             for (const source of syncResult?.already_ingesting ?? []) busy.add(source);
-            if (busy.size > 0) new Notice(MESSAGES.NOTICE_ALREADY_INGESTING([...busy].join(", ")));
-            // No done event: every source is busy, so this add ran nothing.
-            if (busy.size > 0 && !syncResult) {
-                this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
-                return;
+            if (busy.size > 0) {
+                const names = [...busy].join(", ");
+                // No done event: every source is busy, so this add ran nothing.
+                if (!ran) {
+                    new Notice(MESSAGES.NOTICE_ALREADY_INGESTING(names));
+                    this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
+                    return;
+                }
+                new Notice(MESSAGES.NOTICE_ADD_BUSY(names));
             }
 
             if (syncResult) {

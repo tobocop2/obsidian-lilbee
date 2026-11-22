@@ -3340,7 +3340,7 @@ describe("LilbeePlugin", () => {
             ]);
             expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
             expect(Notice.instances.map((n) => n.message)).toEqual([
-                MESSAGES.NOTICE_ALREADY_INGESTING("busy.md, other.md"),
+                MESSAGES.NOTICE_ADD_BUSY("busy.md, other.md"),
                 MESSAGES.NOTICE_SYNC_SUMMARY("1 added"),
             ]);
             expect((plugin as any).failedAddPaths.size).toBe(0);
@@ -3362,7 +3362,40 @@ describe("LilbeePlugin", () => {
             await (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]);
 
             expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
-            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_ALREADY_INGESTING("busy.md")]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_ADD_BUSY("busy.md")]);
+        });
+
+        it("runAdd completes a batch with busy sources when its done event does not parse", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* mixedBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                yield { event: SSE_EVENT.DONE, data: { copied: [], sync: null } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(mixedBatch());
+
+            await (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]);
+
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_ADD_BUSY("busy.md")]);
+        });
+
+        it("runAdd fails and marks the free paths on an error after already_ingesting", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* failedBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                yield { event: SSE_EVENT.ERROR, data: { message: "disk full" } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(failedBatch());
+
+            await (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]);
+
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["failed"]);
+            expect((plugin as any).failedAddPaths.has("/v/free.md")).toBe(true);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_ADD_FAILED_DETAIL("disk full")]);
         });
 
         it("runAdd parks the task in WAITING state when every source of a batch is busy", async () => {
@@ -3467,7 +3500,31 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.uploadFiles).toHaveBeenCalledTimes(2);
             expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
             expect(Notice.instances.map((n) => n.message)).toEqual([
-                MESSAGES.NOTICE_ALREADY_INGESTING("f0.py, f90.py, f91.py"),
+                MESSAGES.NOTICE_ADD_BUSY("f0.py, f90.py, f91.py"),
+                MESSAGES.NOTICE_SYNC_SUMMARY("1 added"),
+            ]);
+        });
+
+        it("an upload completes when a batch with only busy sources comes after one that ran", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            Notice.clear();
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            let call = 0;
+            plugin.api.uploadFiles = vi.fn(() => {
+                const first = call++ === 0;
+                return (async function* () {
+                    if (first) yield { event: SSE_EVENT.DONE, data: { sync: { added: ["f0.py"], updated: [] } } };
+                    else yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "f90.py" } };
+                })();
+            });
+
+            await (plugin as any).runUpload(files, []);
+
+            expect(plugin.api.uploadFiles).toHaveBeenCalledTimes(2);
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([
+                MESSAGES.NOTICE_ADD_BUSY("f90.py"),
                 MESSAGES.NOTICE_SYNC_SUMMARY("1 added"),
             ]);
         });
