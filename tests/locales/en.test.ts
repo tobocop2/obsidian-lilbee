@@ -301,6 +301,12 @@ describe("MESSAGES", () => {
             );
         });
 
+        it("NOTICE_ADD_BUSY names every busy source and no wait", () => {
+            expect(MESSAGES.NOTICE_ADD_BUSY("a.pdf, b.pdf")).toBe(
+                "lilbee: not in this add, the server is already ingesting: a.pdf, b.pdf",
+            );
+        });
+
         it("NOTICE_UPDATED_TO produces correct output", () => {
             expect(MESSAGES.NOTICE_UPDATED_TO("v0.1.0")).toBe("lilbee: updated to v0.1.0");
         });

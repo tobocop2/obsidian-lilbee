@@ -408,6 +408,8 @@ export interface AddDone extends SyncDone {
     errors: string[];
     /** Registered folders a new parent folder took in. */
     absorbed: string[];
+    /** Sources another ingest holds; this add did not attempt them. */
+    already_ingesting: string[];
 }
 
 /** Audio and video extensions dropped before an upload; no server reads them. Lowercase, with the dot. */

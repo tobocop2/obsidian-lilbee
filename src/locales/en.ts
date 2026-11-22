@@ -892,6 +892,7 @@ export const MESSAGES = {
     ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed: ${msg}`,
     NOTICE_ALREADY_INGESTING: (source: string) =>
         `lilbee: server is already ingesting ${source}, waiting for it to finish`,
+    NOTICE_ADD_BUSY: (names: string) => `lilbee: not in this add, the server is already ingesting: ${names}`,
 
     NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set: select one in settings",
     NOTICE_FLEET_WARMING: "lilbee: the model is still loading, try again in a moment",

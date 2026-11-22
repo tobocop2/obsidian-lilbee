@@ -345,11 +345,12 @@ export function parseAddDoneEvent(data: unknown): AddDone | null {
         overlapping: stringList(obj.overlapping),
         errors: stringList(obj.errors),
         absorbed: stringList(obj.absorbed),
+        already_ingesting: stringList(obj.already_ingesting),
     };
     const sync = obj.sync && typeof obj.sync === "object" ? (obj.sync as Record<string, unknown>) : obj;
     // The server sends no `sync` when nothing reached the corpus.
-    const refused = outcomes.name_taken.length + outcomes.overlapping.length + outcomes.errors.length > 0;
-    const done = coerceSyncDone(sync) ?? (refused ? EMPTY_SYNC : null);
+    const leftOut = [outcomes.name_taken, outcomes.overlapping, outcomes.errors, outcomes.already_ingesting];
+    const done = coerceSyncDone(sync) ?? (leftOut.some((names) => names.length > 0) ? EMPTY_SYNC : null);
     return done === null ? null : { ...done, ...outcomes };
 }
 
@@ -3165,13 +3166,16 @@ export default class LilbeePlugin extends Plugin {
             overlapping: [],
             errors: [],
             absorbed: [],
+            already_ingesting: [],
             index_mismatch: null,
             skip_records_error: null,
         };
         let done = 0;
+        let anyRan = false;
         for (const batch of batches) {
             for await (const event of this.api.uploadFiles(batch, signal)) {
                 if (event.event === SSE_EVENT.DONE) {
+                    anyRan = true;
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) {
                         merged.added.push(...parsed.added);
@@ -3185,6 +3189,7 @@ export default class LilbeePlugin extends Plugin {
                         merged.overlapping.push(...parsed.overlapping);
                         merged.errors.push(...parsed.errors);
                         merged.absorbed.push(...parsed.absorbed);
+                        merged.already_ingesting.push(...parsed.already_ingesting);
                         merged.unchanged += parsed.unchanged;
                         // The last batch's verdict is the state the index ends in.
                         merged.index_mismatch = parsed.index_mismatch;
@@ -3206,7 +3211,8 @@ export default class LilbeePlugin extends Plugin {
             }
             done += batch.length;
         }
-        yield { event: SSE_EVENT.DONE, data: merged };
+        // The server sends no done when every source of a batch is busy.
+        if (anyRan) yield { event: SSE_EVENT.DONE, data: merged };
     }
 
     cancelSync(): void {
@@ -3234,6 +3240,8 @@ export default class LilbeePlugin extends Plugin {
         try {
             const progress = new FileProgressTracker();
             let syncResult: AddDone | null = null;
+            let ran = false;
+            const busy = new Set<string>();
             const controller = this.syncController;
             const rawStream = makeStream
                 ? makeStream(controller.signal)
@@ -3280,14 +3288,12 @@ export default class LilbeePlugin extends Plugin {
                         MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status),
                     );
                 } else if (event.event === SSE_EVENT.DONE) {
+                    ran = true;
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
                 } else if (event.event === SSE_EVENT.ALREADY_INGESTING) {
                     const d = (event.data ?? {}) as { source?: string };
-                    const source = typeof d.source === "string" && d.source ? d.source : paths[0];
-                    new Notice(MESSAGES.NOTICE_ALREADY_INGESTING(source));
-                    this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
-                    return;
+                    busy.add(typeof d.source === "string" && d.source ? d.source : paths[0]);
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
@@ -3298,12 +3304,24 @@ export default class LilbeePlugin extends Plugin {
                 }
             }
 
+            for (const source of syncResult?.already_ingesting ?? []) busy.add(source);
+            if (busy.size > 0) {
+                const names = [...busy].join(", ");
+                // No done event: every source is busy, so this add ran nothing.
+                if (!ran) {
+                    new Notice(MESSAGES.NOTICE_ALREADY_INGESTING(names));
+                    this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
+                    return;
+                }
+                new Notice(MESSAGES.NOTICE_ADD_BUSY(names));
+            }
+
             if (syncResult) {
                 const refused = noticeAddRefusals(syncResult);
                 if (!noticeSyncProblems(syncResult)) {
                     const summary = summarizeSyncResult(syncResult);
                     if (summary) new Notice(MESSAGES.NOTICE_SYNC_SUMMARY(summary));
-                    else if (!refused) new Notice(MESSAGES.STATUS_NOTHING_NEW);
+                    else if (!refused && busy.size === 0) new Notice(MESSAGES.STATUS_NOTHING_NEW);
                 }
             }
             this.taskQueue.complete(taskId);

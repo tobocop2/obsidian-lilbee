@@ -18,7 +18,7 @@ import {
     SSE_EVENT,
     SYNC_TRIGGER,
 } from "../src/types";
-import { HEALTH_PROBE_INTERVAL_MS } from "../src/utils";
+import { HEALTH_PROBE_INTERVAL_MS, STREAM_IDLE_TIMEOUT_MS } from "../src/utils";
 import { displayLabelForRef } from "../src/utils/model-ref";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
@@ -3308,6 +3308,243 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.some((t) => t.status === "waiting")).toBe(true);
         });
 
+        it("runAdd reads a batch with busy and free sources to the done event", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            const seen: (string | undefined)[] = [];
+            async function* mixedBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 1 } };
+                seen.push(plugin.taskQueue.active?.detail);
+                yield { event: SSE_EVENT.EMBED, data: { chunk: 1, total_chunks: 2 } };
+                seen.push(plugin.taskQueue.active?.detail);
+                // Only the done event names other.md as busy.
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        ...addSummary.absorbed,
+                        absorbed: [],
+                        sync: { added: ["free.md"], updated: [] },
+                        already_ingesting: ["busy.md", "other.md"],
+                    },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(mixedBatch());
+
+            await (plugin as any).runAdd(["/v/busy.md", "/v/other.md", "/v/free.md"]);
+
+            expect(seen).toEqual([
+                MESSAGES.STATUS_TASK_FILE.replace("{current}", "1").replace("{total}", "1"),
+                MESSAGES.STATUS_TASK_EMBEDDING.replace("{chunk}", "1").replace("{total}", "2"),
+            ]);
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([
+                MESSAGES.NOTICE_ADD_BUSY("busy.md, other.md"),
+                MESSAGES.NOTICE_SYNC_SUMMARY("1 added"),
+            ]);
+            expect((plugin as any).failedAddPaths.size).toBe(0);
+        });
+
+        it("runAdd does not report nothing new for a batch that left busy sources out", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* mixedBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { copied: [], errors: [], sync: null, already_ingesting: ["busy.md"] },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(mixedBatch());
+
+            await (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]);
+
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_ADD_BUSY("busy.md")]);
+        });
+
+        it("runAdd completes a batch with busy sources when its done event does not parse", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* mixedBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                yield { event: SSE_EVENT.DONE, data: { copied: [], sync: null } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(mixedBatch());
+
+            await (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]);
+
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_ADD_BUSY("busy.md")]);
+        });
+
+        it("runAdd fails and marks the free paths on an error after already_ingesting", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* failedBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                yield { event: SSE_EVENT.ERROR, data: { message: "disk full" } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(failedBatch());
+
+            await (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]);
+
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["failed"]);
+            expect((plugin as any).failedAddPaths.has("/v/free.md")).toBe(true);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.ERROR_ADD_FAILED_DETAIL("disk full")]);
+        });
+
+        it("runAdd parks the task in WAITING state when every source of a batch is busy", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            Notice.clear();
+            async function* busyBatch() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "a.md" } };
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "b.md" } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(busyBatch());
+
+            await (plugin as any).runAdd(["/v/a.md", "/v/b.md"], undefined, vi.fn());
+
+            const [task] = plugin.taskQueue.completed;
+            expect(task.status).toBe("waiting");
+            expect(task.detail).toBe(MESSAGES.STATUS_WAITING_ON_SERVER);
+            expect(task.retry).toBeUndefined();
+            expect((plugin as any).failedAddPaths.size).toBe(0);
+            expect(Notice.instances.map((n) => n.message)).toEqual([MESSAGES.NOTICE_ALREADY_INGESTING("a.md, b.md")]);
+        });
+
+        it("a Task Center cancel after already_ingesting aborts the add", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            let signal!: AbortSignal;
+            let reachedWait!: () => void;
+            const waiting = new Promise<void>((resolve) => (reachedWait = resolve));
+            plugin.api.addFiles = vi.fn((_paths: string[], _force?: boolean, s?: AbortSignal) => {
+                signal = s!;
+                return (async function* () {
+                    yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                    reachedWait();
+                    await new Promise((_resolve, reject) => {
+                        signal.addEventListener("abort", () =>
+                            reject(Object.assign(new Error("Aborted"), { name: "AbortError" })),
+                        );
+                    });
+                })();
+            });
+
+            const add = (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]) as Promise<void>;
+            await Promise.race([waiting, add]);
+            const task = plugin.taskQueue.active;
+            expect(task?.canCancel).toBe(true);
+            plugin.taskQueue.cancel(task!.id);
+            await add;
+
+            expect(signal.aborted).toBe(true);
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["cancelled"]);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.STATUS_ADD_CANCELLED);
+            expect((plugin as any).failedAddPaths.has("/v/free.md")).toBe(true);
+        });
+
+        it("an idle stream after already_ingesting aborts the add", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.useFakeTimers();
+            try {
+                let signal!: AbortSignal;
+                plugin.api.addFiles = vi.fn((_paths: string[], _force?: boolean, s?: AbortSignal) => {
+                    signal = s!;
+                    return (async function* () {
+                        yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "busy.md" } };
+                        await new Promise(() => {});
+                    })();
+                });
+
+                const add = (plugin as any).runAdd(["/v/busy.md", "/v/free.md"]) as Promise<void>;
+                await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS);
+                await add;
+
+                expect(signal.aborted).toBe(true);
+                expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["failed"]);
+                expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_STREAM_IDLE);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it("an upload keeps the later batches when the first batch has only busy sources", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            Notice.clear();
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            let call = 0;
+            plugin.api.uploadFiles = vi.fn(() => {
+                const first = call++ === 0;
+                return (async function* () {
+                    yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: first ? "f0.py" : "f90.py" } };
+                    if (first) return;
+                    // Only the done event names f91.py as busy.
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: { sync: { added: ["f92.py"], updated: [] }, already_ingesting: ["f90.py", "f91.py"] },
+                    };
+                })();
+            });
+
+            await (plugin as any).runUpload(files, []);
+
+            expect(plugin.api.uploadFiles).toHaveBeenCalledTimes(2);
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([
+                MESSAGES.NOTICE_ADD_BUSY("f0.py, f90.py, f91.py"),
+                MESSAGES.NOTICE_SYNC_SUMMARY("1 added"),
+            ]);
+        });
+
+        it("an upload completes when a batch with only busy sources comes after one that ran", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            Notice.clear();
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            let call = 0;
+            plugin.api.uploadFiles = vi.fn(() => {
+                const first = call++ === 0;
+                return (async function* () {
+                    if (first) yield { event: SSE_EVENT.DONE, data: { sync: { added: ["f0.py"], updated: [] } } };
+                    else yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: "f90.py" } };
+                })();
+            });
+
+            await (plugin as any).runUpload(files, []);
+
+            expect(plugin.api.uploadFiles).toHaveBeenCalledTimes(2);
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["done"]);
+            expect(Notice.instances.map((n) => n.message)).toEqual([
+                MESSAGES.NOTICE_ADD_BUSY("f90.py"),
+                MESSAGES.NOTICE_SYNC_SUMMARY("1 added"),
+            ]);
+        });
+
+        it("an upload parks the task in WAITING state when every batch has only busy sources", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            plugin.api.uploadFiles = vi.fn((batch: { name: string }[]) =>
+                (async function* () {
+                    yield { event: SSE_EVENT.ALREADY_INGESTING, data: { source: batch[0].name } };
+                })(),
+            );
+
+            await (plugin as any).runUpload(files, []);
+
+            expect(plugin.api.uploadFiles).toHaveBeenCalledTimes(2);
+            expect(plugin.taskQueue.completed.map((t) => t.status)).toEqual(["waiting"]);
+        });
+
         it("addToLilbee returns early when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -5688,6 +5925,7 @@ describe("LilbeePlugin", () => {
                 overlapping: [],
                 errors: [],
                 absorbed: [],
+                already_ingesting: [],
                 index_mismatch: null,
                 skip_records_error: null,
             });
@@ -5706,6 +5944,7 @@ describe("LilbeePlugin", () => {
                 overlapping: [],
                 errors: [],
                 absorbed: [],
+                already_ingesting: [],
                 index_mismatch: null,
                 skip_records_error: null,
             });
@@ -5733,6 +5972,7 @@ describe("LilbeePlugin", () => {
                 overlapping: [],
                 errors: [],
                 absorbed: [],
+                already_ingesting: [],
                 index_mismatch: null,
                 skip_records_error: null,
             });
@@ -5800,8 +6040,15 @@ describe("LilbeePlugin", () => {
                 overlapping: ["/a/b"],
                 errors: ["x.svg: vector graphic, not a document"],
                 absorbed: ["old"],
+                already_ingesting: [],
                 index_mismatch: null,
                 skip_records_error: null,
+            });
+
+            // Busy sources alone also make a summary without a sync.
+            expect(parseAddDoneEvent({ copied: [], sync: null, already_ingesting: ["busy.md"] })).toMatchObject({
+                added: [],
+                already_ingesting: ["busy.md"],
             });
 
             // Refusals beside a sync keep both.
