@@ -50,8 +50,9 @@ function makeFixture(cur: string, nvmrc: string): Fixture {
     const files: Record<string, string> = {
         "package.json": JSON.stringify({ name: "p", version: cur, dependencies: { lilbee: cur } }, null, 2),
         "package-lock.json": JSON.stringify(lock, null, 2),
-        "manifest.json": JSON.stringify({ id: "p", version: cur, minAppVersion: "1.8.7" }, null, "\t"),
-        "versions.json": JSON.stringify({ [cur]: "1.8.7" }, null, "\t"),
+        // minAppVersion equals the plugin version, so a global replace would change it.
+        "manifest.json": JSON.stringify({ id: "p", version: cur, minAppVersion: cur }, null, "\t"),
+        "versions.json": JSON.stringify({ [cur]: cur }, null, "\t"),
         ".nvmrc": nvmrc,
     };
     for (const [name, body] of Object.entries(files)) {
@@ -86,6 +87,7 @@ function expectOnlyPluginVersionMoved(fx: Fixture, cur: string, next: string): v
     expect(readJson(fx.repo, "package.json").version).toBe(next);
     expect(readJson(fx.repo, "package.json").dependencies.lilbee).toBe(cur);
     expect(readJson(fx.repo, "manifest.json").version).toBe(next);
+    expect(readJson(fx.repo, "manifest.json").minAppVersion).toBe(cur);
 }
 
 describe.skipIf(process.platform === "win32")("scripts/release_store.sh", () => {
@@ -95,7 +97,7 @@ describe.skipIf(process.platform === "win32")("scripts/release_store.sh", () => 
         expect(res.status, String(res.stderr)).toBe(0);
 
         expectOnlyPluginVersionMoved(fx, "0.6.101", "0.6.102");
-        expect(readJson(fx.repo, "versions.json")["0.6.102"]).toBe("1.8.7");
+        expect(readJson(fx.repo, "versions.json")["0.6.102"]).toBe("0.6.101");
         expect(git(fx.repo, "tag", "--list", "0.6.102").trim()).toBe("0.6.102");
     });
 
