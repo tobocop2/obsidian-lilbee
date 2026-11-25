@@ -29,7 +29,21 @@ tag="v${next}"
 prev_tag="v${cur}"
 echo "release: $cur -> $next ($tag)"
 
-perl -pi -e 's/"\Q'"$cur"'\E"/"'"$next"'"/g' package.json manifest.json package-lock.json
+# Set only the root and packages[""] versions in the lock. A text replace would
+# also rewrite a dependency whose version equals the current one. Beta versions
+# are not valid semver, so npm version cannot write them.
+node -e '
+  const fs = require("fs");
+  const next = process.argv[1];
+  const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+  pkg.version = next;
+  fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+  const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+  lock.version = next;
+  lock.packages[""].version = next;
+  fs.writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
+' "$next"
+perl -pi -e 's/("version": *")\Q'"$cur"'\E"/${1}'"$next"'"/' manifest.json
 
 git add package.json manifest.json package-lock.json
 git commit -q -m "release: ${next}"

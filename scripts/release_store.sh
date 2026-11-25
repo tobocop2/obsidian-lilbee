@@ -20,6 +20,11 @@ git fetch -q origin main
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
   || { echo "release-store: main is not in sync with origin/main" >&2; exit 1; }
 
+want_node=$(tr -d 'v \n' < .nvmrc)
+have_node=$(node -p 'process.versions.node')
+[ "${have_node%%.*}" = "${want_node%%.*}" ] \
+  || { echo "release-store: Node $have_node is active; .nvmrc needs Node $want_node (run 'nvm use')" >&2; exit 1; }
+
 cur=$(sed -nE 's/.*"version": *"([^"]+)".*/\1/p' manifest.json | head -1)
 case "$cur" in
   *[!0-9.]*) echo "release-store: version '$cur' is not stable x.y.z; use 'make release' for betas" >&2; exit 1;;
@@ -28,7 +33,11 @@ next="${cur%.*}.$(( ${cur##*.} + 1 ))"
 tag="$next"
 echo "release-store: $cur -> $next ($tag)"
 
-perl -pi -e 's/"\Q'"$cur"'\E"/"'"$next"'"/g' package.json manifest.json package-lock.json
+# npm version rewrites only the root and packages[""] versions in package.json
+# and package-lock.json. A text replace would also rewrite a dependency whose
+# version equals the current one (for example the lilbee launcher).
+npm version "$next" --no-git-tag-version --allow-same-version >/dev/null
+perl -pi -e 's/("version": *")\Q'"$cur"'\E"/${1}'"$next"'"/' manifest.json
 node -e '
   const fs = require("fs");
   const versions = JSON.parse(fs.readFileSync("versions.json", "utf8"));
