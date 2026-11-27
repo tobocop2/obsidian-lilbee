@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://obsidian.lilbee.sh/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/obsidian-lilbee-logo-dark.svg">
-      <img alt="lilbee for Obsidian" src="docs/obsidian-lilbee-logo-light.svg" width="360">
+      <source media="(prefers-color-scheme: dark)" srcset="docs/obsidian-lilbee-header-dark.svg">
+      <img alt="lilbee for Obsidian" src="docs/obsidian-lilbee-header-light.svg" width="620">
     </picture>
   </a>
 </p>
